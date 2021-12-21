@@ -557,10 +557,10 @@ valid = DatasetForCausalLM(
 # The 9,000th to 9,999th samples are used as test data.
 test = DatasetForCausalLM(
     data_name="/path/to/wikitext103",
-    start_weight=0.8,
-    end_weight=0.9,
+    start_weight=0.9,
+    end_weight=1.0,
     split_type="valid",
-    max_seq_length=2048,
+    max_seq_length=test,
     binarization_impl="mmap",
 )
 ```
