@@ -24,9 +24,9 @@
 ## What is OSLO about?
 
 OSLO is a framework that provides various GPU based optimization features for large-scale modeling. As of 2021, the [Hugging Face Transformers](https://github.com/huggingface/transformers) is being considered <i>de facto</i> standard.
-However, it does not best fit the purposes of large-scale modeling yet.
-This is where OSLO comes in. OSLO is designed to make it easier to train large models with the Transformers.
-For example, you can fine-tune [GPTJ](https://huggingface.co/EleutherAI/gpt-j-6B) on the [Hugging Face Model Hub](https://huggingface.co/models) without many extra efforts using OSLO. Currently, GPT2, GPTNeo, and GPTJ are supported, but we plan to support more soon.
+However, it does not have some features that are considered useful for large-scale modeling such as 3D parallelism and kernel fusion.
+This is where OSLO comes in. OSLO is designed to make it easier to train large models with the Transformers by supporting these features.
+Currently, GPT2, GPTNeo, and GPTJ are supported, but we plan to support more soon.
 
 ## Installation
 OSLO can be easily installed using the pip package manager.
