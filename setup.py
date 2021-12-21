@@ -31,7 +31,7 @@ with open("oslo/__version__.py", "r") as version_file:
 
 
 setup(
-    name="oslo",
+    name="oslo-core",
     description="OSLO: Open Source framework for Large-scale transformer Optimization",
     version=VERSION["version"],
     long_description=open("README.md").read(),

@@ -32,9 +32,9 @@ For example, you can fine-tune [GPTJ](https://huggingface.co/EleutherAI/gpt-j-6B
 OSLO can be easily installed using the pip package manager.
 All the dependencies such as [torch](https://pypi.org/project/torch/), [transformers](https://pypi.org/project/transformers/), [dacite](https://pypi.org/project/dacite/),
 [ninja](https://pypi.org/project/ninja/) and [pybind11](https://pypi.org/project/pybind11/) should be installed automatically with the following command.
-
+Be careful that the 'core' in the PyPI project name.
 ```console
-pip install oslo
+pip install oslo-core
 ```
 
 Some of features rely on the C++ language.
@@ -42,12 +42,12 @@ So we provide an option, `CPP_AVAILABLE`, to decide whether or not you install t
 
 - If the C++ is available:
 ```console
-CPP_AVAILABLE=1 pip install oslo
+CPP_AVAILABLE=1 pip install oslo-core
 ```
 
 - If the C++ is not available:
 ```console
-CPP_AVAILABLE=0 pip install oslo
+CPP_AVAILABLE=0 pip install oslo-core
 ```
 
 Note that the default value of `CPP_AVAILABLE` is 0 in Windows and 1 in Linux.
