@@ -1,0 +1,8 @@
+global-include *.txt
+global-include *.cu *.cpp *.cc *.cuh *.h *.ldscript *.proto *.cmake
+prune dist
+prune build
+prune tests
+include LICENSE
+include LICENSE.3rd_party_library
+include README.md
