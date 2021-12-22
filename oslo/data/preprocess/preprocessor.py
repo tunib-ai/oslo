@@ -92,19 +92,18 @@ class DatasetPreprocessor(object):
         else:
             self.eod_token_id = eod_token_id
 
-    def _preprocess(
+    def preprocess(
         self,
-        data_path: str,
-        index_path: str,
-        log_interval: int,
-        kwargs,
+        iterable,
+        save_file_name: str,
+        log_interval: int = 1000,
     ) -> None:
         """
         Preprocess a dataset
 
         Args:
-            data_path (str): dataset bin path
-            index_path (str): dataset index path
+            iterable: iterable of string
+            save_file_name (str): save file name
             log_interval (int) logging interval
         """
 
@@ -114,12 +113,12 @@ class DatasetPreprocessor(object):
             eod_token_id=self.eod_token_id,
         )
         binarizer = DatasetBinarizer(self.binarization_impl)
-        index_path, builder = binarizer.create_builder(index_path)
+        index_path, builder = binarizer.create_builder(save_file_name)
 
         with ProcessPoolExecutor() as pool:
             iterator = pool.map(
                 encoder.encode,
-                open(data_path, **kwargs),
+                iterable,
                 chunksize=self.chunksize,
             )
 
@@ -130,30 +129,33 @@ class DatasetPreprocessor(object):
                 log_interval=log_interval,
             )
 
-    def preprocess(
-        self,
-        data_names: List[str],
-        extension: str = ".txt",
-        log_interval: int = 1000,
-        **kwargs,
-    ):
+    @staticmethod
+    def open_jsonl(file, json_key):
         """
-        Preprocess datasets
+        Open jsonl file similar with Megatron-LM data format
 
-        Args:
-            data_names (List[str]): dataset names
-            extension (str): data file extension
-            log_interval (int): logging interval
+        Examples:
+            1 {'text': 'blah blah blah ...'}
+            2 {'text': 'blah blah blah ...'}
+            3 {'text': 'blah blah blah ...'}
+            4 ...
+
+            >>> DatasetPreprocessor.open_jsonl(
+            ...     file=FILE_NAME, json_key='text'
+            ... )
         """
 
-        if "." not in extension:
-            extension = "." + extension
+        import json
 
-        for name in data_names:
-            logger.info(f"Start to preprocess {name}.")
-            self._preprocess(
-                name + extension,
-                name,
-                log_interval,
-                kwargs,
-            )
+        if file[-6:].lower() != ".jsonl":
+            file = file + ".jsonl"
+
+        source = open(file)
+
+        while True:
+            line = source.readline()
+
+            if not line:
+                break
+            else:
+                yield json.loads(line)[json_key]

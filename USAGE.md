@@ -488,6 +488,10 @@ import os
 from transformers import AutoTokenizer
 from oslo import DatasetPreprocessor
 
+data_names=[
+  "/path/to/wikitext103", "/path/to/lambada", ...
+]
+
 # 1. Create tokenizer
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 tokenizer = AutoTokenizer.from_pretrained(...)
@@ -500,16 +504,36 @@ preprocessor = DatasetPreprocessor(
     append_eod=True,
 )
 
-# 3. Preform preprocessing
-preprocessor.preprocess(
-    data_names=[
-        "/path/to/wikitext103", 
-        "/path/to/lambada", 
-        ...
-    ],
-    extension=".txt",
-    log_interval=100,
-)
+# 3-1. Preform preprocessing (.txt)
+# save_file_name + '.idx' and '.bin' will be created.
+for data_name in data_names:
+    preprocessor.preprocess(
+        open(data_name + ".txt"),
+        save_file_name=data_name,
+        log_interval=100,
+    )
+
+# 3-2. Perform preprocessing (.jsonl, Megatron-LM format)
+# 1 {"text": "blah blah"}
+# 2 {"text": "blah blah"}
+# 3 ...
+for data_name in data_names:
+  preprocessor.preprocess(
+        preprocessor.open_jsonl(
+            data_name, 
+            json_key="text",
+        ),
+        save_file_name=data_name,
+        log_interval=100,
+  )
+
+# 3-3 Perform preprocessing (any other format)
+for data_name in data_names:
+  preprocessor.preprocess(
+        YOUR_OWN_LIST_OF_STRING,
+        save_file_name=data_name,
+        log_interval=100,
+  )
 ```
 
 ### DatasetForCausalLM
