@@ -43,7 +43,7 @@ preprocessor = DatasetPreprocessor(
     append_eod=True,
 )
 
-with open(args.end_file_record_path) as f, open(args.end_dir_record_path) as ff:
+with open(args.end_file_record_path, 'w') as f, open(args.end_dir_record_path, 'w') as ff:
     for dir_ in dirs:
         for file in os.listdir(os.path.join(args.base_dir, dir_)):
             if file.endswith('jsonl'):
