@@ -34,7 +34,7 @@ if args.small_first:
     sorted_dir_sizes, sorted_dirs = zip(*zipped)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
-tokenizer = AutoTokenizer.from_pretrained('gpt2')
+tokenizer = AutoTokenizer.from_pretrained('../gpt2')
 
 preprocessor = DatasetPreprocessor(
     tokenizer=tokenizer,
