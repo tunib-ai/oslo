@@ -28,7 +28,7 @@ OSLO is a framework that provides various GPU based optimization technologies fo
 OSLO can be easily installed using the pip package manager.
 All the dependencies such as [torch](https://pypi.org/project/torch/), [transformers](https://pypi.org/project/transformers/), [dacite](https://pypi.org/project/dacite/),
 [ninja](https://pypi.org/project/ninja/) and [pybind11](https://pypi.org/project/pybind11/) should be installed automatically with the following command.
-Be careful that the 'core' in the PyPI project name.
+Be careful that the 'core' is in the PyPI project name.
 ```console
 pip install oslo-core
 ```
