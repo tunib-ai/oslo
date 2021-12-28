@@ -85,6 +85,7 @@ class DatasetForCausalLM(Dataset):
             start_weight != end_weight
         ), "Param ``start_weight`` and ``end_weight`` must not be same."
 
+        self.name = data_name
         self.index = {
             "lazy": IndexedDataset,
             "cached": IndexedCachedDataset,

@@ -740,8 +740,10 @@ class GPTJForCausalLM(GPTJPreTrainedModel):
             Layer(
                 module=self.lm_head,
                 weight=self.lm_head.weight,
-                bias=self.lm_head.bias,
+                replace={nn.Linear: ColumnParallelLinear},
                 parallel=False,
+                gather_output=True,
+                tied_embedding=self.transformer.wte,
             )
         ]
 

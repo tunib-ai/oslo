@@ -10,11 +10,11 @@ from transformers import cached_path
 from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
 from oslo.parallelism.mpu import MPU
-from oslo.parallelism.pipeline_parallelism import (
+from oslo.parallelism.engine_pipeline import (
     PipelineDeparallelEngine,
     PipelineParallelEngine,
 )
-from oslo.parallelism.tensor_parallelism import (
+from oslo.parallelism.engine_tensor import (
     TensorDeparallelEngine,
     TensorParallelEngine,
 )
@@ -335,6 +335,7 @@ class ParallelizationMixin(object):
         pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
         micro_batch_size = kwargs.pop("micro_batch_size", 1)
         resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
+        inference = kwargs.pop("inference", None)
 
         assert (
             cls.is_parallelizable is True
@@ -552,6 +553,7 @@ class ParallelizationMixin(object):
         pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
         micro_batch_size = kwargs.pop("micro_batch_size", 1)
         resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
+        inference = kwargs.pop("inference", None)
 
         assert (
             cls.is_parallelizable is True

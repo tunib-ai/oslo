@@ -13,7 +13,7 @@
 <a href="https://github.com/tunib-ai/oslo/blob/master/LICENSE.apache-2.0"><img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue.svg"/></a> <a href="https://github.com/tunib-ai/oslo/blob/master/USAGE.md"><img alt="Docs" src="https://img.shields.io/badge/docs-passing-success.svg"/></a>
 <a href="https://github.com/tunib-ai/oslo/issues"><img alt="Issues" src="https://img.shields.io/github/issues/tunib-ai/oslo"/></a>
 
-    
+
 </div>
 
 <br><br>
@@ -28,13 +28,13 @@ OSLO is a framework that provides various GPU based optimization technologies fo
 OSLO can be easily installed using the pip package manager.
 All the dependencies such as [torch](https://pypi.org/project/torch/), [transformers](https://pypi.org/project/transformers/), [dacite](https://pypi.org/project/dacite/),
 [ninja](https://pypi.org/project/ninja/) and [pybind11](https://pypi.org/project/pybind11/) should be installed automatically with the following command.
-Be careful that the 'core' in the PyPI project name.
+Be careful that the 'core' is in the PyPI project name.
 ```console
 pip install oslo-core
 ```
 
 Some of features rely on the C++ language.
-So we provide an option, `CPP_AVAILABLE`, to decide whether or not you install them. 
+So we provide an option, `CPP_AVAILABLE`, to decide whether or not you install them.
 
 - If the C++ is available:
 ```console
@@ -51,7 +51,7 @@ Note that the default value of `CPP_AVAILABLE` is 0 in Windows and 1 in Linux.
 ## Key Features
 
 ```python
-import deepspeed 
+import deepspeed
 from oslo import GPTJForCausalLM
 
 # 1. 3D Parallelism
@@ -69,17 +69,17 @@ engines = deepspeed.initialize(
 
 # 4. Data Processing
 from oslo import (
-    DatasetPreprocessor, 
-    DatasetBlender, 
-    DatasetForCausalLM, 
-    ...    
+    DatasetPreprocessor,
+    DatasetBlender,
+    DatasetForCausalLM,
+...
 )
 ```
 
 OSLO offers the following features.
 
 - **3D Parallelism**: The state-of-the-art technique for training a large-scale model with multiple GPUs.
-- **Kernel Fusion**: A GPU optimization method to increase training and inference speed. 
+- **Kernel Fusion**: A GPU optimization method to increase training and inference speed.
 - **DeepSpeed Support**: We support [DeepSpeed](https://github.com/microsoft/DeepSpeed) which provides ZeRO data parallelism.
 - **Data Processing**: Various utilities for efficient large-scale data processing.
 
