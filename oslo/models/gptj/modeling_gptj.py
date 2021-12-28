@@ -29,14 +29,14 @@ from transformers.modeling_outputs import (
 )
 from transformers.utils import logging
 
+from .configuration_gptj import GPTJConfig, GPTJLayerPolicy
 from ... import (
     FusedBiasActivation,
     FusedBiasDropout,
     FusedScaleMaskSoftmax,
     Layer,
 )
-from ...modeling_utils import ColumnParallelLinear, PreTrainedModel
-from .configuration_gptj import GPTJConfig, GPTJLayerPolicy
+from ...modeling_utils import PreTrainedModel
 
 logger = logging.get_logger(__name__)
 
@@ -740,10 +740,8 @@ class GPTJForCausalLM(GPTJPreTrainedModel):
             Layer(
                 module=self.lm_head,
                 weight=self.lm_head.weight,
-                replace={nn.Linear: ColumnParallelLinear},
+                bias=self.lm_head.bias,
                 parallel=False,
-                gather_output=True,
-                tied_embedding=self.transformer.wte,
             )
         ]
 
