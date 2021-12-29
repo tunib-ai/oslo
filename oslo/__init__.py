@@ -12,3 +12,6 @@ from oslo.models.gpt_neo.configuration_gpt_neo import *
 from oslo.models.gpt_neo.modeling_gpt_neo import *
 from oslo.models.gptj.configuration_gptj import *
 from oslo.models.gptj.modeling_gptj import *
+from oslo.parallelism_utils import ParallelizationMixin
+
+parallelize = ParallelizationMixin._parallelize_from_model

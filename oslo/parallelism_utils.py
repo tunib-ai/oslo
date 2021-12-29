@@ -1,15 +1,19 @@
 # Copyright 2021 TUNiB Inc.
 
 import logging
+import multiprocessing as mp
 import os
+import random
+from contextlib import suppress
 from typing import Callable, Optional, Union
 
+import numpy as np
 import torch
 import torch.distributed as dist
 from transformers import cached_path
 from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
-from oslo.parallelism.mpu import MPU
+from oslo.parallelism.engine_deployment import DeploymentParallelEngine
 from oslo.parallelism.engine_pipeline import (
     PipelineDeparallelEngine,
     PipelineParallelEngine,
@@ -18,6 +22,7 @@ from oslo.parallelism.engine_tensor import (
     TensorDeparallelEngine,
     TensorParallelEngine,
 )
+from oslo.parallelism.mpu import MPU
 
 logger = logging.getLogger(__name__)
 WEIGHTS_NAME_PARALLEL = "pytorch_model_tp=0_pp=0.bin"
@@ -54,9 +59,6 @@ class ParallelizationMixin(object):
         model checkpoint will be saved like 'pytorch_model.bin'
     """
 
-    # Every models in OSLO must have the following three methods for model parallelism.
-    # These methods provide basic information of layers in model.
-
     @staticmethod
     def get_layer_policies():
         """Return list of layer policies"""
@@ -65,10 +67,6 @@ class ParallelizationMixin(object):
     def get_head_layers(self):
         """Return list of head layers"""
         return []
-
-    # We split ``forward`` method into 6 sub-methods for pipeline parallelism.
-    # Previously, the existing libraries such as DeepSpeed and TorchGPipe split the model's layers and created the ``nn.Sequential``.
-    # Instead of splitting the layers, we split the methods to enable pipeline parallelism.
 
     def preblock_fn(self, *args, **kwargs):
         """Forward before main block of model"""
@@ -127,8 +125,6 @@ class ParallelizationMixin(object):
         else:
             return base_model.organize_fn(*args, **kwargs)
 
-    # Utility methods
-
     @staticmethod
     def make_outputs(kwargs, **outputs):
         kwargs.update(outputs)
@@ -158,11 +154,17 @@ class ParallelizationMixin(object):
             and self.mpu.get_pipeline_parallel_world_size() > 1
         )
 
-    # These methods parallelize model via parallelization engines.
+    def gpu_modules(self):
+        """For DDP or DeepSpeed ZeRO Data parallelism"""
+        return getattr(self.__class__, "pipe_modules", self)
 
-    def _tensor_parallelize(self, mpu: MPU):
+    def gpu_parameters(self):
+        """For DDP or DeepSpeed ZeRO Data parallelism"""
+        return self.gpu_modules().parameters()
+
+    def _exec_tensor_engine(self, mpu: MPU):
         """
-        Conduct tensor model parallelization
+        Execute tensor model parallelization
 
         Args:
             mpu (MPU): model parallel unit
@@ -176,9 +178,9 @@ class ParallelizationMixin(object):
 
             tpe.parallelize(model=self)
 
-    def _pipeline_parallelize(self, mpu: MPU, micro_batch_size: int):
+    def _exec_pipeline_engine(self, mpu: MPU, micro_batch_size: int):
         """
-        Conduct pipeline model parallelization
+        Execute pipeline model parallelization
 
         Args:
             mpu (MPU): model parallel unit
@@ -194,7 +196,483 @@ class ParallelizationMixin(object):
 
             ppe.parallelize(model=self)
 
-    # Save methods with auto merging mechanism
+    @classmethod
+    def _exec_both_engines(
+        cls,
+        model,
+        tensor_parallel_size,
+        pipeline_parallel_size,
+        micro_batch_size,
+        resize_token_embeddings,
+        seed,
+        kwargs,
+    ):
+        """Execute both model parallelization"""
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            random.seed(seed)
+
+        assert (
+            tensor_parallel_size >= 1
+        ), "param `tensor_parallel_size` must be positive."
+        assert (
+            tensor_parallel_size & (tensor_parallel_size - 1) == 0
+        ), "param `tensor_parallel_size` must be power of 2."
+        assert (
+            pipeline_parallel_size >= 1
+        ), "param `pipeline_parallel_size` must be positive."
+
+        if resize_token_embeddings is not None:
+            model.resize_token_embeddings(resize_token_embeddings)
+
+        mpu = MPU(
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+        )
+
+        if pipeline_parallel_size > 1:
+            model._exec_pipeline_engine(mpu=mpu, micro_batch_size=micro_batch_size)
+
+        if tensor_parallel_size > 1:
+            model._exec_tensor_engine(mpu=mpu)
+
+        setattr(model, "initial_parameters", {})
+        model.initial_parameters["tensor_parallel_size"] = tensor_parallel_size
+        model.initial_parameters["pipeline_parallel_size"] = pipeline_parallel_size
+        model.initial_parameters["micro_batch_size"] = micro_batch_size
+        model.initial_parameters["resize_token_embeddings"] = resize_token_embeddings
+        model.initial_parameters["seed"] = seed
+        model.initial_parameters.update(**kwargs)
+
+        setattr(model, "mpu", mpu)
+        setattr(model.base_model, "mpu", mpu)
+        # This allows the Trainer to call the MPU for data + model parallelism
+        # example `ddp = DistributedDataParallel(..., process_group=model.mpu.get_data_parallel_group())`
+
+    @staticmethod
+    def _exec_deployment_engine(
+        model,
+        tensor_parallel_size,
+        pipeline_parallel_size,
+        micro_batch_size,
+        resize_token_embeddings,
+        seed,
+        kwargs,
+        pretrained_model_name_or_path=None,
+        cache_dir=None,
+        force_download=None,
+        resume_download=None,
+        proxies=None,
+        local_files_only=None,
+        use_auth_token=None,
+        revision=None,
+        from_auto_class=None,
+        _fast_init=None,
+        low_cpu_mem_usage=None,
+        ignore_mismatched_sizes=None,
+        from_split_checkpoint_files=False,
+    ):
+        """Execute both model parallelization with deployment launcher"""
+        with suppress(Exception):
+            mp.set_start_method("spawn", force=True)
+
+        ipe = DeploymentParallelEngine(
+            model=model,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            micro_batch_size=micro_batch_size,
+            resize_token_embeddings=resize_token_embeddings,
+            seed=seed,
+            kwargs=kwargs,
+            pretrained_model_name_or_path=pretrained_model_name_or_path,
+            cache_dir=cache_dir,
+            force_download=force_download,
+            resume_download=resume_download,
+            proxies=proxies,
+            local_files_only=local_files_only,
+            use_auth_token=use_auth_token,
+            revision=revision,
+            from_auto_class=from_auto_class,
+            _fast_init=_fast_init,
+            low_cpu_mem_usage=low_cpu_mem_usage,
+            ignore_mismatched_sizes=ignore_mismatched_sizes,
+            from_split_checkpoint_files=from_split_checkpoint_files,
+        )
+
+        ipe.parallelize()
+
+    @classmethod
+    def _parallelize_from_model(
+        cls,
+        model,
+        tensor_parallel_size,
+        pipeline_parallel_size,
+        micro_batch_size,
+        resize_token_embeddings,
+        seed,
+        deployment,
+        kwargs,
+    ):
+        if deployment is True:
+            cls._exec_deployment_engine(
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                micro_batch_size=micro_batch_size,
+                resize_token_embeddings=resize_token_embeddings,
+                seed=seed,
+                kwargs=kwargs,
+                from_split_checkpoint_files=False,
+            )
+        else:
+            cls._exec_both_engines(
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                micro_batch_size=micro_batch_size,
+                resize_token_embeddings=resize_token_embeddings,
+                seed=seed,
+                kwargs=kwargs,
+            )
+
+    @classmethod
+    def _parallelize_from_split_checkpoint_files(
+        cls,
+        pretrained_model_name_or_path,
+        tensor_parallel_size,
+        pipeline_parallel_size,
+        resize_token_embeddings,
+        micro_batch_size,
+        seed,
+        cache_dir,
+        force_download,
+        resume_download,
+        proxies,
+        local_files_only,
+        use_auth_token,
+        revision,
+        from_auto_class,
+        from_pipeline,
+        _fast_init,
+        low_cpu_mem_usage,
+        ignore_mismatched_sizes,
+        deployment,
+        model_args,
+        kwargs,
+    ):
+        config, model_kwargs = cls.config_class.from_pretrained(
+            pretrained_model_name_or_path,
+            *model_args,
+            cache_dir=cache_dir,
+            return_unused_kwargs=True,
+            force_download=force_download,
+            resume_download=resume_download,
+            proxies=proxies,
+            local_files_only=local_files_only,
+            use_auth_token=use_auth_token,
+            revision=revision,
+            _from_auto=from_auto_class,
+            _from_pipeline=from_pipeline,
+            **kwargs,
+        )
+
+        for k, v in kwargs.items():
+            setattr(config, k, v)
+
+        # create model
+        model = cls._from_config(config)
+
+        # parallelization
+        if deployment is True:
+            cls._exec_deployment_engine(
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                micro_batch_size=micro_batch_size,
+                resize_token_embeddings=resize_token_embeddings,
+                seed=seed,
+                kwargs=kwargs,
+                pretrained_model_name_or_path=pretrained_model_name_or_path,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                local_files_only=local_files_only,
+                use_auth_token=use_auth_token,
+                revision=revision,
+                from_auto_class=from_auto_class,
+                _fast_init=_fast_init,
+                low_cpu_mem_usage=low_cpu_mem_usage,
+                ignore_mismatched_sizes=ignore_mismatched_sizes,
+                from_split_checkpoint_files=True,
+            )
+
+        else:
+            cls._parallelize_from_model(
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                micro_batch_size=micro_batch_size,
+                resize_token_embeddings=resize_token_embeddings,
+                seed=seed,
+                deployment=False,
+                *model_args,
+                **kwargs,
+            )
+
+            cls._load_split_checkpoint_files(
+                model=model,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                resize_token_embeddings=resize_token_embeddings,
+                micro_batch_size=micro_batch_size,
+                pretrained_model_name_or_path=pretrained_model_name_or_path,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                resume_download=resume_download,
+                proxies=proxies,
+                local_files_only=local_files_only,
+                use_auth_token=use_auth_token,
+                revision=revision,
+                from_auto_class=from_auto_class,
+                _fast_init=_fast_init,
+                low_cpu_mem_usage=low_cpu_mem_usage,
+                ignore_mismatched_sizes=ignore_mismatched_sizes,
+                kwargs=kwargs,
+            )
+
+        return model
+
+    @classmethod
+    def _load_split_checkpoint_files(
+        cls,
+        model,
+        tensor_parallel_size,
+        pipeline_parallel_size,
+        resize_token_embeddings,
+        micro_batch_size,
+        pretrained_model_name_or_path,
+        cache_dir,
+        force_download,
+        resume_download,
+        proxies,
+        local_files_only,
+        use_auth_token,
+        revision,
+        from_auto_class,
+        _fast_init,
+        low_cpu_mem_usage,
+        ignore_mismatched_sizes,
+        kwargs,
+    ):
+
+        tensor_parallel_rank = model.mpu.get_tensor_parallel_rank()
+        pipeline_parallel_rank = model.mpu.get_pipeline_parallel_rank()
+
+        archive_file = WEIGHTS_NAME_PARALLEL
+        archive_file = archive_file.replace("tp=0", f"tp={tensor_parallel_rank}")
+        archive_file = archive_file.replace("pp=0", f"pp={pipeline_parallel_rank}")
+        archive_file = os.path.join(pretrained_model_name_or_path, archive_file)
+
+        try:
+            # Load from URL or cache if already cached
+            user_agent = {
+                "file_type": "model",
+                "framework": "pytorch",
+                "from_auto_class": from_auto_class,
+            }
+
+            resolved_archive_file = cached_path(
+                archive_file,
+                cache_dir=cache_dir,
+                force_download=force_download,
+                proxies=proxies,
+                resume_download=resume_download,
+                local_files_only=local_files_only,
+                use_auth_token=use_auth_token,
+                user_agent=user_agent,
+            )
+        except EnvironmentError as err:
+            logger.error(err)
+            msg = (
+                f"Can't load weights for '{pretrained_model_name_or_path}'. Make sure that:\n\n"
+                f"- '{pretrained_model_name_or_path}' is a correct model identifier listed on 'https://huggingface.co/models'\n\n"
+                f"- or '{pretrained_model_name_or_path}' is the correct path to a directory containing a file named {WEIGHTS_NAME_PARALLEL}\n\n"
+            )
+
+            if revision is not None:
+                msg += f"- or '{revision}' is a valid git identifier (branch name, a tag name, or a commit id) that exists for this model name as listed on its model page on 'https://huggingface.co/models'\n\n"
+
+            raise EnvironmentError(msg)
+
+        state_dict = torch.load(resolved_archive_file, map_location="cpu")
+
+        if low_cpu_mem_usage:
+            # save the keys
+            loaded_state_dict_keys = [k for k in state_dict.keys()]
+            del state_dict  # free CPU memory - will reload again later
+            cls._load_state_dict_into_model_low_mem(
+                model, loaded_state_dict_keys, resolved_archive_file
+            )
+
+        else:
+            (
+                model,
+                missing_keys,
+                unexpected_keys,
+                mismatched_keys,
+                error_msgs,
+            ) = cls._load_state_dict_into_model(
+                model,
+                state_dict,
+                pretrained_model_name_or_path,
+                ignore_mismatched_sizes=ignore_mismatched_sizes,
+                _fast_init=_fast_init,
+            )
+
+        # make sure token embedding weights are still tied if needed
+        model.tie_weights()
+
+        # Set model in evaluation mode to deactivate DropOut modules by default
+        model.eval()
+
+        setattr(model, "initial_parameters", {})
+        model.initial_parameters["tensor_parallel_size"] = tensor_parallel_size
+        model.initial_parameters["pipeline_parallel_size"] = pipeline_parallel_size
+        model.initial_parameters["resize_token_embeddings"] = resize_token_embeddings
+        model.initial_parameters["micro_batch_size"] = micro_batch_size
+        model.initial_parameters.update(**kwargs)
+
+    @classmethod
+    def from_pretrained_with_parallel(
+        cls,
+        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]],
+        *model_args,
+        **kwargs,
+    ):
+        # OSLO
+        tensor_parallel_size = kwargs.pop("tensor_parallel_size", 1)
+        pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
+        micro_batch_size = kwargs.pop("micro_batch_size", 1)
+        resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
+        deployment = kwargs.pop("deployment", None)
+        seed = kwargs.pop("seed", None)
+
+        # Transformers
+        cache_dir = kwargs.pop("cache_dir", None)
+        force_download = kwargs.pop("force_download", False)
+        resume_download = kwargs.pop("resume_download", False)
+        proxies = kwargs.pop("proxies", None)
+        local_files_only = kwargs.pop("local_files_only", False)
+        use_auth_token = kwargs.pop("use_auth_token", None)
+        revision = kwargs.pop("revision", None)
+        from_pipeline = kwargs.pop("_from_pipeline", None)
+        from_auto_class = kwargs.pop("_from_auto", False)
+        _fast_init = kwargs.pop("_fast_init", True)
+        low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
+        ignore_mismatched_sizes = kwargs.pop("ignore_mismatched_sizes", False)
+
+        file_names = {
+            os.path.join(
+                pretrained_model_name_or_path,
+                WEIGHTS_NAME_PARALLEL.replace("tp=0", f"tp={tp}").replace(
+                    "pp=0", f"pp={pp}"
+                ),
+            )
+            for tp in range(tensor_parallel_size)
+            for pp in range(pipeline_parallel_size)
+        }
+
+        # Mode 1: ``_parallelize_from_split_checkpoint_files``
+        # 1) split checkpoints (pytorch_model_tp=0_pp=0.bin)
+
+        if os.path.isdir(pretrained_model_name_or_path):
+            if all(os.path.isfile(file_name) for file_name in file_names):
+                return cls._parallelize_from_split_checkpoint_files(
+                    pretrained_model_name_or_path=pretrained_model_name_or_path,
+                    tensor_parallel_size=tensor_parallel_size,
+                    pipeline_parallel_size=pipeline_parallel_size,
+                    resize_token_embeddings=resize_token_embeddings,
+                    micro_batch_size=micro_batch_size,
+                    seed=seed,
+                    cache_dir=cache_dir,
+                    force_download=force_download,
+                    resume_download=resume_download,
+                    proxies=proxies,
+                    local_files_only=local_files_only,
+                    use_auth_token=use_auth_token,
+                    revision=revision,
+                    from_auto_class=from_auto_class,
+                    from_pipeline=from_pipeline,
+                    _fast_init=_fast_init,
+                    low_cpu_mem_usage=low_cpu_mem_usage,
+                    ignore_mismatched_sizes=ignore_mismatched_sizes,
+                    deployment=deployment,
+                    model_args=model_args,
+                    kwargs=kwargs,
+                )
+
+            elif os.path.isfile(
+                os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME_PARALLEL)
+            ):
+                raise FileNotFoundError(
+                    f"files named {file_names} are necessary. "
+                    f"but some files do not exist. Please check your checkpoint files."
+                )
+
+        # Mode 2: ``_parallelize_from_model``
+        # 1) for model name on hub (e.g. gpt2, bert-base-cased, ...)
+        # 2) for merged checkpoint (pytorch_model.bin)
+
+        model = cls.from_pretrained(
+            pretrained_model_name_or_path, *model_args, **kwargs
+        )
+
+        cls._parallelize_from_model(
+            model=model,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            micro_batch_size=micro_batch_size,
+            resize_token_embeddings=resize_token_embeddings,
+            seed=seed,
+            deployment=deployment,
+            kwargs=kwargs,
+        )
+
+        return model
+
+    @classmethod
+    def from_config_with_parallel(cls, config, *model_args, **kwargs):
+        tensor_parallel_size = kwargs.pop("tensor_parallel_size", 1)
+        pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
+        micro_batch_size = kwargs.pop("micro_batch_size", 1)
+        resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
+        deployment = kwargs.pop("deployment", None)
+        seed = kwargs.pop("seed", None)
+
+        # Mode 1: ``_parallelize_from_model``
+        # 1) for model name on hub (e.g. gpt2, bert-base-cased, ...)
+        # 2) for merged checkpoint (pytorch_model.bin)
+
+        for k, v in kwargs.items():
+            setattr(config, k, v)
+
+        model = cls._from_config(config)
+
+        cls._parallelize_from_model(
+            model=model,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            micro_batch_size=micro_batch_size,
+            resize_token_embeddings=resize_token_embeddings,
+            seed=seed,
+            deployment=deployment,
+            kwargs=kwargs,
+        )
+
+        return model
+
     @torch.no_grad()
     def save_pretrained_with_parallel(
         self,
@@ -315,288 +793,3 @@ class ParallelizationMixin(object):
 
         dist.barrier()
         logger.info(f"Model weights saved in {output_model_file}")
-
-    def gpu_modules(self):
-        """For DDP or DeepSpeed ZeRO Data parallelism"""
-        return getattr(self.__class__, "pipe_modules", self)
-
-    def gpu_parameters(self):
-        """For DDP or DeepSpeed ZeRO Data parallelism"""
-        return self.gpu_modules().parameters()
-
-    @classmethod
-    def from_pretrained_with_parallel(
-        cls,
-        pretrained_model_name_or_path: Optional[Union[str, os.PathLike]],
-        *model_args,
-        **kwargs,
-    ):
-        tensor_parallel_size = kwargs.pop("tensor_parallel_size", 1)
-        pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
-        micro_batch_size = kwargs.pop("micro_batch_size", 1)
-        resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
-        inference = kwargs.pop("inference", None)
-
-        assert (
-            cls.is_parallelizable is True
-        ), "This model doesn't support tensor model parallelism. please check the document."
-
-        assert (
-            tensor_parallel_size >= 1
-        ), "param `tensor_parallel_size` must be positive."
-        assert (
-            tensor_parallel_size & (tensor_parallel_size - 1) == 0
-        ), "param `tensor_parallel_size` must be power of 2."
-        assert (
-            pipeline_parallel_size >= 1
-        ), "param `pipeline_parallel_size` must be positive."
-
-        if os.path.isdir(pretrained_model_name_or_path):
-            # segmented checkpoints
-            # - pytorch_model_tp=0_pp=0.bin
-            # - pytorch_model_tp=1_pp=0.bin
-            # - pytorch_model_tp=2_pp=0.bin
-            # - pytorch_model_tp=3_pp=0.bin
-            # ...
-
-            file_names = {
-                os.path.join(
-                    pretrained_model_name_or_path,
-                    WEIGHTS_NAME_PARALLEL.replace("tp=0", f"tp={tp}").replace(
-                        "pp=0", f"pp={pp}"
-                    ),
-                )
-                for tp in range(tensor_parallel_size)
-                for pp in range(pipeline_parallel_size)
-            }
-
-            if all(os.path.isfile(file_name) for file_name in file_names):
-                cache_dir = kwargs.pop("cache_dir", None)
-                force_download = kwargs.pop("force_download", False)
-                resume_download = kwargs.pop("resume_download", False)
-                proxies = kwargs.pop("proxies", None)
-                local_files_only = kwargs.pop("local_files_only", False)
-                use_auth_token = kwargs.pop("use_auth_token", None)
-                revision = kwargs.pop("revision", None)
-                from_pipeline = kwargs.pop("_from_pipeline", None)
-                from_auto_class = kwargs.pop("_from_auto", False)
-                _fast_init = kwargs.pop("_fast_init", True)
-                output_loading_info = kwargs.pop("output_loading_info", False)
-                low_cpu_mem_usage = kwargs.pop("low_cpu_mem_usage", False)
-                ignore_mismatched_sizes = kwargs.pop("ignore_mismatched_sizes", False)
-
-                config, model_kwargs = cls.config_class.from_pretrained(
-                    pretrained_model_name_or_path,
-                    *model_args,
-                    cache_dir=cache_dir,
-                    return_unused_kwargs=True,
-                    force_download=force_download,
-                    resume_download=resume_download,
-                    proxies=proxies,
-                    local_files_only=local_files_only,
-                    use_auth_token=use_auth_token,
-                    revision=revision,
-                    _from_auto=from_auto_class,
-                    _from_pipeline=from_pipeline,
-                    **kwargs,
-                )
-
-                model = cls.from_config_with_parallel(
-                    config,
-                    tensor_parallel_size=tensor_parallel_size,
-                    pipeline_parallel_size=pipeline_parallel_size,
-                    micro_batch_size=micro_batch_size,
-                    resize_token_embeddings=resize_token_embeddings,
-                    *model_args,
-                    **kwargs,
-                )
-
-                tensor_parallel_rank = model.mpu.get_tensor_parallel_rank()
-                pipeline_parallel_rank = model.mpu.get_pipeline_parallel_rank()
-
-                archive_file = WEIGHTS_NAME_PARALLEL
-                archive_file = archive_file.replace(
-                    "tp=0", f"tp={tensor_parallel_rank}"
-                )
-                archive_file = archive_file.replace(
-                    "pp=0", f"pp={pipeline_parallel_rank}"
-                )
-                archive_file = os.path.join(pretrained_model_name_or_path, archive_file)
-
-                try:
-                    # Load from URL or cache if already cached
-                    user_agent = {
-                        "file_type": "model",
-                        "framework": "pytorch",
-                        "from_auto_class": from_auto_class,
-                    }
-
-                    resolved_archive_file = cached_path(
-                        archive_file,
-                        cache_dir=cache_dir,
-                        force_download=force_download,
-                        proxies=proxies,
-                        resume_download=resume_download,
-                        local_files_only=local_files_only,
-                        use_auth_token=use_auth_token,
-                        user_agent=user_agent,
-                    )
-                except EnvironmentError as err:
-                    logger.error(err)
-                    msg = (
-                        f"Can't load weights for '{pretrained_model_name_or_path}'. Make sure that:\n\n"
-                        f"- '{pretrained_model_name_or_path}' is a correct model identifier listed on 'https://huggingface.co/models'\n\n"
-                        f"- or '{pretrained_model_name_or_path}' is the correct path to a directory containing a file named {WEIGHTS_NAME_PARALLEL}\n\n"
-                    )
-
-                    if revision is not None:
-                        msg += f"- or '{revision}' is a valid git identifier (branch name, a tag name, or a commit id) that exists for this model name as listed on its model page on 'https://huggingface.co/models'\n\n"
-
-                    raise EnvironmentError(msg)
-
-                state_dict = torch.load(resolved_archive_file, map_location="cpu")
-
-                if low_cpu_mem_usage:
-                    # save the keys
-                    loaded_state_dict_keys = [k for k in state_dict.keys()]
-                    del state_dict  # free CPU memory - will reload again later
-                    cls._load_state_dict_into_model_low_mem(
-                        model, loaded_state_dict_keys, resolved_archive_file
-                    )
-
-                else:
-                    (
-                        model,
-                        missing_keys,
-                        unexpected_keys,
-                        mismatched_keys,
-                        error_msgs,
-                    ) = cls._load_state_dict_into_model(
-                        model,
-                        state_dict,
-                        pretrained_model_name_or_path,
-                        ignore_mismatched_sizes=ignore_mismatched_sizes,
-                        _fast_init=_fast_init,
-                    )
-
-                # make sure token embedding weights are still tied if needed
-                model.tie_weights()
-
-                # Set model in evaluation mode to deactivate DropOut modules by default
-                model.eval()
-
-                setattr(model, "initial_parameters", {})
-                model.initial_parameters["tensor_parallel_size"] = tensor_parallel_size
-                model.initial_parameters[
-                    "pipeline_parallel_size"
-                ] = pipeline_parallel_size
-                model.initial_parameters[
-                    "resize_token_embeddings"
-                ] = resize_token_embeddings
-                model.initial_parameters.update(**kwargs)
-
-                if output_loading_info:
-                    loading_info = {
-                        "missing_keys": missing_keys,
-                        "unexpected_keys": unexpected_keys,
-                        "mismatched_keys": mismatched_keys,
-                        "error_msgs": error_msgs,
-                    }
-                    return model, loading_info
-
-                return model
-            elif os.path.isfile(
-                os.path.join(pretrained_model_name_or_path, WEIGHTS_NAME_PARALLEL)
-            ):
-                raise EnvironmentError(
-                    f"files named {file_names} are necessary. "
-                    f"but some files do not exist. Please check your checkpoint files."
-                )
-
-        # 1. model name on hub (e.g. gpt2, bert-base-cased, ...)
-        # 2. merged checkpoint (pytorch_model.bin)
-        model = cls.from_pretrained(
-            pretrained_model_name_or_path, *model_args, **kwargs
-        )
-
-        if resize_token_embeddings is not None:
-            model.resize_token_embeddings(resize_token_embeddings)
-
-        mpu = MPU(
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
-        )
-
-        if pipeline_parallel_size > 1:
-            model._pipeline_parallelize(mpu=mpu, micro_batch_size=micro_batch_size)
-
-        if tensor_parallel_size > 1:
-            model._tensor_parallelize(mpu=mpu)
-
-        setattr(model, "initial_parameters", {})
-        model.initial_parameters["tensor_parallel_size"] = tensor_parallel_size
-        model.initial_parameters["pipeline_parallel_size"] = pipeline_parallel_size
-        model.initial_parameters["micro_batch_size"] = micro_batch_size
-        model.initial_parameters["resize_token_embeddings"] = resize_token_embeddings
-        model.initial_parameters.update(**kwargs)
-
-        setattr(model, "mpu", mpu)
-        setattr(model.base_model, "mpu", mpu)
-        # This allows the Trainer to call the MPU for data + model parallelism
-        # example `ddp = DistributedDataParallel(..., process_group=model.mpu.get_data_parallel_group())`
-
-        return model
-
-    @classmethod
-    def from_config_with_parallel(cls, config, *model_args, **kwargs):
-        tensor_parallel_size = kwargs.pop("tensor_parallel_size", 1)
-        pipeline_parallel_size = kwargs.pop("pipeline_parallel_size", 1)
-        micro_batch_size = kwargs.pop("micro_batch_size", 1)
-        resize_token_embeddings = kwargs.pop("resize_token_embeddings", None)
-        inference = kwargs.pop("inference", None)
-
-        assert (
-            cls.is_parallelizable is True
-        ), "This model doesn't support tensor model parallelism. please check the document."
-        assert (
-            tensor_parallel_size >= 1
-        ), "param `tensor_parallel_size` must be positive."
-        assert (
-            tensor_parallel_size & (tensor_parallel_size - 1) == 0
-        ), "param `tensor_parallel_size` must be power of 2."
-        assert (
-            pipeline_parallel_size >= 1
-        ), "param `pipeline_parallel_size` must be positive."
-
-        for k, v in kwargs.items():
-            setattr(config, k, v)
-
-        model = cls._from_config(config)
-
-        if resize_token_embeddings is not None:
-            model.resize_token_embeddings(resize_token_embeddings)
-
-        mpu = MPU(
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
-        )
-
-        if pipeline_parallel_size > 1:
-            model._pipeline_parallelize(mpu=mpu, micro_batch_size=micro_batch_size)
-
-        if tensor_parallel_size > 1:
-            model._tensor_parallelize(mpu=mpu)
-
-        setattr(model, "initial_parameters", {})
-        model.initial_parameters["tensor_parallel_size"] = tensor_parallel_size
-        model.initial_parameters["pipeline_parallel_size"] = pipeline_parallel_size
-        model.initial_parameters["micro_batch_size"] = micro_batch_size
-        model.initial_parameters["resize_token_embeddings"] = resize_token_embeddings
-        model.initial_parameters.update(**kwargs)
-
-        setattr(model, "mpu", mpu)
-        setattr(model.base_model, "mpu", mpu)
-        # This allows the Trainer to call the MPU for data + model parallelism
-        # example `ddp = DistributedDataParallel(..., process_group=model.mpu.get_data_parallel_group())`
-
-        return model

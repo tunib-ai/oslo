@@ -1,6 +1,8 @@
-import os
 import argparse
+import os
+
 from transformers import AutoTokenizer
+
 from oslo import DatasetPreprocessor
 
 
@@ -16,10 +18,10 @@ def get_dir_size(path):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--base_dir', required=True)
-parser.add_argument('--small_first', action='store_true', default=False)
-parser.add_argument('--end_file_record_path', default='end_files.txt')
-parser.add_argument('--end_dir_record_path', default='end_dirs.txt')
+parser.add_argument("--base_dir", required=True)
+parser.add_argument("--small_first", action="store_true", default=False)
+parser.add_argument("--end_file_record_path", default="end_files.txt")
+parser.add_argument("--end_dir_record_path", default="end_dirs.txt")
 args = parser.parse_args()
 
 dir_sizes = list()
@@ -34,7 +36,7 @@ if args.small_first:
     sorted_dir_sizes, sorted_dirs = zip(*zipped)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
-tokenizer = AutoTokenizer.from_pretrained('../gpt2')
+tokenizer = AutoTokenizer.from_pretrained("../gpt2")
 
 preprocessor = DatasetPreprocessor(
     tokenizer=tokenizer,
@@ -43,12 +45,14 @@ preprocessor = DatasetPreprocessor(
     append_eod=True,
 )
 
-with open(args.end_file_record_path, 'w') as f, open(args.end_dir_record_path, 'w') as ff:
+with open(args.end_file_record_path, "w") as f, open(
+    args.end_dir_record_path, "w"
+) as ff:
     for dir_ in dirs:
         for file in os.listdir(os.path.join(args.base_dir, dir_)):
-            if file.endswith('jsonl'):
+            if file.endswith("jsonl"):
                 path = os.path.join(args.base_dir, dir_, file)
-                path = path.replace('.jsonl', '')
+                path = path.replace(".jsonl", "")
 
                 preprocessor.preprocess(
                     preprocessor.open_jsonl(
@@ -58,6 +62,6 @@ with open(args.end_file_record_path, 'w') as f, open(args.end_dir_record_path, '
                     save_file_name=path,
                     log_interval=100,
                 )
-                path = path.split('/')[-1]
+                path = path.split("/")[-1]
                 f.write(f"{path}\n")
         ff.write(f"{dir_}\n")

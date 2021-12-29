@@ -121,8 +121,8 @@ class AbstractKernelBuilder(object):
 
         except ImportError:
             raise ImportError(
-                f"Unable to compile C++ code due to ``ninja`` or ``pybind11`` not being installed. "
-                f"please install them using ``pip install ninja pybind11``."
+                "Unable to compile C++ code due to ``ninja`` or ``pybind11`` not being installed. "
+                "please install them using ``pip install ninja pybind11``."
             )
 
         # Ensure directory exists to prevent race condition in some cases
@@ -224,7 +224,7 @@ def get_custom_kernels():
         if _custom_kernels is None:
             _set_jit_fusion_options()
             _custom_kernels = KernelBuilder().load()
-    except:
+    except Exception:
         raise EnvironmentError(
             "Failed compiling custom CUDA kernels. "
             "please check your CUDA environment."
@@ -273,6 +273,7 @@ def bias_dropout_train(x, bias, prob):
 def bias_dropout_inference(x, bias, prob):
     # type: (Tensor, Tensor, float) -> Tensor
     return bias_dropout(x, bias, prob, False)
+
 
 @torch.jit.script
 def bias_dropout_residual(x, bias, residual, prob, training):
@@ -526,7 +527,7 @@ class FusedKernelMixin(object):
         if self.is_fusable:
             for policy in self.get_layer_policies():
                 fused_modules = policy.fused_modules()
-                for name, module in self.named_modules():
+                for module in self.modules():
                     if module.__class__ in fused_modules:
                         fused_module = fused_modules[module.__class__]
                         module.__class__ = fused_module

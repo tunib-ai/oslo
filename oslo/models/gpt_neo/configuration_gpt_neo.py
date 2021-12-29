@@ -26,11 +26,10 @@ from transformers.utils import logging
 
 from oslo import (
     ColumnParallelLinear,
-    Layer,
-    LayerPolicy,
     RowParallelLinear,
     VocabParallelEmbedding,
 )
+from oslo.parallelism.mpu import Layer, LayerPolicy
 
 logger = logging.get_logger(__name__)
 

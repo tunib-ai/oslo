@@ -16,7 +16,6 @@
 
 import logging
 from concurrent.futures.process import ProcessPoolExecutor
-from typing import List
 
 from transformers import PreTrainedTokenizer
 

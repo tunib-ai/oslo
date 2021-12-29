@@ -19,6 +19,9 @@
     - [DatasetBlender](#datasetblender)
     - [DistributedProxySampler](#distributedproxysampler)
     - [InfiniteDataLoader](#infinitedataloader)
+- [Deployment Launcher](#deployment-launcher)
+    - [Model Deployment](#model-deployment)
+    - [Docker Environment](#docker-environment)
 
 ## 3D Parallelism
 
@@ -669,3 +672,90 @@ for data in dataloader:
     # infinitely repeating !
     pass
 ```
+
+## Deployment Launcher
+OSLO supports the deployment launcher proposed by [Parallelformers](https://github.com/tunib-ai/parallelformers), the another open source we released.
+The deployment launcher performs multi-processing to suit the deployment environment.
+Please refer to [this blog post](https://tunib.tistory.com/entry/Parallelformers-Journey-to-deploying-big-modelsTUNiB) for more details.
+
+Note that you don't need to use distributed launcher when you use deployment launcher. 
+**So, please run a script with a command like `python YOUR_SCRIPT.py` when you start the web server.**
+
+### Model Deployment
+
+The usage of deployment launcher is similar with 3D parallelization. 
+Just input the argument `deployment=True`.
+Similar with 3D parallelism, the model can be created from split or merged checkpoints, and features such as kernel fusion can be used together.
+
+```python
+from oslo import GPTNeoForCausalLM
+
+model = GPTNeoForCausalLM.from_pretrained_with_parallel(
+    "EleutherAI/gpt-neo-2.7B",
+    tensor_parallel_size=4,
+    pipeline_parallel_size=1,
+    deployment=True
+)
+
+# model.fuse() can be used together !
+```
+
+Now write the backend API code using a library such as Flask.
+
+```python
+from flask import Flask
+
+app = Flask(__name__)
+
+
+@app.route("/generate_text/<text>")
+def generate_text(text):
+    inputs = tokenizer(text, return_tensors="pt")
+    
+    outputs = model.generate(
+        **inputs,
+        num_beams=5,
+        no_repeat_ngram_size=4,
+        max_length=15,
+    )
+    
+    outputs = tokenizer.batch_decode(
+        outputs,
+        skip_special_tokens=True,
+    )
+    
+    return {
+        "inputs": text,
+        "outputs": outputs[0],
+    }
+
+
+app.run(host="0.0.0.0", port=5000)
+```
+```
+$ curl -X get "YOUR_IP:5000/generate_text/Messi"
+```
+```
+{"inputs": "Messi", "outputs": "Messi is the best player in the world right now. He is the"}
+```
+
+There is one thing to note. When training a model using pipeline parallelism, you had to write a loop like the following.
+
+```python
+# The following loop is needed only for training !
+
+for micro_output in model(
+    input_ids=sample["input_ids"].cuda(),
+    attention_mask=sample["attention_mask"].cuda(),
+    labels=sample["labels"].cuda(),
+):  
+    micro_loss = micro_output.loss
+    micro_loss.backward()
+```
+But when deploying using pipeline parallelism, you don't have to write loops.
+So, you can write your code as usual.
+
+### Docker Environment
+The deployment launcher uses shared memory to share data between processes.
+Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container environment, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
+You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.

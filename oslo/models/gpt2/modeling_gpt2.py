@@ -17,7 +17,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.utils.checkpoint
@@ -46,7 +46,7 @@ from ...fused_kernels_utils import (
     FusedScaleMaskSoftmax,
 )
 from ...modeling_utils import ColumnParallelLinear, PreTrainedModel
-from ...parallelism.layer_policy import Layer
+from ...parallelism.mpu import Layer
 from .configuration_gpt2 import GPT2Config, GPT2LayerPolicy
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
@@ -1198,7 +1198,7 @@ class GPT2DoubleHeadsModel(GPT2PreTrainedModel):
 
     def forward(self, *args, **kwargs):
         outputs = self.preblock_fn(*args, **kwargs)
-        for i in range(len(self.transformer.h)):
+        for _ in range(len(self.transformer.h)):
             outputs = self.block_fn(**outputs)
         outputs = self.postblock_fn(**outputs)
         outputs = self.head_fn(**outputs)
@@ -1419,7 +1419,7 @@ class GPT2ForTokenClassification(GPT2PreTrainedModel):
 
     def forward(self, *args, **kwargs):
         outputs = self.preblock_fn(*args, **kwargs)
-        for i in range(len(self.transformer.h)):
+        for _ in range(len(self.transformer.h)):
             outputs = self.block_fn(**outputs)
         outputs = self.postblock_fn(**outputs)
         outputs = self.head_fn(**outputs)

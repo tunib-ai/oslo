@@ -95,7 +95,7 @@ class TestPPInference:
                 f"--test result: \n1D:{self.tokenizer.decode(output_1d[0])}\n2D:{self.tokenizer.decode(output_pp[0])}\n"
             )
 
-        del model_pipe
+        del model_pp
         del model_1d
 
     @torch.no_grad()

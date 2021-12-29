@@ -76,7 +76,7 @@ class ColumnParallelLinear(nn.Linear):
             outputs = torch.matmul(inputs, self.weight.t())
 
         if self.gather_output:
-            outputs = self.mpu.gather(outputs)
+            outputs = self.mpu.gather(outputs).clone()
 
         if self.bias is not None:
             outputs += self.bias
@@ -96,7 +96,7 @@ class RowParallelLinear(nn.Linear):
         else:
             outputs = torch.matmul(inputs, self.weight.t())
 
-        outputs = self.mpu.reduce(outputs)
+        outputs = self.mpu.reduce(outputs).clone()
 
         if self.bias is not None:
             outputs += self.bias

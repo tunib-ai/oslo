@@ -19,6 +19,7 @@
 <br><br>
 
 ### What's New:
+* December 30, 2021 [Add Deployment Launcher](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
 * December 21, 2021 [Released OSLO 1.0](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
 
 ## What is OSLO about?
@@ -74,6 +75,9 @@ from oslo import (
     DatasetForCausalLM,
     ...
 )
+
+# 5. Deployment Launcher
+model = GPTJForCausalLM.from_pretrained_with_parallel(..., deployment=True)
 ```
 
 OSLO offers the following features.
@@ -82,6 +86,7 @@ OSLO offers the following features.
 - **Kernel Fusion**: A GPU optimization method to increase training and inference speed.
 - **DeepSpeed Support**: We support [DeepSpeed](https://github.com/microsoft/DeepSpeed) which provides ZeRO data parallelism.
 - **Data Processing**: Various utilities for efficient large-scale data processing.
+- **Deployment Launcher**: A launcher for easily deploying a parallelized model to the web server.
 
 See [USAGE.md](USAGE.md) to learn how to use them.
 

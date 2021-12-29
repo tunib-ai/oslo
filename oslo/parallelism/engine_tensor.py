@@ -7,8 +7,7 @@ import torch.distributed as dist
 from torch import nn
 from transformers import PretrainedConfig
 
-from oslo.parallelism.layer_policy import Layer, LayerPolicy
-from oslo.parallelism.mpu import MPU
+from oslo.parallelism.mpu import MPU, Layer, LayerPolicy
 
 
 class TensorParallelEngine(object):
@@ -443,7 +442,7 @@ class TensorParallelEngine(object):
             for attr_key, attr_val in attributes.items():
                 setattr(layer.module, attr_key, attr_val)
             if layer.replace is not None:
-                for orig_module, replace_module in layer.replace.items():
+                for replace_module in layer.replace.values():
                     layer.module.__class__ = replace_module
 
     @staticmethod
@@ -643,7 +642,7 @@ class TensorDeparallelEngine(object):
             config (PretrainedConfig): config object
         """
 
-        for i, layer in enumerate(self.policy.block_layers(model, config)):
+        for layer in self.policy.block_layers(model, config):
             # deparallelize only original layer class
             if not isinstance(layer, self.policy.original_layer_class()):
                 continue
@@ -802,7 +801,7 @@ class TensorDeparallelEngine(object):
             for attr_key, attr_val in attributes.items():
                 setattr(layer.module, attr_key, attr_val)
             if layer.replace is not None:
-                for orig_module, replace_module in layer.replace.items():
+                for orig_module in layer.replace.keys():
                     layer.module.__class__ = orig_module
 
     @staticmethod

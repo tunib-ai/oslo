@@ -30,7 +30,7 @@ from oslo.modeling_utils import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.parallelism.layer_policy import Layer, LayerPolicy
+from oslo.parallelism.mpu import Layer, LayerPolicy
 
 logger = logging.get_logger(__name__)
 
@@ -235,8 +235,6 @@ class GPT2OnnxConfig(OnnxConfigWithPast):
                     "Cannot generate dummy past_keys inputs without PyTorch installed."
                 )
             else:
-                import torch
-
                 batch = common_inputs["input_ids"].shape[0]
                 ordered_inputs["past_key_values"] = [
                     (

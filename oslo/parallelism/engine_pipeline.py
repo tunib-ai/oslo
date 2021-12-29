@@ -8,8 +8,7 @@ import torch
 import torch.distributed as dist
 from torch import Size, Tensor, nn
 
-from oslo.parallelism.layer_policy import Layer, LayerPolicy
-from oslo.parallelism.mpu import MPU
+from oslo.parallelism.mpu import MPU, Layer, LayerPolicy
 
 NoneType = type(None)
 
@@ -304,7 +303,7 @@ class PipelineParallelEngine(object):
             self._free_buffers("grads", i)
 
     @staticmethod
-    def _guess_batch_size(kwargs):
+    def guess_batch_size(kwargs):
         """Guess global batch size dynamically from user input"""
         for key in ["input_ids", "attention_mask", "labels"]:
             if kwargs.get(key, None) is not None:
@@ -323,7 +322,7 @@ class PipelineParallelEngine(object):
 
     def _split_batches(self, batches):
         """Split mini-batches to micro-batches"""
-        self.batch_size = self._guess_batch_size(batches)
+        self.batch_size = self.guess_batch_size(batches)
         assert self.batch_size % self.micro_batch_size == 0, (
             "``micro_batch_size`` must be divisible by batch size. "
             f"currently, ``micro_batch_size`` is {self.micro_batch_size}. "
@@ -357,7 +356,7 @@ class PipelineParallelEngine(object):
                 if _input.is_leaf and _input.grad is not None:
                     _input.grad.data.zero_()
             elif isinstance(_input, dict):
-                for k, v in _input.items():
+                for v in _input.values():
                     _zero_grad(v)
             elif isinstance(_input, Iterable):
                 for item in _input:
@@ -400,7 +399,7 @@ class PipelineParallelEngine(object):
         inputs = self.buffers["inputs"][buffer_id]
         inputs = self._zero_grads(inputs)
 
-        for i, func in enumerate(self.forward_fns):
+        for func in self.forward_fns:
             inputs = func(**inputs)
 
         outputs = inputs
@@ -477,7 +476,7 @@ class PipelineParallelEngine(object):
 
             self.zero_stage = 0
 
-        except (ImportError, ModuleNotFoundError):
+        except ImportError:
             self.zero_stage = 0
 
 
@@ -1111,7 +1110,7 @@ class P2PCommunicator(object):
         list_len = len(_list)
         self.send_int(list_len, recv_stage)
 
-        for i, item in enumerate(_list):
+        for item in _list:
             _type = type(item)
             assert _type in self.ID_TO_DTYPE, f"unsupported type: {_type}"
             self.INSTRUCTIONS[_type]["send"](item, recv_stage, send_type=True)
@@ -1121,7 +1120,7 @@ class P2PCommunicator(object):
         len_list = self.recv_int(send_stage)
         output_list = []
 
-        for i in range(len_list):
+        for _ in range(len_list):
             _type = self.INSTRUCTIONS[type]["recv"](send_stage)
             _recv = self.INSTRUCTIONS[_type]["recv"](send_stage)
             output_list.append(_recv)
@@ -1190,7 +1189,7 @@ class P2PCommunicator(object):
         len_dict = self.recv_int(send_stage)
         output_dict = {}
 
-        for i in range(len_dict):
+        for _ in range(len_dict):
             _key_type = self.INSTRUCTIONS[type]["recv"](send_stage)
             _key_recv = self.INSTRUCTIONS[_key_type]["recv"](send_stage)
             _val_type = self.INSTRUCTIONS[type]["recv"](send_stage)
