@@ -352,6 +352,24 @@ model = GPT2LMHeadModel.from_pretrained_with_parallel(
 )
 ```
 
+3. `seed`
+
+You can set a seed value using `seed`.
+
+```python
+from oslo import GPT2LMHeadModel
+
+SEED = 42
+
+model = GPT2LMHeadModel.from_pretrained_with_parallel(
+    pretrained_model_name_or_path="gpt2",
+    tensor_parallel_size=2,
+    pipeline_parallel_size=2,
+    seed=SEED,
+)
+```
+
+
 ## Kernel Fusion
 
 Kernel fusion increases training and inference speed by optimizing GPU operations. 
@@ -698,7 +716,7 @@ model = GPTNeoForCausalLM.from_pretrained_with_parallel(
     deployment=True
 )
 
-# model.fuse() can be used together !
+# The features such as model.fuse() can be used together !
 ```
 
 Now write the backend API code using a library such as Flask.
