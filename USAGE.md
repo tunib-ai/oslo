@@ -22,6 +22,7 @@
 - [Deployment Launcher](#deployment-launcher)
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
+- [Troubleshooting](#troubleshooting)
 
 ## 3D Parallelism
 
@@ -683,9 +684,9 @@ Note that you don't need to use distributed launcher when you use deployment lau
 
 ### Model Deployment
 
-The usage of deployment launcher is similar with 3D parallelization. 
+The usage of deployment launcher is similar with 3D parallelism. 
 Just input the argument `deployment=True`.
-Similar with 3D parallelism, the model can be created from split or merged checkpoints, and features such as kernel fusion can be used together.
+The model can be created from split or merged checkpoints, and features such as kernel fusion can also be used together.
 
 ```python
 from oslo import GPTNeoForCausalLM
@@ -756,5 +757,11 @@ But when deploying using pipeline parallelism, you don't have to write a new loo
 So, please write your code as usual.
 
 ### Docker Environment
-Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container environment, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
+Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
 You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.
+
+## Troubleshooting
+If you have any questions, bug reports, and feature requests, please open an issue on github or
+contacts [contact@tunib.ai](mailto:contact@tunib.ai) please.
+
+We appreciate any kind of feedback or contribution. Feel free to proceed with small issues like bug fixes, documentation improvement. For major contributions and new features, please discuss with the collaborators in corresponding issues.
