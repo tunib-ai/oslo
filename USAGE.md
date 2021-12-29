@@ -752,10 +752,9 @@ for micro_output in model(
     micro_loss = micro_output.loss
     micro_loss.backward()
 ```
-But when deploying using pipeline parallelism, you don't have to write loops.
-So, you can write your code as usual.
+But when deploying using pipeline parallelism, you don't have to write a new loop.
+So, please write your code as usual.
 
 ### Docker Environment
-The deployment launcher uses shared memory to share data between processes.
 Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container environment, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
 You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.
