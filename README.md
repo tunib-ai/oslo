@@ -65,7 +65,7 @@ model = model.fuse()
 
 # 3. DeepSpeed Support
 engines = deepspeed.initialize(
-    model=model.gpu_modules(), model_parameters=model.gpu_paramters(), ...,
+    model=model.gpu_modules(), model_parameters=model.gpu_parameters(), ...,
 )
 
 # 4. Data Processing
