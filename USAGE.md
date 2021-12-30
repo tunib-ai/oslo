@@ -762,7 +762,7 @@ $ curl -X get "YOUR_IP:5000/generate_text/Messi"
 There is one thing to note. When training a model using pipeline parallelism, you had to write a loop like the following.
 
 ```python
-# The following loop is needed only for training !
+# The following loop is required only for training !
 
 for micro_output in model(
     input_ids=sample["input_ids"].cuda(),
