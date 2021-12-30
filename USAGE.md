@@ -426,6 +426,7 @@ model = GPT2LMHeadModel.from_pretrained_with_parallel(
 engine, _, _, _ = deepspeed.initialize(
     model=model.gpu_modules(), 
     model_parameters=model.gpu_parameters(),
+    mpu=model.mpu,
     config=ds_config,
 )
 ```
