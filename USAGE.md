@@ -6,7 +6,6 @@
     - [Data Parallelism](#data-parallelism)
     - [Training](#training)
     - [Saving Checkpoints](#saving-checkpoints)
-    - [Additional Parameters](#additional-parameters)
 - [Kernel Fusion](#kernel-fusion)
     - [Fused MLP and Softmax Kernels](#fused-mlp-and-softmax-kernels)
     - [Fused N-Gram Blocking Kernels](#fused-n-gram-blocking-kernels)
@@ -22,9 +21,9 @@
 - [Deployment Launcher](#deployment-launcher)
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
-- [Additional Optimization](#additional-optimization)
+- [ETC](#etc)
     - [Activation Checkpointing](#activation-checkpointing)
-- [Troubleshooting](#troubleshooting)
+    - [Additional Parameters](#additional-parameters)
 
 ## 3D Parallelism
 
@@ -306,71 +305,6 @@ model.save_pretrained_with_parallel(
 - pytorch_model.bin
 - config.json
 ```
-
-### Additional Parameters
-
-In this chapter, we explain additional parameters of `from_pretrained_with_parallel` and `from_config_with_parallel`.
-
-1. `micro_batch_size`
-
-Micro-batch size is the concept introduced from pipeline parallelism and refers to a subset of mini-batch.
-(Images from https://www.kakaobrain.com/blog/66)
-
-![](assets/micro_batch_size.png)
-![](assets/pipeline_parallelism.gif)
-
-You can set the micro-batch size using the parameter `micro_batch_size` and the default value of this is 1.
-Note this parameter only affects pipeline parallelism.
-
-```python
-from oslo import GPT2LMHeadModel
-
-model = GPT2LMHeadModel.from_pretrained_with_parallel(
-    pretrained_model_name_or_path="gpt2",
-    tensor_parallel_size=2,
-    pipeline_parallel_size=2,
-    micro_batch_size=4,
-)
-```
-
-If you want to change micro-batch size after model creation, use `set_micro_batch_size`.
-
-```python
-model.set_micro_batch_size(4)
-```
-
-2. `resize_token_embeddings`
-
-If you want to resize token embedding, input a new embedding size to `resize_token_embeddings`.
-
-```python
-from oslo import GPT2LMHeadModel
-
-model = GPT2LMHeadModel.from_pretrained_with_parallel(
-    pretrained_model_name_or_path="gpt2",
-    tensor_parallel_size=2,
-    pipeline_parallel_size=2,
-    resize_token_embeddings=len(tokenizer),
-)
-```
-
-3. `seed`
-
-You can set a seed value using `seed`.
-
-```python
-from oslo import GPT2LMHeadModel
-
-SEED = 42
-
-model = GPT2LMHeadModel.from_pretrained_with_parallel(
-    pretrained_model_name_or_path="gpt2",
-    tensor_parallel_size=2,
-    pipeline_parallel_size=2,
-    seed=SEED,
-)
-```
-
 
 ## Kernel Fusion
 
@@ -781,7 +715,7 @@ So, please write your code as usual.
 Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
 You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.
 
-## Additional Optimization
+## ETC
 ### Activation Checkpointing
 The transformers already has activation checkpointing implementation. Use the following method to use it.
 
@@ -789,8 +723,67 @@ The transformers already has activation checkpointing implementation. Use the fo
 model.gradient_checkpointing_enable()
 ```
 
-## Troubleshooting
-If you have any questions, bug reports, and feature requests, please open an issue on github or
-contacts [contact@tunib.ai](mailto:contact@tunib.ai) please.
 
-We appreciate any kind of feedback or contribution. Feel free to proceed with small issues like bug fixes, documentation improvement. For major contributions and new features, please discuss with the collaborators in corresponding issues.
+### Additional Parameters
+
+In this chapter, we explain additional parameters of `from_pretrained_with_parallel` and `from_config_with_parallel`.
+
+1. `micro_batch_size`
+
+Micro-batch size is the concept introduced from pipeline parallelism and refers to a subset of mini-batch.
+(Images from https://www.kakaobrain.com/blog/66)
+
+![](assets/micro_batch_size.png)
+![](assets/pipeline_parallelism.gif)
+
+You can set the micro-batch size using the parameter `micro_batch_size` and the default value of this is 1.
+Note this parameter only affects pipeline parallelism.
+
+```python
+from oslo import GPT2LMHeadModel
+
+model = GPT2LMHeadModel.from_pretrained_with_parallel(
+    pretrained_model_name_or_path="gpt2",
+    tensor_parallel_size=2,
+    pipeline_parallel_size=2,
+    micro_batch_size=4,
+)
+```
+
+If you want to change micro-batch size after model creation, use `set_micro_batch_size`.
+
+```python
+model.set_micro_batch_size(4)
+```
+
+2. `resize_token_embeddings`
+
+If you want to resize token embedding, input a new embedding size to `resize_token_embeddings`.
+
+```python
+from oslo import GPT2LMHeadModel
+
+model = GPT2LMHeadModel.from_pretrained_with_parallel(
+    pretrained_model_name_or_path="gpt2",
+    tensor_parallel_size=2,
+    pipeline_parallel_size=2,
+    resize_token_embeddings=len(tokenizer),
+)
+```
+
+3. `seed`
+
+You can set a seed value using `seed`.
+
+```python
+from oslo import GPT2LMHeadModel
+
+SEED = 42
+
+model = GPT2LMHeadModel.from_pretrained_with_parallel(
+    pretrained_model_name_or_path="gpt2",
+    tensor_parallel_size=2,
+    pipeline_parallel_size=2,
+    seed=SEED,
+)
+```
