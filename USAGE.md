@@ -23,6 +23,9 @@
     - [Docker Environment](#docker-environment)
 - [Activation Checkpointing](#activation-checkpointing)
 - [Additional Parameters](#additional-parameters)
+  - [micro_batch_size](#micro-batch-size)
+  - [resize_token_embeddings](#resize-token-embeddings)
+  - [seed](#seed)
 
 ## 3D Parallelism
 
@@ -725,7 +728,7 @@ model.gradient_checkpointing_enable()
 
 In this chapter, we explain additional parameters of `from_pretrained_with_parallel` and `from_config_with_parallel`.
 
-1. `micro_batch_size`
+### `micro_batch_size`
 
 Micro-batch size is the concept introduced from pipeline parallelism and refers to a subset of mini-batch.
 (Images from https://www.kakaobrain.com/blog/66)
@@ -753,7 +756,7 @@ If you want to change micro-batch size after model creation, use `set_micro_batc
 model.set_micro_batch_size(4)
 ```
 
-2. `resize_token_embeddings`
+### `resize_token_embeddings`
 
 If you want to resize token embedding, input a new embedding size to `resize_token_embeddings`.
 
@@ -768,7 +771,7 @@ model = GPT2LMHeadModel.from_pretrained_with_parallel(
 )
 ```
 
-3. `seed`
+### `seed`
 
 You can set a seed value using `seed`.
 
