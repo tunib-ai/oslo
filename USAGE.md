@@ -23,8 +23,8 @@
     - [Docker Environment](#docker-environment)
 - [Activation Checkpointing](#activation-checkpointing)
 - [Additional Parameters](#additional-parameters)
-  - [micro_batch_size](#micro-batch-size)
-  - [resize_token_embeddings](#resize-token-embeddings)
+  - [micro_batch_size](#micro_batch_size)
+  - [resize_token_embeddings](#resize_token_embeddings)
   - [seed](#seed)
 
 ## 3D Parallelism
