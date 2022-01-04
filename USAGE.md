@@ -786,7 +786,7 @@ You can set the larger shared memory size using `--shm-size=?gb`, and you can al
 The transformers already has activation checkpointing implementation. Use the following method to use it.
 
 ```python
-model.enable_gradient_checkpointing()
+model.gradient_checkpointing_enable()
 ```
 
 ## Troubleshooting
