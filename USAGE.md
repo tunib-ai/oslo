@@ -22,8 +22,8 @@
 - [Deployment Launcher](#deployment-launcher)
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
-- [Additional Optimization]($additional-optimization)
-    - [Activation Checkpointing]($activation-checkpointing)
+- [Additional Optimization](#additional-optimization)
+    - [Activation Checkpointing](#activation-checkpointing)
 - [Troubleshooting](#troubleshooting)
 
 ## 3D Parallelism
