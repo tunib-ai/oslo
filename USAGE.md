@@ -23,7 +23,7 @@
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
 - [Additional Optimization]($additional-optimization)
-    - [Activation Checkpointint]($activation-checkpointing)
+    - [Activation Checkpointing]($activation-checkpointing)
 - [Troubleshooting](#troubleshooting)
 
 ## 3D Parallelism
