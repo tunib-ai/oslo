@@ -22,6 +22,8 @@
 - [Deployment Launcher](#deployment-launcher)
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
+- [Additional Optimization]($additional-optimization)
+    - [Activation Checkpointint]($activation-checkpointing)
 - [Troubleshooting](#troubleshooting)
 
 ## 3D Parallelism
@@ -778,6 +780,14 @@ So, please write your code as usual.
 ### Docker Environment
 Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
 You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.
+
+## Additional Optimization
+### Activation Checkpointing
+The transformers already has activation checkpointing implementation. Use the following method to use it.
+
+```python
+model.enable_gradient_checkpointing()
+```
 
 ## Troubleshooting
 If you have any questions, bug reports, and feature requests, please open an issue on github or
