@@ -21,9 +21,8 @@
 - [Deployment Launcher](#deployment-launcher)
     - [Model Deployment](#model-deployment)
     - [Docker Environment](#docker-environment)
-- [ETC](#etc)
-    - [Activation Checkpointing](#activation-checkpointing)
-    - [Additional Parameters](#additional-parameters)
+- [Activation Checkpointing](#activation-checkpointing)
+- [Additional Parameters](#additional-parameters)
 
 ## 3D Parallelism
 
@@ -715,16 +714,14 @@ So, please write your code as usual.
 Deployment Launcher uses shared memory to share data between processes. However, Docker is designed to use limited shared memory by default. Therefore, when using the Deployment Launcher in a Docker container, the shared memory size must be increased, and the larger the model, the larger the shared memory is required.
 You can set the larger shared memory size using `--shm-size=?gb`, and you can also disable shared memory limit by using `--ipc=host`.
 
-## ETC
-### Activation Checkpointing
+## Activation Checkpointing
 The transformers already has activation checkpointing implementation. Use the following method to use it.
 
 ```python
 model.gradient_checkpointing_enable()
 ```
 
-
-### Additional Parameters
+## Additional Parameters
 
 In this chapter, we explain additional parameters of `from_pretrained_with_parallel` and `from_config_with_parallel`.
 
