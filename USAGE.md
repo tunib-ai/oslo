@@ -724,6 +724,12 @@ The transformers already has activation checkpointing implementation. Use the fo
 model.gradient_checkpointing_enable()
 ```
 
+If you don't want to activation checkpointing, Use the following method.
+
+```python
+model.gradient_checkpointing_disable()
+```
+
 ## Additional Parameters
 
 In this chapter, we explain additional parameters of `from_pretrained_with_parallel` and `from_config_with_parallel`.
