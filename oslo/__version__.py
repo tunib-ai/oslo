@@ -1,3 +1,3 @@
 # Copyright 2021 TUNiB Inc.
 
-version = "1.1.0"
+version = "1.1.1"

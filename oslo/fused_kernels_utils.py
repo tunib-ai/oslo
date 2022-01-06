@@ -17,7 +17,6 @@ from transformers.generation_logits_process import _calc_banned_ngram_tokens
 
 logger = logging.getLogger(__name__)
 
-
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
     expanduser("~"),
     ".cache",
@@ -523,15 +522,37 @@ class FusedNoRepeatNGramLogitsProcessor(LogitsProcessor):
 
 
 class FusedKernelMixin(object):
-    def fuse(self):
+    def fuse(self, modules=None):
+        user_modules = modules
+        # change variable name to prevent mistakes
+
+        assert user_modules is None or isinstance(
+            user_modules, list
+        ), "Param `modules` must be type of List[Class]."
+
         if self.is_fusable:
             for policy in self.get_layer_policies():
-                fused_modules = policy.fused_modules()
-                for module in self.modules():
-                    if module.__class__ in fused_modules:
-                        fused_module = fused_modules[module.__class__]
-                        module.__class__ = fused_module
-                        setattr(module, "config", self.config)
+                _fused_modules = policy.fused_modules()
+
+                if user_modules is not None:
+                    for user_module in user_modules:
+                        assert user_module in _fused_modules, (
+                            f"Module {user_module} can't be fused! "
+                            f"{self.__class__} only supports {_fused_modules.keys()}"
+                        )
+
+                for model_module in self.modules():
+                    if model_module.__class__ in _fused_modules:
+                        if (
+                            user_modules is not None
+                            and model_module not in user_modules
+                        ):
+                            continue
+                            # skip if module not in ``modules`` that user input.
+                        else:
+                            fused_module = _fused_modules[model_module.__class__]
+                            model_module.__class__ = fused_module
+                            setattr(model_module, "config", self.config)
         else:
             raise RuntimeError(
                 "This model doesn't support kernel fusion. please check the document."

@@ -1002,18 +1002,22 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         lm_logits = kwargs.get("lm_logits", None)
         labels = kwargs.get("labels", None)
 
+        # stability patch
+        lm_logits_fp32 = lm_logits.to(torch.float32)
+
         if labels is None:
             return None
 
         # Shift so that tokens < n predict n
-        shift_logits = lm_logits[..., :-1, :].contiguous()
+        shift_logits = lm_logits_fp32[..., :-1, :].contiguous()
         shift_labels = labels[..., 1:].contiguous()
         loss = CrossEntropyLoss()(
             shift_logits.view(-1, shift_logits.size(-1)),
             shift_labels.view(-1),
         )
 
-        return loss
+        return loss.to(kwargs.get("hidden_states").dtype)
+
 
     def organize_fn(self, *args, **kwargs):
         if not kwargs.get("return_dict", None):

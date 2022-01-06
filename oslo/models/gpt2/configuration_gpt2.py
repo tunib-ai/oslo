@@ -156,8 +156,8 @@ class GPT2Config(PretrainedConfig):
         use_cache=True,
         bos_token_id=50256,
         eos_token_id=50256,
-        scale_attn_by_inverse_layer_idx=False,
-        reorder_and_upcast_attn=False,
+        scale_attn_by_inverse_layer_idx=True,  # change to True for stability
+        reorder_and_upcast_attn=True,  # change to True for stability
         **kwargs,
     ):
         self.vocab_size = vocab_size
