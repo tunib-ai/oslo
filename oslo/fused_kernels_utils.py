@@ -1,5 +1,5 @@
 # Copyright 2021 TUNiB Inc.
-
+import inspect
 import logging
 import os
 import subprocess
@@ -538,15 +538,20 @@ class FusedKernelMixin(object):
                     for user_module in user_modules:
                         assert user_module in _fused_modules, (
                             f"Module {user_module} can't be fused! "
-                            f"{self.__class__} only supports {_fused_modules.keys()}"
+                            f"{self.__class__.__qualname__} only supports {list(_fused_modules.keys())}"
+                        )
+                        assert inspect.isclass(user_module), (
+                            f"The element in the ``modules`` must be Class type. "
+                            f"but you input {type(user_module)}"
                         )
 
                 for model_module in self.modules():
                     if model_module.__class__ in _fused_modules:
                         if (
                             user_modules is not None
-                            and model_module not in user_modules
+                            and model_module.__class__ not in user_modules
                         ):
+                            print(model_module.__class__.__qualname__)
                             continue
                             # skip if module not in ``modules`` that user input.
                         else:
