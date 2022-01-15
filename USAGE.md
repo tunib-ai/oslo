@@ -8,8 +8,8 @@
     - [Saving Checkpoints](#saving-checkpoints)
 - [Kernel Fusion](#kernel-fusion)
     - [Fused MLP and Softmax Kernels](#fused-mlp-and-softmax-kernels)
-    - [Selective Kernel Fusion](#selective-kernel-fusion)
     - [Fused N-Gram Blocking Kernels](#fused-n-gram-blocking-kernels)
+    - [Selective Kernel Fusion](#selective-kernel-fusion)
 - [DeepSpeed Support](#deepspeed-support)
     - [Initialization](#initialization)
     - [Training](#training-1)
@@ -342,7 +342,8 @@ model.generate(..., fused_no_repeat_ngram_blocking=True)
 
 ## Selective Kernel Fusion
 Since version 1.1.2, you can fuse only partial kernels, not all kernels. Currently, only Attention class and MLP class are supported.
-```
+
+```python
 from oslo import GPT2MLP, GPT2Attention
 
 # MLP only fusion
