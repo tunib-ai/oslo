@@ -231,5 +231,5 @@ class Test3DTraining:
 
 
 if __name__ == "__main__":
-    test = Test3DTraining(num_gpus=8, batch_size=4)
+    test = Test3DTraining(num_gpus=4, batch_size=4)
     test.test_gptj_lm_head_model()

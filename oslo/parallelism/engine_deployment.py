@@ -31,48 +31,8 @@ class DeploymentParallelEngine(object):
         blog: https://tunib.tistory.com/entry/Parallelformers-Journey-to-deploying-big-modelsTUNiB
     """
 
-    def __init__(
-        self,
-        model,
-        tensor_parallel_size,
-        pipeline_parallel_size,
-        micro_batch_size,
-        resize_token_embeddings,
-        seed,
-        pretrained_model_name_or_path=None,
-        cache_dir=None,
-        force_download=None,
-        resume_download=None,
-        proxies=None,
-        local_files_only=None,
-        use_auth_token=None,
-        revision=None,
-        from_auto_class=None,
-        _fast_init=None,
-        low_cpu_mem_usage=None,
-        ignore_mismatched_sizes=None,
-        from_split_checkpoint_files=None,
-        kwargs=None,
-    ):
+    def __init__(self, model, **kwargs):
         self.model = model.eval()
-        self.tensor_parallel_size = tensor_parallel_size
-        self.pipeline_parallel_size = pipeline_parallel_size
-        self.micro_batch_size = micro_batch_size
-        self.resize_token_embeddings = resize_token_embeddings
-        self.seed = seed
-        self.pretrained_model_name_or_path = pretrained_model_name_or_path
-        self.cache_dir = cache_dir
-        self.force_download = force_download
-        self.resume_download = resume_download
-        self.proxies = proxies
-        self.local_files_only = local_files_only
-        self.use_auth_token = use_auth_token
-        self.revision = revision
-        self.from_auto_class = from_auto_class
-        self._fast_init = _fast_init
-        self.low_cpu_mem_usage = low_cpu_mem_usage
-        self.ignore_mismatched_sizes = ignore_mismatched_sizes
-        self.from_split_checkpoint_files = from_split_checkpoint_files
         self.kwargs = kwargs
 
         self.processes = []
@@ -82,7 +42,10 @@ class DeploymentParallelEngine(object):
         self.output_queues = []
         self.orig_methods = {}
 
-        os.environ["WORLD_SIZE"] = str(tensor_parallel_size * pipeline_parallel_size)
+        os.environ["WORLD_SIZE"] = str(
+            kwargs.get("tensor_parallel_size", 1)
+            * kwargs.get("pipeline_parallel_size", 1)
+        )
         os.environ["MKL_SERVICE_FORCE_INTEL"] = "GNU"
 
     def replace_methods(self, method: str) -> None:
@@ -128,26 +91,8 @@ class DeploymentParallelEngine(object):
                     input_queue=input_queue,
                     output_queue=output_queue,
                     parallelization_mutex=parallelization_mutex,
-                    reqeust_mutex=reqeust_mutex,
-                    tensor_parallel_size=self.tensor_parallel_size,
-                    pipeline_parallel_size=self.pipeline_parallel_size,
-                    micro_batch_size=self.micro_batch_size,
-                    resize_token_embeddings=self.resize_token_embeddings,
-                    seed=self.seed,
-                    pretrained_model_name_or_path=self.pretrained_model_name_or_path,
-                    cache_dir=self.cache_dir,
-                    force_download=self.force_download,
-                    resume_download=self.resume_download,
-                    proxies=self.proxies,
-                    local_files_only=self.local_files_only,
-                    use_auth_token=self.use_auth_token,
-                    revision=self.revision,
-                    from_auto_class=self.from_auto_class,
-                    _fast_init=self._fast_init,
-                    low_cpu_mem_usage=self.low_cpu_mem_usage,
-                    ignore_mismatched_sizes=self.ignore_mismatched_sizes,
-                    from_split_checkpoint_files=self.from_split_checkpoint_files,
-                    kwargs=self.kwargs,
+                    request_mutex=reqeust_mutex,
+                    **self.kwargs,
                 )
 
                 process.daemon = True
@@ -295,55 +240,24 @@ class DeploymentProcess(mp.Process):
         input_queue: mp.Queue,
         output_queue: mp.Queue,
         parallelization_mutex: mp.Event,
-        reqeust_mutex: mp.Event,
-        tensor_parallel_size,
-        pipeline_parallel_size,
-        micro_batch_size,
-        resize_token_embeddings,
-        seed,
-        pretrained_model_name_or_path=None,
-        cache_dir=None,
-        force_download=None,
-        resume_download=None,
-        proxies=None,
-        local_files_only=None,
-        use_auth_token=None,
-        revision=None,
-        from_auto_class=None,
-        _fast_init=None,
-        low_cpu_mem_usage=None,
-        ignore_mismatched_sizes=None,
-        from_split_checkpoint_files=None,
-        kwargs=None,
+        request_mutex: mp.Event,
+        **kwargs,
     ):
         super().__init__()
         self.rank = rank
+        self.orig_methods = {}
+        self.device = None
+
         self.model = model.eval()
         self.input_queue = input_queue
         self.output_queue = output_queue
         self.parallelization_mutex = parallelization_mutex
-        self.request_mutex = reqeust_mutex
-        self.tensor_parallel_size = tensor_parallel_size
-        self.pipeline_parallel_size = pipeline_parallel_size
-        self.micro_batch_size = micro_batch_size
-        self.resize_token_embeddings = resize_token_embeddings
-        self.seed = seed
-        self.pretrained_model_name_or_path = pretrained_model_name_or_path
-        self.cache_dir = cache_dir
-        self.force_download = force_download
-        self.resume_download = resume_download
-        self.proxies = proxies
-        self.local_files_only = local_files_only
-        self.use_auth_token = use_auth_token
-        self.revision = revision
-        self.from_auto_class = from_auto_class
-        self._fast_init = _fast_init
-        self.low_cpu_mem_usage = low_cpu_mem_usage
-        self.ignore_mismatched_sizes = ignore_mismatched_sizes
-        self.from_split_checkpoint_files = from_split_checkpoint_files
+        self.request_mutex = request_mutex
         self.kwargs = kwargs
-        self.orig_methods = {}
-        self.device = None
+        self.from_split_checkpoint_files = kwargs.get(
+            "from_split_checkpoint_files",
+            False,
+        )
 
     def check_picklable(self, obj: Any) -> Any:
         """
@@ -378,12 +292,12 @@ class DeploymentProcess(mp.Process):
 
     @torch.no_grad()
     def wait_request(self):
-        if self.seed is None:
+        if not self.kwargs.get("seed", None):
             seed = torch.tensor(int(time())).cuda()
             dist.broadcast(seed, src=0)
             seed = seed.item()
         else:
-            seed = self.seed
+            seed = self.kwargs.get("seed")
 
         torch.manual_seed(seed)
         np.random.seed(seed)
@@ -439,7 +353,8 @@ class DeploymentProcess(mp.Process):
         os.environ["LOCAL_RANK"] = str(self.rank)
         os.environ["RANK"] = str(self.rank)
         os.environ["WORLD_SIZE"] = str(
-            self.tensor_parallel_size * self.pipeline_parallel_size
+            self.kwargs.get("tensor_parallel_size")
+            * self.kwargs.get("pipeline_parallel_size")
         )
         torch.cuda.set_device(self.rank)
         self.device = torch.cuda.current_device()
@@ -447,37 +362,10 @@ class DeploymentProcess(mp.Process):
         if not dist.is_initialized():
             dist.init_process_group(backend="nccl")
 
-        self.model._exec_both_engines(
-            model=self.model,
-            tensor_parallel_size=self.tensor_parallel_size,
-            pipeline_parallel_size=self.pipeline_parallel_size,
-            micro_batch_size=self.micro_batch_size,
-            resize_token_embeddings=self.resize_token_embeddings,
-            seed=self.seed,
-            kwargs=self.kwargs,
-        )
+        self.model._exec_both_engines(model=self.model, **self.kwargs)
 
         if self.from_split_checkpoint_files is True:
-            self.model._load_split_checkpoint_files(
-                model=self.model,
-                tensor_parallel_size=self.tensor_parallel_size,
-                pipeline_parallel_size=self.pipeline_parallel_size,
-                resize_token_embeddings=self.resize_token_embeddings,
-                micro_batch_size=self.micro_batch_size,
-                pretrained_model_name_or_path=self.pretrained_model_name_or_path,
-                cache_dir=self.cache_dir,
-                force_download=self.force_download,
-                resume_download=self.resume_download,
-                proxies=self.proxies,
-                local_files_only=self.local_files_only,
-                use_auth_token=self.use_auth_token,
-                revision=self.revision,
-                from_auto_class=self.from_auto_class,
-                _fast_init=self._fast_init,
-                low_cpu_mem_usage=self.low_cpu_mem_usage,
-                ignore_mismatched_sizes=self.ignore_mismatched_sizes,
-                kwargs=self.kwargs,
-            )
+            self.model._load_split_checkpoint_files(model=self.model, **self.kwargs)
 
         self.parallelization_mutex.set()
         self.wait_request()
