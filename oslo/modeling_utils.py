@@ -10,6 +10,7 @@ from transformers.modeling_utils import PreTrainedModel as PreTrainedModelBase
 from oslo.fused_kernels_utils import FusedKernelMixin
 from oslo.generation_utils import GenerationMixin
 from oslo.parallelism_utils import ParallelizationMixin
+from oslo.warmstarting_utils import WarmStartingMixin
 
 
 class VocabParallelEmbedding(nn.Embedding):
@@ -105,7 +106,11 @@ class RowParallelLinear(nn.Linear):
 
 
 class PreTrainedModel(
-    PreTrainedModelBase, ParallelizationMixin, FusedKernelMixin, GenerationMixin
+    PreTrainedModelBase,
+    ParallelizationMixin,
+    FusedKernelMixin,
+    GenerationMixin,
+    WarmStartingMixin,
 ):
     is_parallelizable = True
     is_fusable = True

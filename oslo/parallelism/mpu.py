@@ -1027,12 +1027,16 @@ class LayerPolicy(ABC):
         return []
 
     @staticmethod
+    def postblock_layers(model, config):
+        return []
+
+    @staticmethod
     def block_layers(model, config):
         return []
 
     @staticmethod
-    def postblock_layers(model, config):
-        return []
+    def set_block_layers(model, config, new_layers):
+        ...
 
     @staticmethod
     def copy_to_all(layer, config):
@@ -1041,3 +1045,5 @@ class LayerPolicy(ABC):
     @staticmethod
     def original_layer_class():
         raise NotImplementedError
+
+

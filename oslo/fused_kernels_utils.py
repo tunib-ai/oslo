@@ -551,7 +551,6 @@ class FusedKernelMixin(object):
                             user_modules is not None
                             and model_module.__class__ not in user_modules
                         ):
-                            print(model_module.__class__.__qualname__)
                             continue
                             # skip if module not in ``modules`` that user input.
                         else:

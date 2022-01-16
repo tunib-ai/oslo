@@ -240,10 +240,6 @@ class GPTJLayerPolicy(LayerPolicy):
         ]
 
     @staticmethod
-    def block_layers(model, config):
-        return model.h
-
-    @staticmethod
     def postblock_layers(model, config):
         return [
             Layer(
@@ -253,6 +249,14 @@ class GPTJLayerPolicy(LayerPolicy):
                 parallel=False,
             ),
         ]
+
+    @staticmethod
+    def block_layers(model, config):
+        return model.h
+
+    @staticmethod
+    def set_block_layers(model, config, new_layers):
+        model.h = new_layers
 
     @staticmethod
     def copy_to_all(layer, config):
