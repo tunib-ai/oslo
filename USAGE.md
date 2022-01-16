@@ -9,6 +9,7 @@
 - [Kernel Fusion](#kernel-fusion)
     - [Fused MLP and Softmax Kernels](#fused-mlp-and-softmax-kernels)
     - [Fused N-Gram Blocking Kernels](#fused-n-gram-blocking-kernels)
+    - [Selective Kernel Fusion](#selective-kernel-fusion)
 - [DeepSpeed Support](#deepspeed-support)
     - [Initialization](#initialization)
     - [Training](#training-1)
@@ -337,6 +338,22 @@ model.generate(..., fused_no_repeat_ngram_blocking=True)
 
 # before fusion: 3.859266519546509 sec
 # after fusion:  3.620283210294232 sec (only helpful for large-batch)
+```
+
+## Selective Kernel Fusion
+Since version 1.1.2, you can fuse only partial kernels, not all kernels. Currently, only Attention class and MLP class are supported.
+
+```python
+from oslo import GPT2MLP, GPT2Attention
+
+# MLP only fusion
+model.fuse([GPT2MLP])
+
+# Attention only fusion
+model.fuse([GPT2Attention])
+
+# MLP + Attention fusion
+model.fuse([GPT2MLP, GPT2Attention])
 ```
 
 ## DeepSpeed Support
