@@ -186,7 +186,9 @@ For example, in the case of the attention query projection layer module, we can 
 There are some models that has the combined (fused) attention query, key, value projection parameters in the Transformers.
 For example, there is `c_attn` layer module in the `GPT2Model` in the Transformers.
 This layer module has the size like (3 * dim, dim). We defined this type of module as the 'fused' module.
-So, if the layer module is the 'fused' module, you have to set this argument to `True`.
+So, if the layer module is the 'fused' module, you have to set this argument to the number of fused layer.
+In th most cases this value is 1 (not-fused). If the query, key, value parameters are fused, this value should be 3.
+If the key and value parameters are fused, this value should be 2.
 
 #### 1.1.6 `reversed`
 Normally `nn.Linear` layer module has a weight parameter that has the size of (output, input).
