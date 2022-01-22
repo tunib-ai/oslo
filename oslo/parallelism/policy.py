@@ -15,8 +15,6 @@ class Layer:
     n_fused: int = None
     reversed: bool = None
     parallel: bool = True
-    input_is_parallel: bool = True
-    gather_output: bool = False
     tied_embedding: nn.Module = None
 
 

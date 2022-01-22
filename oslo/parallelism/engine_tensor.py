@@ -175,8 +175,7 @@ class TensorParallelEngine(object):
                 "in_features": sizes[0],
                 "out_features": sizes[1],
                 "reversed": param.reversed,
-                "input_is_parallel": param.input_is_parallel,
-                "gather_output": param.gather_output,
+                "has_tied_embedding": param.tied_embedding is not None,
             }
             self._postprocess(param, attributes)
 
@@ -219,8 +218,7 @@ class TensorParallelEngine(object):
                 "in_features": sizes[0],
                 "out_features": sizes[1],
                 "reversed": param.reversed,
-                "input_is_parallel": param.input_is_parallel,
-                "gather_output": param.gather_output,
+                "has_tied_embedding": param.tied_embedding is not None,
             }
             self._postprocess(param, attributes)
 
@@ -311,8 +309,7 @@ class TensorParallelEngine(object):
                     "in_features": sizes[0],
                     "out_features": sizes[1],
                     "reversed": param.reversed,
-                    "input_is_parallel": param.input_is_parallel,
-                    "gather_output": param.gather_output,
+                    "has_tied_embedding": param.tied_embedding is not None,
                 }
                 self._postprocess(param, attributes)
 

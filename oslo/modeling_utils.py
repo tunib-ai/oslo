@@ -76,7 +76,7 @@ class ColumnParallelLinear(nn.Linear):
         else:
             outputs = torch.matmul(inputs, self.weight.t())
 
-        if self.gather_output:
+        if self.has_tied_embedding:
             outputs = self.mpu.gather(outputs).clone()
 
         if self.bias is not None:
@@ -89,9 +89,6 @@ class RowParallelLinear(nn.Linear):
     """Linear layer with row parallelism."""
 
     def forward(self, inputs):
-        if not self.input_is_parallel:
-            inputs = self.mpu.scatter(inputs)
-
         if self.reversed:
             outputs = torch.matmul(inputs, self.weight)
         else:

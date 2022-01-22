@@ -127,11 +127,12 @@ Layer policy is used to obtain information of the layers. You have to define pol
 In general, one model has one policy, but in the case of sequence to sequence models, the encoder and decoder could use different policies.
 More examples can be found at [Parallelformers](https://github.com/tunib-ai/parallelformers/blob/main/parallelformers/policies/bert.py) and [DeepSpeed Inference](https://github.com/microsoft/DeepSpeed/blob/master/deepspeed/module_inject/replace_policy.py). 
 In addition, [this document](https://github.com/tunib-ai/parallelformers/blob/main/POLICY.md) also explains about the policy object.
-Please check out the example in the other model's policy object, and you can find the abstract class in the bottom of [`oslo/parallelism/mpu.py`](https://github.com/tunib-ai/oslo/blob/master/oslo/parallelism/mpu.py).
+Please check out the other model's policy object, it could be a good example.
+You can find the abstract class in the [`oslo/parallelism/policy.py`](https://github.com/tunib-ai/oslo/blob/master/oslo/parallelism/policy.py).
 
 ### 1.1. What is the `Layer` object?
 A `Layer` object contains information about an individual layer and this is used in the policy class.
-The `Layer` class is defined in the bottom of [`oslo/parallelism/mpu.py`](https://github.com/tunib-ai/oslo/blob/master/oslo/parallelism/mpu.py).
+The `Layer` class is defined in [`oslo/parallelism/policy.py`](https://github.com/tunib-ai/oslo/blob/master/oslo/parallelism/policy.py).
 You just need to fill in some information according to the form of this object.
 
 ```python
@@ -146,8 +147,6 @@ class Layer:
     n_fused: int = None
     reversed: bool = None
     parallel: bool = True
-    input_is_parallel: bool = True
-    gather_output: bool = False
     tied_embedding: nn.Module = None
 ```
 
@@ -158,21 +157,65 @@ For example, the attention query projection module of the BERT model is `layer.a
 #### 1.1.2. `weight`
 Input a weight parameter of the layer module. 
 In the case of the attention query projection weight parameter of the BERT model is `layer.attention.self.query.weight`.
-If this layer does't have a weight parameter, you don't need to worry about this. (Since the default value is set to `None`, it is automatically set to `None`.)
+If this layer does't have a weight parameter, you don't need to worry about this. 
+Since the default value is set to `None`, it will be automatically set to `None`.
 
 #### 1.1.3. `bias`
 Input a bias parameter of the layer module.
 In the case of the attention query projection bias parameter of the BERT model is `layer.attention.self.query.bias`.
-If this layer does't have a weight parameter, you don't need to worry about this. (Since the default value is set to `None`, it is automatically set to `None`.)
+If this layer does't have a weight parameter, you don't need to worry about this. 
+Since the default value is set to `None`, it will be automatically set to `None`.
 
-#### 3.1.4. 
+#### 1.1.4. `replace`
+Input a dictionary that contains information about module replacement.
+The key of the dictionary have to be a module before replacement, 
+and the value of the dictionary have to be a module after replacement.
 
-- `weight`: Input a weight parameter of the layer. If this layer does't have a weight parameter, you don't need to worry about this. (Since the default value is set to `None`, it is automatically set to `None`.)
-- `bias`: Input a bias parameter of the layer. If this layer does't have a bias parameter, you don't need to worry about this.
-- `replace`: Input a dictionary about module replace. This argument is used to convert that layer to another layer. Usually this converts `nn.Linear` layer to `ColumnParallelLiner` or `RowParallelLinear` or converts `nn.Embedding layer` to `VocabParallelEmbedding`.
-- `n_fused`: In models like Transformers' GPT2, attention projection layers are not separated into query, key, and value.
+##### Which module should be replaced?
+We should follow the mechanism that proposed from Megatron-LM.
 
-### 3.1. Description of the functions of the Policy object.
+- Attention key, query, value projection layer: `nn.Linear` → `ColumnParallelLinear`
+- Attention output projection layer: `nn.Linear` → `RowParallelLinear`
+- MLP input projection layer: `nn.Linear` → `ColumnParallelLinear`
+- MLP output projection layer: `nn.Linear` → `RowParallelLinear`
+- Word embedding layer: `nn.Embedding` → `VocabParallelEmbedding`
+
+For example, in the case of the attention query projection layer module, we can input a dictionary like `{nn.Linear: ColumnParallelLinear}`.
+
+#### 1.1.5 `n_fused`
+There are some models that has the combined (fused) attention query, key, value projection parameters in the Transformers.
+For example, there is `c_attn` layer module in the `GPT2Model` in the Transformers.
+This layer module has the size like (3 * dim, dim). We defined this type of module as the 'fused' module.
+So, if the layer module is the 'fused' module, you have to set this argument to `True`.
+
+#### 1.1.6 `reversed`
+Normally `nn.Linear` layer module has a weight parameter that has the size of (output, input).
+For example, if you created `nn.Linear(256, 512)`, the module has the weight parameter that has the size of (512, 256).
+
+But there is `Conv1D` layer module in the Transformers, and this module has the 'reversed' parameters, 
+and this type of parameters have the size of (input, output).
+For example, if you create `Conv1D(256, 512)`, the module has the parameter that has the size of (256, 512).
+We defined this type of module (like Conv1D) as 'reversed' module.
+
+The fact is that `nn.Linear` layer has the reversed parameters,
+but here, we defined the module has the parameters as opposed to `nn.Linear` as the 'reversed' module.
+So, if the layer module is the 'reversed' module, you have to set this argument to `True`.
+
+#### 1.1.7 `parallel`
+In the Megatron-LM, there are parallelizable parameters and non-parallelizable parameters.
+Normally, we parallelize the attention layer, mlp layer and word embedding layer. 
+And we do not parallelize the normalization layer and positional embedding layer.
+So, if the layer is non-parallelizable, you have to set this argument to `False`.
+If you don't have the knowledge about this, I recommend reading their paper, [Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism](https://arxiv.org/abs/1909.08053).
+
+#### 1.1.8 `tied_embedding`
+In some cases, the head layer could be tied with an input embedding. 
+In this case, you need to specify the tied input embedding together when defining the head layer.
+For example, the parameter of head layer of the `GPT2LMHead` is `model.lm_head.weight`, and this is tied with `model.transformer.wte.weight`.
+In this case, you need to specify the tied input embedding like `Layer(..., tied_embedding=model.transformer.wte.weight)`.
+In addition, if the input embedding is parallelized, the tied head layer is already parallelized. So in that case set `parallel` to `False` like `Layer(..., parallel=False)`.
+
+### 1.2. Description of the functions of the Policy object.
 In this chapter, I will describe each function of the Policy object.
 
 #### 3.1.1. `reduce_arguments(layer, world_size, config)`
