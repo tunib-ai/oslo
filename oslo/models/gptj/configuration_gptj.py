@@ -23,7 +23,7 @@ from oslo import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.parallelism.mpu import Layer, LayerPolicy
+from oslo.parallelism.policy import Layer, LayerPolicy
 
 logger = logging.get_logger(__name__)
 

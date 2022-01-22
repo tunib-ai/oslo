@@ -33,7 +33,7 @@ from transformers.utils import logging
 
 from ... import FusedBiasActivation, FusedBiasDropout, FusedScaleMaskSoftmax
 from ...modeling_utils import ColumnParallelLinear, PreTrainedModel
-from ...parallelism.mpu import Layer
+from ...parallelism.policy import Layer
 from .configuration_gpt_neo import GPTNeoConfig, GPTNeoLayerPolicy
 
 logger = logging.get_logger(__name__)

@@ -31,7 +31,7 @@ from transformers.utils import logging
 
 from ... import FusedBiasActivation, FusedBiasDropout, FusedScaleMaskSoftmax
 from ...modeling_utils import PreTrainedModel
-from ...parallelism.mpu import Layer
+from ...parallelism.policy import Layer
 from .configuration_gptj import GPTJConfig, GPTJLayerPolicy
 
 logger = logging.get_logger(__name__)

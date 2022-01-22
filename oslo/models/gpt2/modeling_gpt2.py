@@ -46,7 +46,7 @@ from ...fused_kernels_utils import (
     FusedScaleMaskSoftmax,
 )
 from ...modeling_utils import ColumnParallelLinear, PreTrainedModel
-from ...parallelism.mpu import Layer
+from ...parallelism.policy import Layer
 from .configuration_gpt2 import GPT2Config, GPT2LayerPolicy
 
 if version.parse(torch.__version__) >= version.parse("1.6"):

@@ -8,7 +8,8 @@ import torch
 import torch.distributed as dist
 from torch import Size, Tensor, nn
 
-from oslo.parallelism.mpu import MPU, Layer, LayerPolicy
+from oslo.parallelism.mpu import MPU
+from oslo.parallelism.policy import Layer, LayerPolicy
 
 NoneType = type(None)
 

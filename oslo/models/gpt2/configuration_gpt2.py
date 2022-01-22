@@ -14,6 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ OpenAI GPT-2 configuration """
+import contextlib
 from collections import OrderedDict
 from typing import Any, Mapping, Optional
 
@@ -30,7 +31,7 @@ from oslo.modeling_utils import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.parallelism.mpu import Layer, LayerPolicy
+from oslo.parallelism.policy import Layer, LayerPolicy
 
 logger = logging.get_logger(__name__)
 
@@ -268,6 +269,11 @@ class GPT2LayerPolicy(LayerPolicy):
         layer.attn.embed_dim = config.n_embd // world_size
         layer.attn.split_size = config.n_embd // world_size
         layer.attn.num_heads = config.num_attention_heads // world_size
+
+        with contextlib.suppress(Exception):
+            layer.crossattention.embed_dim = config.n_embd // world_size
+            layer.crossattention.split_size = config.n_embd // world_size
+            layer.crossattention.num_heads = config.num_attention_heads // world_size
 
     @staticmethod
     def fused_modules():

@@ -7,7 +7,8 @@ import torch.distributed as dist
 from torch import nn
 from transformers import PretrainedConfig
 
-from oslo.parallelism.mpu import MPU, Layer, LayerPolicy
+from oslo.parallelism.mpu import MPU
+from oslo.parallelism.policy import Layer, LayerPolicy
 
 
 class TensorParallelEngine(object):
