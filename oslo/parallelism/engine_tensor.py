@@ -13,7 +13,7 @@ from oslo.modeling_utils import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.parallelism.utils import rgetattr, rsetattr
+from oslo.parallelism.utils import rgetattr, rsetattr, is_module
 
 
 class TensorParallelEngine(object):
@@ -42,13 +42,6 @@ class TensorParallelEngine(object):
                             // self.mpu.get_tensor_parallel_world_size()
                         )
                         setattr(module, arg, reduced_arg)
-
-    @staticmethod
-    def _is_module(node: Node):
-        return (
-            node.op not in ["placeholder", "call_function", "call_method"]
-            and "tensor_constant" not in node.target
-        )
 
     @staticmethod
     def _get_fusion_degree(module):
@@ -203,12 +196,12 @@ class TensorParallelEngine(object):
 
         return torch.cat(list(result_tensors.values()), dim=dim)
 
-    def _parallelize_module(self, module_name, traced, compute_fusion_degree):
+    def _parallelize_module(self, module_name, graph_module, compute_fusion_degree):
         parallelizable_modules = []
         parallelizable_targets = []
 
-        for node in traced.graph.nodes:
-            if self._is_module(node) and module_name in node.target and node.target:
+        for node in graph_module.graph.nodes:
+            if is_module(node) and module_name in node.target and node.target:
                 parallelizable_target = node.target
                 parallelizable_target = parallelizable_target.replace(".weight", "")
                 parallelizable_target = parallelizable_target.replace(".bias", "")
@@ -246,7 +239,7 @@ class TensorParallelEngine(object):
             # TODO: We should consider about pipeline parallelism
         )
 
-    def _parallelize_module_list(self, module_list, name, traced):
+    def _parallelize_module_list(self, module_list, name, graph_module):
         for i, modules in enumerate(module_list):
             if hasattr(self.model.config, "num_attention_heads"):
                 assert (
@@ -264,13 +257,13 @@ class TensorParallelEngine(object):
                 if isinstance(_module, self.info.attention()):
                     self._parallelize_module(
                         module_name=module_name,
-                        traced=traced,
+                        graph_module=graph_module,
                         compute_fusion_degree=True,
                     )
                 elif isinstance(_module, self.info.mlp()):
                     self._parallelize_module(
                         module_name=module_name,
-                        traced=traced,
+                        graph_module=graph_module,
                         compute_fusion_degree=False,
                     )
 
@@ -313,9 +306,12 @@ class TensorParallelEngine(object):
                     module.__class__ = ColumnParallelLinear
 
     def parallelize(self):
-        traced = symbolic_trace(self.model)
         for name, module_list in self.module_lists:
-            self._parallelize_module_list(module_list, name, traced=traced)
+            self._parallelize_module_list(
+                module_list=module_list,
+                name=name,
+                graph_module=symbolic_trace(self.model),
+            )
 
         self._parallelize_word_embedding()
         self._parallelize_tied_head()
