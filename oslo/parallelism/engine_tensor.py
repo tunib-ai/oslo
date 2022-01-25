@@ -302,7 +302,7 @@ class TensorParallelEngine(object):
         setattr(embedding, "orig_module", copy.deepcopy(embedding.__class__))
         embedding.__class__ = VocabParallelEmbedding
 
-    def _parallelize_head(self):
+    def _parallelize_tied_head(self):
         for name, module in self.model.named_modules():
             if isinstance(module, Linear) or isinstance(module, Conv1D):
                 if module.weight is self.model.get_input_embeddings().weight:
@@ -318,7 +318,7 @@ class TensorParallelEngine(object):
             self._parallelize_module_list(module_list, name, traced=traced)
 
         self._parallelize_word_embedding()
-        self._parallelize_head()
+        self._parallelize_tied_head()
         self._reduce_arguments()
 
         for k, v in dict(self.model.state_dict()).items():
@@ -501,7 +501,7 @@ class TensorDeparallelEngine(object):
         else:
             embedding.__class__ = Embedding
 
-    def _deparallelize_head(self):
+    def _deparallelize_tied_head(self):
         for name, module in self.model.named_modules():
             if isinstance(module, ColumnParallelLinear):
                 if module.weight is self.model.get_input_embeddings().weight:
@@ -547,7 +547,7 @@ class TensorDeparallelEngine(object):
             self._deparallelize_module_list(module_list)
 
         self._deparallelize_word_embedding()
-        self._deparallelize_head()
+        self._deparallelize_tied_head()
         self._restore_arguments()
 
         for k, v in dict(self.model.state_dict()).items():
