@@ -2,11 +2,25 @@ import time
 
 import torch
 from anytree import Node
-from transformers import GPT2LMHeadModel
+from transformers.models.gpt2 import GPT2LMHeadModel
 from oslo.parallelism.utils import num_params, is_available_tracing
 
 BATCH_DIMENSIONS = {
-    "past_key_values": 0,
+    "input_ids": 0,
+    "past_key_values": ...,
+    "attention_mask": 0,
+    "token_type_ids": 0,
+    "position_ids": 0,
+    "head_mask": ...,
+    "inputs_embeds": 0,
+    "encoder_hidden_states": ...,
+    "encoder_attention_mask": ...,
+    "labels": 0,
+    "use_cache": None,
+    "output_attentions": None,
+    "output_hidden_states": None,
+    "return_dict": None,
+    # the rest arguments will be zero-batch.
 }
 
 
@@ -97,6 +111,9 @@ class PartitioningCostEstimator(object):
                 self._trace_computation_cost()
 
     def _add_computation_cost_hooks(self, node):
+        # TODO: The time unit is not mentioned in the paper.
+        # I sent an email to author of paper !
+
         def pre_hook(*args, **kwargs):
             setattr(node, "execution_time_before_forwarding", time.time())
 
