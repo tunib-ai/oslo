@@ -203,6 +203,7 @@ class PartitioningCostEstimator(object):
         self._normalize_cost(self.root_node)
 
 
+
 if __name__ == "__main__":
     model = GPT2LMHeadModel.from_pretrained("gpt2")
     # mpu = MPU(tensor_parallel_size=1, pipeline_parallel_size=4)
