@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import psutil
+import torch
+from torch.fx import Node
 
 NoneType = type(None)
 
@@ -104,3 +107,22 @@ def rhasattr(obj, attr):
     except BaseException:
         return False
     return rhasattr(get, right)
+
+
+def is_module(node: Node):
+    return (
+        node.op not in ["placeholder", "call_function", "call_method"]
+        and "tensor_constant" not in node.target
+    )
+
+
+def num_params(module):
+    return sum(p.numel() for p in module.parameters() if p.requires_grad)
+
+
+def is_available_tracing(module):
+    elem_size = torch.zeros(1, dtype=module.dtype).element_size()
+    model_memory_size = num_params(module) * elem_size
+    available_memory_size = psutil.virtual_memory().available
+    return available_memory_size > model_memory_size * 2
+    # multiply by 2 to consider act memory for safer tracing.
