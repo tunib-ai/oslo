@@ -1,16 +1,59 @@
 # Copyright 2021 TUNiB Inc.
 
 import os
-from abc import ABC
-from dataclasses import dataclass
 from math import floor
 from typing import List
 
 import torch
 import torch.distributed as dist
-import torch.nn as nn
 from torch import Tensor
 from torch.autograd import Function
+
+
+class LayerInfo:
+    @staticmethod
+    def base():
+        """
+        Returns:
+            the base transformer block of model
+
+        Examples:
+            >>> return BertLayer
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def attention():
+        """
+        Returns:
+            the last elements of attention modules
+
+        Examples:
+            >>> return BertAttention
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def mlp():
+        """
+        Returns:
+            the last element of mlp modules
+
+        Examples:
+            >>> return BertOutput
+        """
+        raise NotImplementedError
+
+    @staticmethod
+    def reducing_required():
+        """
+        Returns:
+            arguments that are required reducing
+
+        Examples:
+            >>> return ["all_head_size", "num_attention_heads"]
+        """
+        raise NotImplementedError
 
 
 class MPU(object):
@@ -125,7 +168,6 @@ class MPU(object):
         ), "global world sizes must be divisible by model parallel world sizes (tp * pp)"
 
         num_tensor_parallel_groups = global_world_size // tensor_parallel_size
-
         num_pipeline_parallel_groups = global_world_size // pipeline_parallel_size
 
         # 1. initialize data parallel group
@@ -445,7 +487,7 @@ class MPU(object):
 
         return self._embedding_tied_group
 
-    # World size
+    # World Size
 
     def get_data_parallel_world_size(self) -> int:
         """

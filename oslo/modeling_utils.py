@@ -1,16 +1,9 @@
 # Copyright 2021 TUNiB Inc.
 import math
-from typing import Optional
 
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformers.modeling_utils import PreTrainedModel as PreTrainedModelBase
-
-from oslo.fused_kernels_utils import FusedKernelMixin
-from oslo.generation_utils import GenerationMixin
-from oslo.parallelism_utils import ParallelizationMixin
-from oslo.warmstarting_utils import WarmStartingMixin
 
 
 class VocabParallelEmbedding(nn.Embedding):
@@ -76,7 +69,7 @@ class ColumnParallelLinear(nn.Linear):
         else:
             outputs = torch.matmul(inputs, self.weight.t())
 
-        if self.has_tied_embedding:
+        if self.tied_with_embedding:
             outputs = self.mpu.gather(outputs).clone()
 
         if self.bias is not None:
@@ -100,24 +93,3 @@ class RowParallelLinear(nn.Linear):
             outputs += self.bias
 
         return outputs
-
-
-class PreTrainedModel(
-    PreTrainedModelBase,
-    ParallelizationMixin,
-    FusedKernelMixin,
-    GenerationMixin,
-    WarmStartingMixin,
-):
-    is_parallelizable = True
-    is_fusable = True
-
-    def resize_token_embeddings(
-        self, new_num_tokens: Optional[int] = None
-    ) -> nn.Embedding:
-        if self.is_tensor_parallelized():
-            raise RuntimeError(
-                "you can't call ``model.resize_token_embeddings()`` when you are using tensor model parallelism.\n"
-                "please use ``model.from_pretrained_with_parallel(..., resize_token_embeddings=num_tokens)`` method."
-            )
-        return super(PreTrainedModel, self).resize_token_embeddings(new_num_tokens)
