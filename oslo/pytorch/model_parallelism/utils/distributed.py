@@ -69,7 +69,7 @@ class ColumnParallelLinear(nn.Linear):
         else:
             outputs = torch.matmul(inputs, self.weight.t())
 
-        if self.tied_with_embedding:
+        if self.gather_output:
             outputs = self.mpu.gather(outputs).clone()
 
         if self.bias is not None:
