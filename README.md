@@ -1,6 +1,6 @@
 <div align="center">
 
-![](assets/oslo.png)
+![](https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png)
 
 <br>
 
