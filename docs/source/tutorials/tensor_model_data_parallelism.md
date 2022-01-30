@@ -4,7 +4,24 @@
 - The source code of this tutorial can be found [here](https://github.com/tunib-ai/oslo/tree/main/tutorials).
 
 ### Table of contents
-
+* [0. Distributed Launcher](#0-distributed-launcher)
+* [1. Multi-dimensional Parallel Training](#1-multi-dimensional-parallel-training)
+    + [1.1. The concept of multi-dimensional parallel training](#11-the-concept-of-multi-dimensional-parallel-training)
+    + [1.2. The concept of MPU (Model Parallel Unit)](#12-the-concept-of-mpu--model-parallel-unit-)
+* [2. Training](#2-training)
+    + [2.1. Initialize some variables](#21-initialize-some-variables)
+    + [2.2. Create model and optimizer and tokenizer](#22-create-model-and-optimizer-and-tokenizer)
+    + [2.3. Parallelize the model](#23-parallelize-the-model)
+    + [2.4. Make the model data parallelizable](#24-make-the-model-data-parallelizable)
+    + [2.5. Load dataset](#25-load-dataset)
+    + [2.6. Create DistributedSampler to parallelize dataset](#26-create-distributedsampler-to-parallelize-dataset)
+    + [2.7. Create the dataloader with sampler.](#27-create-the-dataloader-with-sampler)
+    + [2.8. Do training as usual](#28-do-training-as-usual)
+* [3. Merging Checkpoints](#3-merging-checkpoints)
+    + [3.1. Create model](#31-create-model)
+    + [3.2. Parallelize the model](#32-parallelize-the-model)
+    + [3.3 Load parallelized checkpoints](#33-load-parallelized-checkpoints)
+    + [3.4. Merge parallelized checkpoints](#34-merge-parallelized-checkpoints)
 
 ## 0. Distributed Launcher
 This tutorial must be launched using distributed launcher.
