@@ -8,8 +8,6 @@ import torch.distributed as dist
 from torch import Size, Tensor
 from torch.autograd import Function
 
-NoneType = type(None)
-
 
 class MPU(object):
     """
@@ -416,24 +414,6 @@ class MPU(object):
 
         return dist.get_world_size(self.get_pipeline_parallel_group())
 
-    def get_p2p_communication_world_size(self) -> int:
-        """
-        Get the p2p communication world size
-
-        Returns:
-            int: p2p communication world size
-        """
-        return self._p2p_communication_world_size
-
-    def get_embedding_tied_world_size(self) -> int:
-        """
-        Get the embedding tied world size
-
-        Returns:
-            int: embedding tied world size
-        """
-        return self._embedding_tied_world_size
-
     # Single Rank
 
     def get_data_parallel_rank(self) -> int:
@@ -535,22 +515,6 @@ class MPU(object):
         """
         return self._pipeline_model_parallel_global_ranks_per_group
 
-    def get_p2p_communication_global_ranks(self):
-        assert (
-            self._p2p_communication_groups is not None
-        ), "p2p communication groups are not initialized."
-
-        return self._p2p_communication_global_ranks
-
-    def get_embedding_global_ranks(self):
-        """
-        Get all the embedding ranks
-
-        Returns:
-            List[int]: all the parallel ranks
-        """
-        return self._embedding_tied_global_ranks
-
     # Utils functions
 
     def destroy_model_parallel(self) -> None:
@@ -561,8 +525,6 @@ class MPU(object):
         self._tensor_parallel_group = None
         self._pipeline_parallel_group = None
         self._data_parallel_group = None
-        self._p2p_communication_groups = None
-        self._embedding_tied_group = None
 
     def _broadcast(self, inputs: Tensor) -> Tensor:
         """

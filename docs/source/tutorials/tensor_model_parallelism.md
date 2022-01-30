@@ -1,6 +1,5 @@
-# Model Parallelism Tutorial
-- Note that currently OSLO only supports tensor model parallelism.
-- The details of model parallelism cocepts can be found [here](https://huggingface.co/docs/transformers/parallelism).
+# Tensor Model Parallelism Tutorial
+- The concept of the tensor model parallelism can be found [here](https://huggingface.co/docs/transformers/parallelism).
 - The source code of this tutorial can be found [here](https://github.com/tunib-ai/oslo/tree/main/tutorials).
 
 ### Table of contents
@@ -39,7 +38,7 @@ For more information of the distributed launchers, refer to:
 - [DeepSpeed documents](https://www.deepspeed.ai/getting-started/#launching-deepspeed-training)
 
 ## 1. Inference 
-How to use the model parallelism for inference?
+How to use the tensor model parallelism for inference?
 
 ### 1.1. Create model and tokenizer
 ```python
@@ -94,7 +93,7 @@ I don't want a lot for Christmas. There is just one thing I want to ...
 ```
 
 ## 2. Training
-How to use the model parallelism for training?
+How to use the tensor model parallelism for training?
 
 ### 2.1. Initialize some variables
 ```python
@@ -104,19 +103,7 @@ SAVE_INTERVAL = 50
 TRAIN_STEP = 100
 ```
 
-### 2.2. Load dataset and create data loader
-In this tutorial, I used `datasets` library of Hugging Face.
-
-```python
-from datasets import load_dataset
-from torch.utils.data import DataLoader
-
-datasets = load_dataset("squad").data["train"]["context"]
-datasets = [str(_) for _ in datasets[: TRAIN_STEP * BATCH_SIZE]]
-dataloader = DataLoader(datasets, batch_size=BATCH_SIZE, shuffle=True)
-```
-
-### 2.3. Create model, optimizer and tokenizer
+### 2.2. Create model, optimizer and tokenizer
 ```python
 from torch.optim import Adam
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -130,7 +117,7 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2")
 tokenizer.pad_token = tokenizer.eos_token
 ```
 
-### 2.4. Parallelize the model
+### 2.3. Parallelize the model
 ```python
 import oslo
 
@@ -138,6 +125,19 @@ model = oslo.initialize(
     model, config={"model_parallelism": {"tensor_parallel_size": NUM_YOUR_GPUS}}
 )
 ```
+
+### 2.4. Load dataset and create dataloader
+In this tutorial, I used `datasets` library of Hugging Face.
+
+```python
+from datasets import load_dataset
+from torch.utils.data import DataLoader
+
+datasets = load_dataset("squad").data["train"]["context"]
+datasets = [str(_) for _ in datasets[: TRAIN_STEP * BATCH_SIZE]]
+dataloader = DataLoader(datasets, batch_size=BATCH_SIZE, shuffle=True)
+```
+
 ### 2.5. Do training as usual
 ```python
 for step, batch in enumerate(dataloader):
@@ -237,4 +237,4 @@ model.save_parallelized("./merged_ckpt", merge_checkpoints=True)
 pytorch_model.bin    config.json
 ```
 
-This concludes the model parallelism tutorial. Thank you.
+This concludes the tensor model parallelism tutorial. Thank you.
