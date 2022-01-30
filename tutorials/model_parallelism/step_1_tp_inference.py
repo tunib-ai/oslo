@@ -16,7 +16,7 @@ model = AutoModelForCausalLM.from_pretrained("gpt2")
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
 
 # 2. Parallelize the model
-# - ``tensor_parallel_size`` must be smaller then total num of gpus.
+# - ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
 # If you don't have 4 GPUs, please modify this script like:

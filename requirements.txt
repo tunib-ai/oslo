@@ -1,6 +1,2 @@
 torch
 transformers
-ninja
-pybind11
-dacite
-anytree

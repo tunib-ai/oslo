@@ -1,0 +1,422 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>What’s New: &#8212; OSLO  documentation</title>
+    
+  <link href="_static/css/theme.css" rel="stylesheet">
+  <link href="_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    
+  <link rel="preload" as="script" href="_static/js/index.be7d3bbb2ef33a8344ce.js">
+
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+    <script src="_static/jquery.js"></script>
+    <script src="_static/underscore.js"></script>
+    <script src="_static/doctools.js"></script>
+    <script src="_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Model Parallelism" href="CONFIGURATION/model_parallelism.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<div class="col-12 col-md-3 bd-sidebar site-navigation " id="site-navigation">
+    
+        <div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="#">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">OSLO  documentation</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        <p class="caption">
+ <span class="caption-text">
+  CONFIGURATION
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="CONFIGURATION/model_parallelism.html">
+   Model Parallelism
+  </a>
+ </li>
+</ul>
+<p class="caption">
+ <span class="caption-text">
+  TUTORIALS
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="TUTORIALS/model_parallelism.html">
+   Model Parallelism Tutorial
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav> <!-- To handle the deprecated key -->
+
+<div class="navbar_extra_footer">
+  Theme by the <a href="https://ebp.jupyterbook.org">Executable Book Project</a>
+</div>
+
+</div>
+
+
+          
+
+
+          
+<!-- This is an invisible pixel that we watch to see if we've scrolled. -->
+<div class="sbt-scroll-pixel-helper"></div>
+<main class="col py-md-3 pl-md-4 bd-content overflow-auto" role="main">
+    
+    <div class="topbar container-xl fixed-top">
+    <div class="topbar-contents row">
+        <div class="col-12 col-md-3 bd-topbar-whitespace site-navigation show"></div>
+        <div class="col pl-md-4 topbar-main">
+            <div class="topbar-left">
+                
+                <label class="nav-toggle-button" for="__navigation">
+                    <div class="visually-hidden">Toggle navigation</div>
+                    <i class="fas fa-bars"></i>
+                </label>
+                
+            </div>
+            
+<div class="dropdown-buttons-trigger">
+    <button id="dropdown-buttons-trigger" class="btn btn-secondary topbarbtn" aria-label="Download this page"><i
+            class="fas fa-download"></i></button>
+
+    <div class="dropdown-buttons">
+        <!-- ipynb file if we had a myst markdown file -->
+        
+        <!-- Download raw file -->
+        <a class="dropdown-buttons" href="_sources/index.rst.txt"><button type="button"
+                class="btn btn-secondary topbarbtn" title="Download source file" data-toggle="tooltip"
+                data-placement="left">.rst</button></a>
+        <!-- Download PDF via print -->
+        <button type="button" id="download-print" class="btn btn-secondary topbarbtn" title="Print to PDF"
+                onclick="printPdf(this)" data-toggle="tooltip" data-placement="left">.pdf</button>
+    </div>
+</div>
+
+            <!-- Source interaction buttons -->
+
+            <!-- Full screen (wrap in <a> to have style consistency -->
+
+<a class="full-screen-button"><button type="button" class="btn btn-secondary topbarbtn" data-toggle="tooltip"
+        data-placement="bottom" onclick="toggleFullScreen()" aria-label="Fullscreen mode"
+        title="Fullscreen mode"><i
+            class="fas fa-expand"></i></button></a>
+
+            <!-- Launch buttons -->
+
+        </div>
+
+        <!-- Table of contents -->
+        <div class="d-none d-md-block col-md-2 bd-toc show noprint">
+            
+            <div class="tocsection onthispage pt-5 pb-3">
+                <i class="fas fa-list"></i> Contents
+            </div>
+            <nav id="bd-toc-nav" aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#">
+   What’s New:
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#what-is-oslo-about">
+   What is OSLO about?
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#installation">
+   Installation
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#basic-usage">
+   Basic Usage
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#documents">
+   Documents
+  </a>
+  <ul class="visible nav section-nav flex-column">
+  </ul>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#administrative-notes">
+   Administrative Notes
+  </a>
+  <ul class="visible nav section-nav flex-column">
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#citing-oslo">
+     Citing OSLO
+    </a>
+   </li>
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#licensing">
+     Licensing
+    </a>
+   </li>
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#acknowledgements">
+     Acknowledgements
+    </a>
+   </li>
+  </ul>
+ </li>
+</ul>
+
+            </nav>
+        </div>
+    </div>
+</div>
+    <div id="main-content" class="row">
+        <div class="col-12 col-md-9 pl-md-3 pr-md-0">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1>What’s New:</h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                        <div>
+                            <h2> Contents </h2>
+                        </div>
+                        <nav aria-label="Page">
+                            <ul class="visible nav section-nav flex-column">
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#">
+   What’s New:
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#what-is-oslo-about">
+   What is OSLO about?
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#installation">
+   Installation
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#basic-usage">
+   Basic Usage
+  </a>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#documents">
+   Documents
+  </a>
+  <ul class="visible nav section-nav flex-column">
+  </ul>
+ </li>
+ <li class="toc-h1 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#administrative-notes">
+   Administrative Notes
+  </a>
+  <ul class="visible nav section-nav flex-column">
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#citing-oslo">
+     Citing OSLO
+    </a>
+   </li>
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#licensing">
+     Licensing
+    </a>
+   </li>
+   <li class="toc-h2 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#acknowledgements">
+     Acknowledgements
+    </a>
+   </li>
+  </ul>
+ </li>
+</ul>
+
+                        </nav>
+                    </div>
+                </div>
+            </div>
+            
+              <div>
+                
+  <div class="docutils container">
+<img alt="https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png" src="https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png" />
+</div>
+<div class="line-block">
+<div class="line"><br /></div>
+<div class="line"><br /></div>
+</div>
+<div class="section" id="whats-new">
+<h1>What’s New:<a class="headerlink" href="#whats-new" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><p>January 30, 2022 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0">Released OSLO 2.0 alpha
+version</a>.</p></li>
+<li><p>December 30, 2021 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v1.0">Add Deployment
+Launcher</a>.</p></li>
+<li><p>December 21, 2021 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v1.0">Released OSLO
+1.0</a>.</p></li>
+</ul>
+</div>
+<div class="section" id="what-is-oslo-about">
+<h1>What is OSLO about?<a class="headerlink" href="#what-is-oslo-about" title="Permalink to this headline">¶</a></h1>
+<p>OSLO is a framework that provides various GPU based optimization
+technologies for large-scale modeling. 3D Parallelism and Kernel Fusion
+which could be useful when training a large model like
+<a class="reference external" href="https://huggingface.co/EleutherAI/gpt-j-6B">EleutherAI/gpt-j-6B</a> are
+the key features. OSLO makes these technologies easy-to-use by magical
+compatibility with <a class="reference external" href="https://github.com/huggingface/transformers">Hugging Face
+Transformers</a> that is
+being considered as a de facto standard in 2021. Currently, the
+architectures such as GPT2, GPTNeo, and GPTJ are supported, but we plan
+to support more soon.</p>
+</div>
+<div class="section" id="installation">
+<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
+<p>OSLO can be easily installed using the pip package manager. All the
+dependencies such as <a class="reference external" href="https://pypi.org/project/torch/">torch</a> and
+<a class="reference external" href="https://pypi.org/project/transformers/">transformers</a> should be installed
+automatically with the following command. Be careful that the ‘core’ is
+in the PyPI project name.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">pip install oslo-core</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="basic-usage">
+<h1>Basic Usage<a class="headerlink" href="#basic-usage" title="Permalink to this headline">¶</a></h1>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="s2">&quot;oslo-config.json&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>It only takes single line of code. Now feel free to train and infer a large transformer model! 😎</p>
+</div>
+<div class="section" id="documents">
+<h1>Documents<a class="headerlink" href="#documents" title="Permalink to this headline">¶</a></h1>
+<div class="toctree-wrapper compound">
+<p class="caption"><span class="caption-text">CONFIGURATION</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/model_parallelism.html">Model Parallelism</a></li>
+</ul>
+</div>
+<div class="toctree-wrapper compound">
+<p class="caption"><span class="caption-text">TUTORIALS</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="TUTORIALS/model_parallelism.html">Model Parallelism Tutorial</a></li>
+</ul>
+</div>
+</div>
+<div class="section" id="administrative-notes">
+<h1>Administrative Notes<a class="headerlink" href="#administrative-notes" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="citing-oslo">
+<h2>Citing OSLO<a class="headerlink" href="#citing-oslo" title="Permalink to this headline">¶</a></h2>
+<p>If you find our work useful, please consider citing:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@misc</span><span class="p">{</span><span class="n">oslo</span><span class="p">,</span>
+  <span class="n">author</span>       <span class="o">=</span> <span class="p">{</span><span class="n">Ko</span><span class="p">,</span> <span class="n">Hyunwoong</span> <span class="ow">and</span> <span class="n">Kim</span><span class="p">,</span> <span class="n">Soohwan</span> <span class="ow">and</span> <span class="n">Park</span><span class="p">,</span> <span class="n">Kyubyong</span><span class="p">},</span>
+  <span class="n">title</span>        <span class="o">=</span> <span class="p">{</span><span class="n">OSLO</span><span class="p">:</span> <span class="n">Open</span> <span class="n">Source</span> <span class="n">framework</span> <span class="k">for</span> <span class="n">Large</span><span class="o">-</span><span class="n">scale</span> <span class="n">transformer</span> <span class="n">Optimization</span><span class="p">},</span>
+  <span class="n">howpublished</span> <span class="o">=</span> <span class="p">{</span>\<span class="n">url</span><span class="p">{</span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">tunib</span><span class="o">-</span><span class="n">ai</span><span class="o">/</span><span class="n">oslo</span><span class="p">}},</span>
+  <span class="n">year</span>         <span class="o">=</span> <span class="p">{</span><span class="mi">2021</span><span class="p">},</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="licensing">
+<h2>Licensing<a class="headerlink" href="#licensing" title="Permalink to this headline">¶</a></h2>
+<p>The Code of the OSLO project is licensed under the terms of the <a class="reference external" href="LICENSE.apache-2.0">Apache
+License 2.0</a>.</p>
+<p>Copyright 2021 TUNiB Inc. <a class="reference external" href="http://www.tunib.ai">http://www.tunib.ai</a> All Rights Reserved.</p>
+</div>
+<div class="section" id="acknowledgements">
+<h2>Acknowledgements<a class="headerlink" href="#acknowledgements" title="Permalink to this headline">¶</a></h2>
+<p>The OSLO project is built with GPU support from the <a class="reference external" href="http://www.aica-gj.kr">AICA (Artificial
+Intelligence Industry Cluster Agency)</a>.</p>
+</div>
+</div>
+
+
+              </div>
+              
+            
+                <!-- Previous / next buttons -->
+<div class='prev-next-area'>
+    <a class='right-next' id="next-link" href="CONFIGURATION/model_parallelism.html" title="next page">
+    <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Model Parallelism</p>
+    </div>
+    <i class="fas fa-angle-right"></i>
+    </a>
+</div>
+            
+        </div>
+    </div>
+    <footer class="footer">
+  <p>
+    
+      By TUNiB<br/>
+    
+        &copy; Copyright 2021, TUNiB.<br/>
+  </p>
+</footer>
+</main>
+
+
+      </div>
+    </div>
+  
+  <script src="_static/js/index.be7d3bbb2ef33a8344ce.js"></script>
+
+  </body>
+</html>

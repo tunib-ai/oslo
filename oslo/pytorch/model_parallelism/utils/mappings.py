@@ -59,7 +59,7 @@ class TPMapping(object):
         ],
         T5=[
             Col("q", "k", "v", "DenseReluDense.wi"),
-            Row("o", "DenseReluDense.wo",  "relative_attention_bias"),
+            Row("o", "DenseReluDense.wo", "relative_attention_bias"),
             Update("d_model", "n_heads", "inner_dim"),
         ],
         GPT2=[
@@ -140,10 +140,16 @@ class TPMapping(object):
         Returns:
             dict: mapping by model
         """
+        mapping_by_model = None
         for cls, mapping in self.__MAPPING__.items():
             if isinstance(model, cls):
-                return mapping
-        return None
+                mapping_by_model = mapping
+
+        assert mapping_by_model is not None, (
+            f"Currently, {model.__class__.__qualname__} is not supported. "
+            f"The current supported models are {list(self.__MAPPING__.keys())}"
+        )
+        return mapping_by_model
 
     def column_parallel_params(self, model):
         """

@@ -1,6 +1,6 @@
 """
 Model parallelism tutorial step 3:
-How to merge the parallelized checkpoint?
+How to merge the parallelized checkpoints?
 """
 
 from transformers import AutoModelForCausalLM
@@ -15,7 +15,7 @@ import oslo
 model = AutoModelForCausalLM.from_pretrained("gpt2")
 
 # 2. Parallelize the model
-# - ``tensor_parallel_size`` must be smaller then total num of gpus.
+# - ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
 model = oslo.initialize(

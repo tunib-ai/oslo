@@ -34,7 +34,7 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2")
 tokenizer.pad_token = tokenizer.eos_token
 
 # 4. Parallelize the model
-# - ``tensor_parallel_size`` must be smaller then total num of gpus.
+# - ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
 model = oslo.initialize(
