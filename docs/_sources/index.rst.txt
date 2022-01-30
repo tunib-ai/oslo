@@ -25,9 +25,7 @@ which could be useful when training a large model like
 the key features. OSLO makes these technologies easy-to-use by magical
 compatibility with `Hugging Face
 Transformers <https://github.com/huggingface/transformers>`__ that is
-being considered as a de facto standard in 2021. Currently, the
-architectures such as GPT2, GPTNeo, and GPTJ are supported, but we plan
-to support more soon.
+being considered as a de facto standard in 2021.
 
 Installation
 ============
@@ -45,7 +43,7 @@ in the PyPI project name.
 Basic Usage
 ====================
 
-It only takes single line of code. Now feel free to train and infer a large transformer model. 😎
+It only takes a single line of code. Now feel free to train and infer a large transformer model. 😎
 
 .. code::
 
