@@ -1,6 +1,6 @@
 .PHONY: style
 
-check_dirs := oslo/ tests/
+check_dirs := oslo/ tests/ tutorials/
 
 style:
 	black $(check_dirs)
