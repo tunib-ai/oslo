@@ -1,6 +1,2 @@
-torch>=1.9
+torch
 transformers
-ninja
-pybind11
-dacite
-aytree
