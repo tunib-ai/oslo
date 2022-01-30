@@ -25,9 +25,7 @@ which could be useful when training a large model like
 the key features. OSLO makes these technologies easy-to-use by magical
 compatibility with `Hugging Face
 Transformers <https://github.com/huggingface/transformers>`__ that is
-being considered as a de facto standard in 2021. Currently, the
-architectures such as GPT2, GPTNeo, and GPTJ are supported, but we plan
-to support more soon.
+being considered as a de facto standard in 2021.
 
 Installation
 ============
