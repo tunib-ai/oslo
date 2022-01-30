@@ -32,20 +32,27 @@ def from_parallelized(parallelized_model_path, **kwargs):
 
     if os.path.isdir(parallelized_model_path):
         if all(os.path.isfile(file_name) for file_name in file_names):
-            self.load_state_dict(
-                torch.load(
-                    os.path.join(
-                        parallelized_model_path,
-                        PARALLELIZED_WEIGHTS_NAME.replace(
-                            "tp_0",
-                            f"tp_{self.mpu.get_tensor_parallel_rank()}",
-                        ).replace(
-                            "pp_0",
-                            f"pp_{self.mpu.get_pipeline_parallel_rank()}",
-                        ),
-                    )
+            state_dict = torch.load(
+                os.path.join(
+                    parallelized_model_path,
+                    PARALLELIZED_WEIGHTS_NAME.replace(
+                        "tp_0",
+                        f"tp_{self.mpu.get_tensor_parallel_rank()}",
+                    ).replace(
+                        "pp_0",
+                        f"pp_{self.mpu.get_pipeline_parallel_rank()}",
+                    ),
                 )
             )
+
+            if self._keys_to_ignore_on_save is not None:
+                state_dict = {
+                    k: v
+                    for k, v in state_dict.items()
+                    if k not in self._keys_to_ignore_on_save
+                }
+
+            self.load_state_dict(state_dict, strict=False)
 
         else:
             raise FileNotFoundError(
