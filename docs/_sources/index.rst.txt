@@ -51,9 +51,7 @@ It only takes a single line of code. Now feel free to train and infer a large tr
 
   model = oslo.initialize(model, "oslo-config.json")
 
-
-
-Documents 
+Documents
 ====================
 
 .. toctree::
@@ -66,7 +64,9 @@ Documents
    :maxdepth: 1
    :caption: TUTORIALS
 
-   TUTORIALS/model_parallelism
+   TUTORIALS/tensor_model_parallelism
+   TUTORIALS/tensor_model_data_parallelism
+   TUTORIALS/tensor_model_zero_data_parallelism
 
 Administrative Notes
 ====================
