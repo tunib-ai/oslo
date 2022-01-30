@@ -45,7 +45,7 @@ model = oslo.initialize(model, "oslo-config.json")
 ```
 
 ## Documents
-For detailed information, refer to [our official document](https://tunib-ai.github.io/parallelformers/).
+For detailed information, refer to [our official document](https://tunib-ai.github.io/oslo/).
 
 ## Administrative Notes
 
