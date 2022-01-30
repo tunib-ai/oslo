@@ -2,10 +2,11 @@
 Model parallelism tutorial step 2:
 How to use the tensor parallelism for training?
 """
-
+import torch
 from datasets import load_dataset
 from torch.optim import Adam
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import oslo
@@ -16,12 +17,13 @@ import oslo
 
 # 1. Initialize some variables
 BATCH_SIZE = 4
-SEQ_LEN = 512
+SEQ_LEN = 64
 SAVE_INTERVAL = 50
 TRAIN_STEP = 100
 
 # 2. Load dataset and create data loader
 datasets = load_dataset("squad").data["train"]["context"]
+datasets = [str(_) for _ in datasets[: TRAIN_STEP * BATCH_SIZE]]
 dataloader = DataLoader(datasets, batch_size=BATCH_SIZE, shuffle=True)
 
 # 3. Create model and optimizer and tokenizer
@@ -45,6 +47,7 @@ for step, batch in enumerate(dataloader):
     # 5. Make batch
     input_batch = tokenizer(
         batch,
+        return_tensors="pt",
         padding=True,
         truncation=True,
         max_length=SEQ_LEN,
@@ -52,6 +55,8 @@ for step, batch in enumerate(dataloader):
 
     # 6. Forward-Backward-Step
     loss = model(**input_batch, labels=input_batch["input_ids"]).loss
+    if torch.distributed.get_rank() == 0:
+        print(f"step:{step}, loss={loss}")
     loss.backward()
     optimizer.step()
 
