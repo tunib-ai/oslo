@@ -45,7 +45,7 @@ in the PyPI project name.
 Basic Usage
 ====================
 
-It only takes single line of code. Now feel free to train and infer a large transformer model. 😎
+It only takes a single line of code. Now feel free to train and infer a large transformer model. 😎
 
 .. code::
 

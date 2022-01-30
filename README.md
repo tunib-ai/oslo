@@ -36,7 +36,7 @@ pip install oslo-core
 ```
 
 ## Basic Usage
-It only takes single line of code. Now feel free to train and infer a large transformer model. 😎
+It only takes a single line of code. Now feel free to train and infer a large transformer model. 😎
 
 ```python
 import oslo
