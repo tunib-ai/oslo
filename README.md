@@ -36,13 +36,13 @@ pip install oslo-core
 ```
 
 ## Basic Usage
+It only takes single line of code. Now feel free to train and infer a large transformer model. 😎
 
 ```python
 import oslo
 
 model = oslo.initialize(model, "oslo-config.json")
 ```
-It only takes single line of code. Now feel free to train and infer a large transformer model! 😎
 
 ## Documents
 For detailed information, refer to [our official document](https://tunib-ai.github.io/parallelformers/).

@@ -45,13 +45,14 @@ in the PyPI project name.
 Basic Usage
 ====================
 
+It only takes single line of code. Now feel free to train and infer a large transformer model. 😎
+
 .. code::
 
   import oslo
 
   model = oslo.initialize(model, "oslo-config.json")
 
-It only takes single line of code. Now feel free to train and infer a large transformer model! 😎
 
 
 Documents 
