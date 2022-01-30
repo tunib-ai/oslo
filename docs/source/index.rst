@@ -1,3 +1,6 @@
+OSLO: Open Source framework for Large-scale transformer Optimization
+================
+
 .. container::
 
       .. image:: https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png
