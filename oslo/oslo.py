@@ -2,7 +2,6 @@ import json
 import os
 from typing import Union, Dict, Any
 
-from transformers import PreTrainedModel
 
 from oslo.pytorch.model_parallelism import initialize_model_parallelism
 
@@ -42,9 +41,11 @@ def _config_check(form, val, key=None):
 
 
 def _sanity_check(
-    model: PreTrainedModel,
+    model,
     config: Union[str, Dict[str, Any]],
 ):
+    from transformers import PreTrainedModel
+
     assert isinstance(
         model, PreTrainedModel
     ), "An argument ``model`` must be the PyTorch Hugging Face Transformers model."
@@ -67,7 +68,7 @@ def _sanity_check(
     return model, config
 
 
-def initialize(model: PreTrainedModel, config: Union[str, Dict[str, Any]], **kwargs):
+def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
     """
     Initialize OSLO engine.
 

@@ -3,7 +3,6 @@ from collections import Callable
 from typing import Optional, Union
 import torch.distributed as dist
 import torch
-from transformers.modeling_utils import unwrap_model, get_parameter_dtype
 from logging import getLogger
 
 from oslo.pytorch.model_parallelism import TPMapping
@@ -70,6 +69,8 @@ def save_parallelized(
     merge_checkpoints: bool = False,
     **kwargs,
 ):
+    from transformers.modeling_utils import unwrap_model, get_parameter_dtype
+
     self = kwargs.pop("self")
     mapping = kwargs.pop("tp_mapping", TPMapping())
 

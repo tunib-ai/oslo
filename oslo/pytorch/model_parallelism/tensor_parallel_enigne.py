@@ -3,7 +3,6 @@ from typing import List
 import torch
 import torch.distributed as dist
 from torch.nn import Module, Embedding, Linear
-from transformers import Conv1D
 
 from oslo.pytorch.model_parallelism.utils.mappings import (
     TPMapping,
@@ -123,6 +122,8 @@ class TensorParallelEngine(object):
         )
 
     def _parallelize_embedding(self):
+        from transformers import Conv1D
+
         embedding = self.model.get_input_embeddings()
         chunked_weights = torch.chunk(
             embedding.weight, chunks=self.mpu.get_tensor_parallel_world_size(), dim=0
@@ -157,6 +158,8 @@ class TensorParallelEngine(object):
                     module.__class__ = ColumnParallelLinear
 
     def _parallelize_modules(self):
+        from transformers import Conv1D
+
         for param_name, module in self.model.named_modules():
             if self.mapping.is_column_parallel(self.model, param_name):
                 self._column_slice(
@@ -306,6 +309,8 @@ class TensorDeparallelEngine(object):
         fusion_degree: int,
         reversed: bool,
     ) -> Module:
+        from transformers import Conv1D
+
         merged_module = self._merge(
             module=module,
             reversed=reversed,
@@ -327,6 +332,8 @@ class TensorDeparallelEngine(object):
         fusion_degree: int,
         reversed: bool,
     ) -> List[Module]:
+        from transformers import Conv1D
+
         merged_module = self._merge(
             module=module,
             reversed=reversed,
@@ -343,6 +350,8 @@ class TensorDeparallelEngine(object):
         return merged_module
 
     def _deparallelize_embedding(self):
+        from transformers import Conv1D
+
         embedding = self.model.get_input_embeddings()
         if not embedding.weight.is_cuda:
             embedding.weight.data = embedding.weight.cuda()
