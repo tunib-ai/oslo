@@ -5,7 +5,7 @@ from typing import List
 
 import torch
 import torch.distributed as dist
-from torch import Tensor, Size
+from torch import Size, Tensor
 from torch.autograd import Function
 
 NoneType = type(None)

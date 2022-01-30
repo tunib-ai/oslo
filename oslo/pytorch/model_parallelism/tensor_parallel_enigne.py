@@ -1,26 +1,26 @@
+import copy
 from typing import List
 
 import torch
 import torch.distributed as dist
-from torch.nn import Module, Embedding, Linear
+from torch.nn import Embedding, Linear, Module
 
-from oslo.pytorch.model_parallelism.utils.mappings import (
-    TPMapping,
-    update_module_arguments,
-)
 from oslo.pytorch.model_parallelism.utils.distributed import (
     ColumnParallelLinear,
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-import copy
+from oslo.pytorch.model_parallelism.utils.mappings import (
+    TPMapping,
+    update_module_arguments,
+)
 
 
 class TensorParallelEngine(object):
-    def __init__(self, model, mpu, mapping=TPMapping()):
+    def __init__(self, model, mpu, mapping=None):
         self.model = model
         self.mpu = mpu
-        self.mapping = mapping
+        self.mapping = mapping if mapping is not None else TPMapping()
         self.device = torch.cuda.current_device()
 
     def _update_mp_arguments(self):
@@ -184,12 +184,12 @@ class TensorParallelEngine(object):
                     module.__class__ = RowParallelLinear
 
     def _postprocess(self):
-        for name, param in self.model.named_parameters():
+        for param in self.model.parameters():
             if not param.is_cuda:
                 if torch.is_tensor(param):
                     param.data = param.to(self.device)
 
-        for name, param in self.model.named_buffers():
+        for param in self.model.buffers():
             if not param.is_cuda:
                 if torch.is_tensor(param):
                     param.data = param.to(self.device)
@@ -203,10 +203,10 @@ class TensorParallelEngine(object):
 
 
 class TensorDeparallelEngine(object):
-    def __init__(self, model, mpu, mapping=TPMapping()):
+    def __init__(self, model, mpu, mapping=None):
         self.model = model
         self.mpu = mpu
-        self.mapping = mapping
+        self.mapping = mapping if mapping is not None else TPMapping()
         self.device = torch.cuda.current_device()
 
     def _update_mp_arguments(self):
@@ -370,7 +370,7 @@ class TensorDeparallelEngine(object):
         else:
             embedding.__class__ = Embedding
 
-        for name, module in self.model.named_modules():
+        for module in self.model.modules():
             if (
                 hasattr(module, "weight")
                 and module.weight is embedding.weight
@@ -408,12 +408,12 @@ class TensorDeparallelEngine(object):
                 )
 
     def _postprocess(self):
-        for name, param in self.model.named_parameters():
+        for param in self.model.parameters():
             if param.is_cuda:
                 if torch.is_tensor(param):
                     param.data = param.cpu()
 
-        for name, param in self.model.named_buffers():
+        for param in self.model.buffers():
             if param.is_cuda:
                 if torch.is_tensor(param):
                     param.data = param.cpu()

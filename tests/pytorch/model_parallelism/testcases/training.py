@@ -3,7 +3,6 @@ import random
 from argparse import ArgumentParser
 from functools import partial
 
-from torch.profiler.profiler import ProfilerActivity
 import numpy as np
 import torch
 import torch.distributed as dist
@@ -11,12 +10,13 @@ import wandb
 from datasets import load_dataset
 from torch.optim import Adam
 from torch.profiler import profile
+from torch.profiler.profiler import ProfilerActivity
 from tqdm import tqdm
 from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizer,
     AutoModelForCausalLM,
     AutoModelForSeq2SeqLM,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
 )
 
 import oslo

@@ -208,7 +208,7 @@ class TPMapping(object):
         param_split = param_name.split(".")
         first_check = []
 
-        for code, elems in mapping.items():
+        for elems in mapping.values():
             for elem in elems:
                 if elem.name in param_name:
                     first_check.append(elem)

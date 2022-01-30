@@ -2,11 +2,11 @@ from argparse import ArgumentParser
 from functools import partial
 
 from transformers import (
+    AutoModelForCausalLM,
     AutoModelForMaskedLM,
+    AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    AutoModelForCausalLM,
-    AutoModelForSeq2SeqLM,
 )
 
 import oslo

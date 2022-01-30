@@ -1,16 +1,16 @@
 from functools import partial
 
 from oslo.pytorch.model_parallelism.network.mpu import MPU
-from oslo.pytorch.model_parallelism.utils.mappings import TPMapping
 from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
-    TensorParallelEngine,
     TensorDeparallelEngine,
+    TensorParallelEngine,
 )
 from oslo.pytorch.model_parallelism.utils.extensions import (
     from_parallelized,
-    save_parallelized,
     resize_token_embeddings,
+    save_parallelized,
 )
+from oslo.pytorch.model_parallelism.utils.mappings import TPMapping
 
 
 def initialize_model_parallelism(model, config, **kwargs):

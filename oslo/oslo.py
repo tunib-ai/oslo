@@ -1,7 +1,6 @@
 import json
 import os
-from typing import Union, Dict, Any
-
+from typing import Any, Dict, Union
 
 from oslo.pytorch.model_parallelism import initialize_model_parallelism
 

@@ -1,9 +1,10 @@
 import os
 from collections import Callable
-from typing import Optional, Union
-import torch.distributed as dist
-import torch
 from logging import getLogger
+from typing import Optional, Union
+
+import torch
+import torch.distributed as dist
 
 from oslo.pytorch.model_parallelism import TPMapping
 from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
@@ -76,7 +77,7 @@ def save_parallelized(
     merge_checkpoints: bool = False,
     **kwargs,
 ):
-    from transformers.modeling_utils import unwrap_model, get_parameter_dtype
+    from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
     self = kwargs.pop("self")
     mapping = kwargs.pop("tp_mapping", TPMapping())
