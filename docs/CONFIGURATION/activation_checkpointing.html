@@ -34,8 +34,6 @@
     <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Tensor Model Parallelism Tutorial" href="../TUTORIALS/tensor_model_parallelism.html" />
-    <link rel="prev" title="OSLO: Open Source framework for Large-scale transformer Optimization" href="../index.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
     
@@ -77,9 +75,9 @@
   CONFIGURATION
  </span>
 </p>
-<ul class="current nav bd-sidenav">
- <li class="toctree-l1 current active">
-  <a class="current reference internal" href="#">
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="model_parallelism.html">
    Model Parallelism
   </a>
  </li>
@@ -146,7 +144,7 @@
         <!-- ipynb file if we had a myst markdown file -->
         
         <!-- Download raw file -->
-        <a class="dropdown-buttons" href="../_sources/CONFIGURATION/model_parallelism.md.txt"><button type="button"
+        <a class="dropdown-buttons" href="../_sources/CONFIGURATION/activation_checkpointing.md.txt"><button type="button"
                 class="btn btn-secondary topbarbtn" title="Download source file" data-toggle="tooltip"
                 data-placement="left">.md</button></a>
         <!-- Download PDF via print -->
@@ -187,8 +185,50 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#backend-str">
+   2. backend:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     str
+    </span>
+   </code>
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#fairscale-params-dict">
+   3. fairscale_params:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     dict
+    </span>
+   </code>
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#offload-to-cpu-bool">
+     <code class="docutils literal notranslate">
+      <span class="pre">
+       offload_to_cpu
+      </span>
+     </code>
+     :
+     <code class="docutils literal notranslate">
+      <span class="pre">
+       bool
+      </span>
+     </code>
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#tensor-parallel-size-int">
-   2. tensor_parallel_size:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     tensor_parallel_size
+    </span>
+   </code>
+   :
    <code class="docutils literal notranslate">
     <span class="pre">
      int
@@ -234,8 +274,50 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#backend-str">
+   2. backend:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     str
+    </span>
+   </code>
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#fairscale-params-dict">
+   3. fairscale_params:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     dict
+    </span>
+   </code>
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#offload-to-cpu-bool">
+     <code class="docutils literal notranslate">
+      <span class="pre">
+       offload_to_cpu
+      </span>
+     </code>
+     :
+     <code class="docutils literal notranslate">
+      <span class="pre">
+       bool
+      </span>
+     </code>
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#tensor-parallel-size-int">
-   2. tensor_parallel_size:
+   <code class="docutils literal notranslate">
+    <span class="pre">
+     tensor_parallel_size
+    </span>
+   </code>
+   :
    <code class="docutils literal notranslate">
     <span class="pre">
      int
@@ -261,11 +343,17 @@
                 
   <div class="section" id="model-parallelism">
 <h1>Model Parallelism<a class="headerlink" href="#model-parallelism" title="Permalink to this headline">¶</a></h1>
-<p>You can specify your own model parallelism related configuration under <code class="docutils literal notranslate"><span class="pre">model_parallelism</span></code> like:</p>
+<p>You can specify your own activation checkpointing related configuration under <code class="docutils literal notranslate"><span class="pre">model_parallelism</span></code> like:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span>{
-  &quot;model_parallelism&quot;: {
+  &quot;activation_checkpointing&quot;: {
     &quot;enable&quot;: bool,
-    &quot;tensor_parallel_size&quot;: int,
+    &quot;backend&quot;: &quot;torch&quot; | &quot;fairscale&quot; | &quot;deepspeed&quot;,
+    &quot;fairscale_params&quot;: {
+      &quot;offload_to_cpu&quot;: bool
+    },
+    &quot;deepspeed_params&quot;: {
+      
+    }
   }
 }
 </pre></div>
@@ -276,10 +364,27 @@
 <li><p>type: bool</p></li>
 <li><p>default: False</p></li>
 </ul>
-<p>Enable model parallelism</p>
+<p>Enable activation checkpointing</p>
 </div>
+<div class="section" id="backend-str">
+<h2>2. backend: <code class="docutils literal notranslate"><span class="pre">str</span></code><a class="headerlink" href="#backend-str" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li><p>type: str</p></li>
+<li><p>default: “torch”</p></li>
+<li><p>available: [“torch”, “fairscale”, “deepspeed”]</p></li>
+</ul>
+<p>Select backend engine for activation checkpointing</p>
+</div>
+<div class="section" id="fairscale-params-dict">
+<h2>3. fairscale_params: <code class="docutils literal notranslate"><span class="pre">dict</span></code><a class="headerlink" href="#fairscale-params-dict" title="Permalink to this headline">¶</a></h2>
+<p>Additional parameters for fairscale activation checkpointing</p>
+<div class="section" id="offload-to-cpu-bool">
+<h3><code class="docutils literal notranslate"><span class="pre">offload_to_cpu</span></code>: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#offload-to-cpu-bool" title="Permalink to this headline">¶</a></h3>
+</div>
+</div>
+<hr class="docutils" />
 <div class="section" id="tensor-parallel-size-int">
-<h2>2. tensor_parallel_size: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline">¶</a></h2>
+<h2><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code>: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
 <li><p>type: int</p></li>
 <li><p>default: 1</p></li>
@@ -316,21 +421,7 @@ you can find the detail of it from <a class="reference external" href="https://h
               
             
                 <!-- Previous / next buttons -->
-<div class='prev-next-area'> 
-    <a class='left-prev' id="prev-link" href="../index.html" title="previous page">
-        <i class="fas fa-angle-left"></i>
-        <div class="prev-next-info">
-            <p class="prev-next-subtitle">previous</p>
-            <p class="prev-next-title">OSLO: Open Source framework for Large-scale transformer Optimization</p>
-        </div>
-    </a>
-    <a class='right-next' id="next-link" href="../TUTORIALS/tensor_model_parallelism.html" title="next page">
-    <div class="prev-next-info">
-        <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Tensor Model Parallelism Tutorial</p>
-    </div>
-    <i class="fas fa-angle-right"></i>
-    </a>
+<div class='prev-next-area'>
 </div>
             
         </div>

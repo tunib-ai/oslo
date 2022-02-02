@@ -5,7 +5,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tensor Model Parallelism Tutorial &#8212; OSLO  documentation</title>
+    <title>Model Parallelism Tutorial &#8212; OSLO  documentation</title>
     
   <link href="../_static/css/theme.css" rel="stylesheet">
   <link href="../_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
@@ -34,7 +34,6 @@
     <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Tensor Model + Data Parallelism Tutorial" href="tensor_model_data_parallelism.html" />
     <link rel="prev" title="Model Parallelism" href="../CONFIGURATION/model_parallelism.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
@@ -92,17 +91,7 @@
 <ul class="current nav bd-sidenav">
  <li class="toctree-l1 current active">
   <a class="current reference internal" href="#">
-   Tensor Model Parallelism Tutorial
-  </a>
- </li>
- <li class="toctree-l1">
-  <a class="reference internal" href="tensor_model_data_parallelism.html">
-   Tensor Model + Data Parallelism Tutorial
-  </a>
- </li>
- <li class="toctree-l1">
-  <a class="reference internal" href="tensor_model_zero_data_parallelism.html">
-   Tensor Model + ZeRO Data Parallelism Tutorial
+   Model Parallelism Tutorial
   </a>
  </li>
 </ul>
@@ -146,7 +135,7 @@
         <!-- ipynb file if we had a myst markdown file -->
         
         <!-- Download raw file -->
-        <a class="dropdown-buttons" href="../_sources/TUTORIALS/tensor_model_parallelism.md.txt"><button type="button"
+        <a class="dropdown-buttons" href="../_sources/TUTORIALS/model_parallelism.md.txt"><button type="button"
                 class="btn btn-secondary topbarbtn" title="Download source file" data-toggle="tooltip"
                 data-placement="left">.md</button></a>
         <!-- Download PDF via print -->
@@ -219,18 +208,18 @@
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-dataset-and-create-data-loader">
+     2.2. Load dataset and create data loader
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#create-model-optimizer-and-tokenizer">
-     2.2. Create model, optimizer and tokenizer
+     2.3. Create model, optimizer and tokenizer
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#id1">
-     2.3. Parallelize the model
-    </a>
-   </li>
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#load-dataset-and-create-dataloader">
-     2.4. Load dataset and create dataloader
+     2.4. Parallelize the model
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
@@ -282,7 +271,7 @@
         <div class="col-12 col-md-9 pl-md-3 pr-md-0">
             <!-- Table of contents that is only displayed when printing the page -->
             <div id="jb-print-docs-body" class="onlyprint">
-                <h1>Tensor Model Parallelism Tutorial</h1>
+                <h1>Model Parallelism Tutorial</h1>
                 <!-- Table of contents -->
                 <div id="print-main-content">
                     <div id="jb-print-toc">
@@ -335,18 +324,18 @@
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-dataset-and-create-data-loader">
+     2.2. Load dataset and create data loader
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#create-model-optimizer-and-tokenizer">
-     2.2. Create model, optimizer and tokenizer
+     2.3. Create model, optimizer and tokenizer
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#id1">
-     2.3. Parallelize the model
-    </a>
-   </li>
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#load-dataset-and-create-dataloader">
-     2.4. Load dataset and create dataloader
+     2.4. Parallelize the model
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
@@ -397,10 +386,11 @@
             
               <div>
                 
-  <div class="section" id="tensor-model-parallelism-tutorial">
-<h1>Tensor Model Parallelism Tutorial<a class="headerlink" href="#tensor-model-parallelism-tutorial" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="model-parallelism-tutorial">
+<h1>Model Parallelism Tutorial<a class="headerlink" href="#model-parallelism-tutorial" title="Permalink to this headline">¶</a></h1>
 <ul class="simple">
-<li><p>The concept of the tensor model parallelism can be found <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p></li>
+<li><p>Note that currently OSLO only supports tensor model parallelism.</p></li>
+<li><p>The details of model parallelism cocepts can be found <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p></li>
 <li><p>The source code of this tutorial can be found <a class="reference external" href="https://github.com/tunib-ai/oslo/tree/main/tutorials">here</a>.</p></li>
 </ul>
 <div class="section" id="table-of-contents">
@@ -453,7 +443,7 @@
 </div>
 <div class="section" id="inference">
 <h2>1. Inference<a class="headerlink" href="#inference" title="Permalink to this headline">¶</a></h2>
-<p>How to use the tensor model parallelism for inference?</p>
+<p>How to use the model parallelism for inference?</p>
 <div class="section" id="create-model-and-tokenizer">
 <h3>1.1. Create model and tokenizer<a class="headerlink" href="#create-model-and-tokenizer" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
@@ -469,13 +459,11 @@
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or smaller than total number of gpus.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be power of 2. (e.g. 2, 4, 8, 16, …)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be positive number.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or greater than hidden size</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or greater than the number of heads</p></li>
 </ul>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -484,7 +472,6 @@
 
 {
      &quot;model_parallelism&quot;: {
-          &quot;enable&quot;: true,
           &quot;tensor_parallel_size&quot;: 4
       }
 }
@@ -512,7 +499,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 <div class="section" id="training">
 <h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline">¶</a></h2>
-<p>How to use the tensor model parallelism for training?</p>
+<p>How to use the model parallelism for training?</p>
 <div class="section" id="initialize-some-variables">
 <h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">4</span>
@@ -522,8 +509,20 @@ Likewise, you can write the code as usual.</p>
 </pre></div>
 </div>
 </div>
+<div class="section" id="load-dataset-and-create-data-loader">
+<h3>2.2. Load dataset and create data loader<a class="headerlink" href="#load-dataset-and-create-data-loader" title="Permalink to this headline">¶</a></h3>
+<p>In this tutorial, I used <code class="docutils literal notranslate"><span class="pre">datasets</span></code> library of Hugging Face.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">datasets</span> <span class="kn">import</span> <span class="n">load_dataset</span>
+<span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
+
+<span class="n">datasets</span> <span class="o">=</span> <span class="n">load_dataset</span><span class="p">(</span><span class="s2">&quot;squad&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">][</span><span class="s2">&quot;context&quot;</span><span class="p">]</span>
+<span class="n">datasets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">datasets</span><span class="p">[:</span> <span class="n">TRAIN_STEP</span> <span class="o">*</span> <span class="n">BATCH_SIZE</span><span class="p">]]</span>
+<span class="n">dataloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">datasets</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
 <div class="section" id="create-model-optimizer-and-tokenizer">
-<h3>2.2. Create model, optimizer and tokenizer<a class="headerlink" href="#create-model-optimizer-and-tokenizer" title="Permalink to this headline">¶</a></h3>
+<h3>2.3. Create model, optimizer and tokenizer<a class="headerlink" href="#create-model-optimizer-and-tokenizer" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.optim</span> <span class="kn">import</span> <span class="n">Adam</span>
 <span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
 
@@ -538,24 +537,12 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="id1">
-<h3>2.3. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<h3>2.4. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
     <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
 <span class="p">)</span>
-</pre></div>
-</div>
-</div>
-<div class="section" id="load-dataset-and-create-dataloader">
-<h3>2.4. Load dataset and create dataloader<a class="headerlink" href="#load-dataset-and-create-dataloader" title="Permalink to this headline">¶</a></h3>
-<p>In this tutorial, I used <code class="docutils literal notranslate"><span class="pre">datasets</span></code> library of Hugging Face.</p>
-<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">datasets</span> <span class="kn">import</span> <span class="n">load_dataset</span>
-<span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
-
-<span class="n">datasets</span> <span class="o">=</span> <span class="n">load_dataset</span><span class="p">(</span><span class="s2">&quot;squad&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">][</span><span class="s2">&quot;context&quot;</span><span class="p">]</span>
-<span class="n">datasets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">datasets</span><span class="p">[:</span> <span class="n">TRAIN_STEP</span> <span class="o">*</span> <span class="n">BATCH_SIZE</span><span class="p">]]</span>
-<span class="n">dataloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span><span class="n">datasets</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
@@ -645,7 +632,7 @@ Here’s how to crate a randomly initialized model:</p>
 <div class="section" id="load-parallelized-checkpoints">
 <h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
 <p>We support <code class="docutils literal notranslate"><span class="pre">from_parallelized</span></code> method to load parallelized checkpoints.
-You can load them by just input the save path of parallelized checkpoints.</p>
+You can load them by just input the save path of parallelized checks.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">from_parallelized</span><span class="p">(</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
@@ -663,7 +650,7 @@ We recommend merging them after training because this process is a bit slow.</p>
 <span class="n">pytorch_model</span><span class="o">.</span><span class="n">bin</span>    <span class="n">config</span><span class="o">.</span><span class="n">json</span>
 </pre></div>
 </div>
-<p>This concludes the tensor model parallelism tutorial. Thank you.</p>
+<p>This concludes the model parallelism tutorial. Thank you.</p>
 </div>
 </div>
 </div>
@@ -680,13 +667,6 @@ We recommend merging them after training because this process is a bit slow.</p>
             <p class="prev-next-subtitle">previous</p>
             <p class="prev-next-title">Model Parallelism</p>
         </div>
-    </a>
-    <a class='right-next' id="next-link" href="tensor_model_data_parallelism.html" title="next page">
-    <div class="prev-next-info">
-        <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Tensor Model + Data Parallelism Tutorial</p>
-    </div>
-    <i class="fas fa-angle-right"></i>
     </a>
 </div>
             

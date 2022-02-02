@@ -519,7 +519,7 @@ OSLO’s MPU provides the following methods to facilitate 3D parallel communicat
 <span class="c1"># Data parallel group, rank and world size</span>
 <span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_group</span><span class="p">()</span>
 <span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_rank</span><span class="p">()</span>
-<span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_tensor_parallel_world_size</span><span class="p">()</span>
+<span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_world_size</span><span class="p">()</span>
 <span class="o">...</span>
 </pre></div>
 </div>
@@ -559,7 +559,7 @@ If you specify the <code class="docutils literal notranslate"><span class="pre">
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">YOU_TENSOR_PARALLEL_SIZE</span><span class="p">}}</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">YOUR_TENSOR_PARALLEL_SIZE</span><span class="p">}}</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -627,7 +627,7 @@ If some errors occurs while using DeepSpeed with OSLO, please report it through 
 <div class="section" id="create-distributedsampler-to-parallelize-dataset">
 <h3>2.6. Create DistributedSampler to parallelize dataset<a class="headerlink" href="#create-distributedsampler-to-parallelize-dataset" title="Permalink to this headline">¶</a></h3>
 <p>You must specify the <code class="docutils literal notranslate"><span class="pre">num_replicas</span></code> and <code class="docutils literal notranslate"><span class="pre">rank</span></code> using <code class="docutils literal notranslate"><span class="pre">model.mpu</span></code> when you are creating sampler.
-If you are not familiar with <code class="docutils literal notranslate"><span class="pre">DistributedSampler</span></code>, please refer to <a class="reference external" href="https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler">here</a>.</p>
+If you are unfamiliar with <code class="docutils literal notranslate"><span class="pre">DistributedSampler</span></code>, please refer to <a class="reference external" href="https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler">here</a>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DistributedSampler</span>
 
 <span class="n">sampler</span> <span class="o">=</span> <span class="n">DistributedSampler</span><span class="p">(</span>
@@ -721,7 +721,7 @@ Here’s how to crate a randomly initialized model:</p>
 <div class="section" id="load-parallelized-checkpoints">
 <h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
 <p>We support <code class="docutils literal notranslate"><span class="pre">from_parallelized</span></code> method to load parallelized checkpoints.
-You can load them by just input the save path of parallelized checks.</p>
+You can load them by just input the save path of parallelized checkpoints.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">from_parallelized</span><span class="p">(</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
 </pre></div>
 </div>

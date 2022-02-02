@@ -1,5 +1,5 @@
 OSLO: Open Source framework for Large-scale transformer Optimization
-================
+=====================================================================
 
 .. container::
 
@@ -70,6 +70,7 @@ Documents
    TUTORIALS/tensor_model_parallelism
    TUTORIALS/tensor_model_data_parallelism
    TUTORIALS/tensor_model_zero_data_parallelism
+   TUTORIALS/activation_checkpointing
 
 Administrative Notes
 ====================

@@ -111,7 +111,7 @@ model = oslo.initialize(...)
 # Data parallel group, rank and world size
 model.mpu.get_data_parallel_group()
 model.mpu.get_data_parallel_rank()
-model.mpu.get_tensor_parallel_world_size()
+model.mpu.get_data_parallel_world_size()
 ...
 ```
 
@@ -148,7 +148,7 @@ If you specify the `tp size`, the `ZeRO dp size` will be determined automaticall
 import oslo
 
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": YOU_TENSOR_PARALLEL_SIZE}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": YOUR_TENSOR_PARALLEL_SIZE}}
 )
 ```
 
@@ -216,7 +216,7 @@ datasets = [str(_) for _ in datasets[: TRAIN_STEP * BATCH_SIZE]]
 
 ### 2.6. Create DistributedSampler to parallelize dataset
 You must specify the ``num_replicas`` and ``rank`` using ``model.mpu`` when you are creating sampler.
-If you are not familiar with `DistributedSampler`, please refer to [here](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler).
+If you are unfamiliar with `DistributedSampler`, please refer to [here](https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler).
 ```python
 from torch.utils.data import DistributedSampler
 
@@ -307,7 +307,7 @@ model = oslo.initialize(
 
 ### 3.3 Load parallelized checkpoints
 We support `from_parallelized` method to load parallelized checkpoints.
-You can load them by just input the save path of parallelized checks.
+You can load them by just input the save path of parallelized checkpoints.
 ```python
 model = model.from_parallelized("./parallel_ckpt")
 ```
