@@ -13,7 +13,7 @@ You can specify your own model parallelism related configuration under `model_pa
 - type: bool
 - default: False
 
-Enable model parallelism
+Enable model parallelism.
 
 ### 2. tensor_parallel_size: `int`
 - type: int

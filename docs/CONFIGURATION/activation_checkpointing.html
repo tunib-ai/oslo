@@ -103,6 +103,11 @@
    Tensor Model + ZeRO Data Parallelism Tutorial
   </a>
  </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/activation_checkpointing.html">
+   Activation Checkpointing Tutorial
+  </a>
+ </li>
 </ul>
 
     </div>
@@ -185,63 +190,34 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#backend-str">
-   2. backend:
+  <a class="reference internal nav-link" href="#cpu-checkpointing-bool">
+   2. cpu_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     str
+     bool
     </span>
    </code>
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#fairscale-params-dict">
-   3. fairscale_params:
+  <a class="reference internal nav-link" href="#partitioned-checkpointing-bool">
+   3. partitioned_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     dict
+     bool
     </span>
    </code>
   </a>
-  <ul class="nav section-nav flex-column">
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#offload-to-cpu-bool">
-     <code class="docutils literal notranslate">
-      <span class="pre">
-       offload_to_cpu
-      </span>
-     </code>
-     :
-     <code class="docutils literal notranslate">
-      <span class="pre">
-       bool
-      </span>
-     </code>
-    </a>
-   </li>
-  </ul>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#tensor-parallel-size-int">
+  <a class="reference internal nav-link" href="#contiguous-checkpointing-bool">
+   3. contiguous_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     tensor_parallel_size
-    </span>
-   </code>
-   :
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     int
+     bool
     </span>
    </code>
   </a>
-  <ul class="nav section-nav flex-column">
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#supported-models">
-     SUPPORTED MODELS
-    </a>
-   </li>
-  </ul>
  </li>
 </ul>
 
@@ -274,63 +250,34 @@
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#backend-str">
-   2. backend:
+  <a class="reference internal nav-link" href="#cpu-checkpointing-bool">
+   2. cpu_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     str
+     bool
     </span>
    </code>
   </a>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#fairscale-params-dict">
-   3. fairscale_params:
+  <a class="reference internal nav-link" href="#partitioned-checkpointing-bool">
+   3. partitioned_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     dict
+     bool
     </span>
    </code>
   </a>
-  <ul class="nav section-nav flex-column">
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#offload-to-cpu-bool">
-     <code class="docutils literal notranslate">
-      <span class="pre">
-       offload_to_cpu
-      </span>
-     </code>
-     :
-     <code class="docutils literal notranslate">
-      <span class="pre">
-       bool
-      </span>
-     </code>
-    </a>
-   </li>
-  </ul>
  </li>
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#tensor-parallel-size-int">
+  <a class="reference internal nav-link" href="#contiguous-checkpointing-bool">
+   3. contiguous_checkpointing:
    <code class="docutils literal notranslate">
     <span class="pre">
-     tensor_parallel_size
-    </span>
-   </code>
-   :
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     int
+     bool
     </span>
    </code>
   </a>
-  <ul class="nav section-nav flex-column">
-   <li class="toc-h3 nav-item toc-entry">
-    <a class="reference internal nav-link" href="#supported-models">
-     SUPPORTED MODELS
-    </a>
-   </li>
-  </ul>
  </li>
 </ul>
 
@@ -347,13 +294,9 @@
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span>{
   &quot;activation_checkpointing&quot;: {
     &quot;enable&quot;: bool,
-    &quot;backend&quot;: &quot;torch&quot; | &quot;fairscale&quot; | &quot;deepspeed&quot;,
-    &quot;fairscale_params&quot;: {
-      &quot;offload_to_cpu&quot;: bool
-    },
-    &quot;deepspeed_params&quot;: {
-      
-    }
+    &quot;cpu_checkpointing&quot;: bool,
+    &quot;partitioned_checkpointing&quot;: bool,
+    &quot;contiguous_checkpointing&quot;: bool
   }
 }
 </pre></div>
@@ -364,55 +307,29 @@
 <li><p>type: bool</p></li>
 <li><p>default: False</p></li>
 </ul>
-<p>Enable activation checkpointing</p>
+<p>Enable activation checkpointing.</p>
 </div>
-<div class="section" id="backend-str">
-<h2>2. backend: <code class="docutils literal notranslate"><span class="pre">str</span></code><a class="headerlink" href="#backend-str" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="cpu-checkpointing-bool">
+<h2>2. cpu_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#cpu-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
-<li><p>type: str</p></li>
-<li><p>default: “torch”</p></li>
-<li><p>available: [“torch”, “fairscale”, “deepspeed”]</p></li>
+<li><p>type: bool</p></li>
+<li><p>default: False</p></li>
 </ul>
-<p>Select backend engine for activation checkpointing</p>
+<p>Enable cpu checkpointing.</p>
 </div>
-<div class="section" id="fairscale-params-dict">
-<h2>3. fairscale_params: <code class="docutils literal notranslate"><span class="pre">dict</span></code><a class="headerlink" href="#fairscale-params-dict" title="Permalink to this headline">¶</a></h2>
-<p>Additional parameters for fairscale activation checkpointing</p>
-<div class="section" id="offload-to-cpu-bool">
-<h3><code class="docutils literal notranslate"><span class="pre">offload_to_cpu</span></code>: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#offload-to-cpu-bool" title="Permalink to this headline">¶</a></h3>
-</div>
-</div>
-<hr class="docutils" />
-<div class="section" id="tensor-parallel-size-int">
-<h2><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code>: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="partitioned-checkpointing-bool">
+<h2>3. partitioned_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#partitioned-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
-<li><p>type: int</p></li>
-<li><p>default: 1</p></li>
+<li><p>type: bool</p></li>
+<li><p>default: False</p></li>
 </ul>
-<p>This means tensor model parallelism degree. If you don’t know what tensor model parallelism is,
-you can find the detail of it from <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p>
-<p>Note there are some rules for the tensor parallel size.</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or smaller than total number of gpus.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be power of 2. (e.g. 2, 4, 8, 16, …)</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be positive number.</p></li>
-</ul>
-<div class="section" id="supported-models">
-<h3>SUPPORTED MODELS<a class="headerlink" href="#supported-models" title="Permalink to this headline">¶</a></h3>
-<p>The following list includes currently supported models.</p>
-<ul class="simple">
-<li><p>Albert</p></li>
-<li><p>Bert</p></li>
-<li><p>Bart</p></li>
-<li><p>T5</p></li>
-<li><p>GPT2</p></li>
-<li><p>GPTNeo</p></li>
-<li><p>GPTJ</p></li>
-<li><p>Electra</p></li>
-<li><p>Roberta</p></li>
-</ul>
-<p>We will support almost all models in the near future ;)</p>
+<p>Enable partitioned checkpointing.</p>
+<p>Note that this is only available when you are using tensor model parallelism.</p>
 </div>
+<div class="section" id="contiguous-checkpointing-bool">
+<h2>3. contiguous_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#contiguous-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
+<p>Enable contiguous checkpointing.</p>
+<p>Note that this is only available when you are using partitioned checkpointing.</p>
 </div>
 </div>
 
