@@ -31,7 +31,7 @@ Enable partitioned checkpointing.
 
 Note that this is only available when you are using tensor model parallelism.
 
-### 3. contiguous_checkpointing: `bool`
+### 4. contiguous_checkpointing: `bool`
 
 Enable contiguous checkpointing.
 
