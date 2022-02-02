@@ -30,7 +30,4 @@ class ActivationCheckpointingEngine(object):
     def checkpoint(self, function, *args):
         all_outputs = []
         CheckpointFunction.apply(function, self.options, all_outputs, *args)
-        if len(all_outputs) == 1:
-            return all_outputs
-        else:
-            return tuple(all_outputs)
+        return tuple(all_outputs)
