@@ -216,7 +216,7 @@ model = GPT2LMHeadModel(config)
 import oslo
 
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": NUM_YOUR_GPUS}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": NUM_YOUR_GPUS}}
 )
 ```
 

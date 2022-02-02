@@ -34,6 +34,7 @@
     <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Activation Checkpointing Tutorial" href="activation_checkpointing.html" />
     <link rel="prev" title="Tensor Model + Data Parallelism Tutorial" href="tensor_model_data_parallelism.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
@@ -82,6 +83,11 @@
    Model Parallelism
   </a>
  </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../CONFIGURATION/activation_checkpointing.html">
+   Activation Checkpointing
+  </a>
+ </li>
 </ul>
 <p class="caption">
  <span class="caption-text">
@@ -102,6 +108,11 @@
  <li class="toctree-l1 current active">
   <a class="current reference internal" href="#">
    Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="activation_checkpointing.html">
+   Activation Checkpointing Tutorial
   </a>
  </li>
 </ul>
@@ -713,7 +724,7 @@ Here’s how to crate a randomly initialized model:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
 <span class="p">)</span>
 </pre></div>
 </div>
@@ -756,6 +767,13 @@ We recommend merging them after training because this process is a bit slow.</p>
             <p class="prev-next-subtitle">previous</p>
             <p class="prev-next-title">Tensor Model + Data Parallelism Tutorial</p>
         </div>
+    </a>
+    <a class='right-next' id="next-link" href="activation_checkpointing.html" title="next page">
+    <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Activation Checkpointing Tutorial</p>
+    </div>
+    <i class="fas fa-angle-right"></i>
     </a>
 </div>
             

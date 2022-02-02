@@ -83,6 +83,11 @@
    Model Parallelism
   </a>
  </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../CONFIGURATION/activation_checkpointing.html">
+   Activation Checkpointing
+  </a>
+ </li>
 </ul>
 <p class="caption">
  <span class="caption-text">
@@ -103,6 +108,11 @@
  <li class="toctree-l1">
   <a class="reference internal" href="tensor_model_zero_data_parallelism.html">
    Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="activation_checkpointing.html">
+   Activation Checkpointing Tutorial
   </a>
  </li>
 </ul>
@@ -680,7 +690,7 @@ Here’s how to crate a randomly initialized model:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
-    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
 <span class="p">)</span>
 </pre></div>
 </div>
