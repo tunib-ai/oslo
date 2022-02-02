@@ -1,5 +1,5 @@
-# Model Parallelism
-You can specify your own activation checkpointing related configuration under `model_parallelism` like:
+# Activation Checkpointing
+You can specify your own activation checkpointing related configuration under `activation_checkpointing` like:
 
 ```json
 {
