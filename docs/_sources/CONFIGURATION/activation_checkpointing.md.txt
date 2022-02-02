@@ -4,10 +4,10 @@ You can specify your own activation checkpointing related configuration under `a
 ```json
 {
   "activation_checkpointing": {
-    "enable": bool,
-    "cpu_checkpointing": bool,
-    "partitioned_checkpointing": bool,
-    "contiguous_checkpointing": bool
+    "enable": "bool",
+    "cpu_checkpointing": "bool",
+    "partitioned_checkpointing": "bool",
+    "contiguous_checkpointing": "bool"
   }
 }
 ```

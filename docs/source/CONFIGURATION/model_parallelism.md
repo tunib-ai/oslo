@@ -4,8 +4,8 @@ You can specify your own model parallelism related configuration under `model_pa
 ```json
 {
   "model_parallelism": {
-    "enable": bool,
-    "tensor_parallel_size": int,
+    "enable": "bool",
+    "tensor_parallel_size": "int"
   }
 }
 ```
