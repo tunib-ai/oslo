@@ -14,7 +14,7 @@ class ActivationCheckpointingEngine(object):
         contiguous_checkpointing,
         mpu=None,
     ):
-        rng_tracker = CudaRNGStatesTracker()
+        rng_tracker = CudaRNGStatesTracker(mpu=mpu)
         partitioner = CheckpointPartitioner(
             mpu=mpu,
             num_layers=num_layers,
