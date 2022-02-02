@@ -34,6 +34,7 @@
     <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
+    <link rel="prev" title="Tensor Model + ZeRO Data Parallelism Tutorial" href="tensor_model_zero_data_parallelism.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
     
@@ -87,7 +88,7 @@
   TUTORIALS
  </span>
 </p>
-<ul class="nav bd-sidenav">
+<ul class="current nav bd-sidenav">
  <li class="toctree-l1">
   <a class="reference internal" href="tensor_model_parallelism.html">
    Tensor Model Parallelism Tutorial
@@ -101,6 +102,11 @@
  <li class="toctree-l1">
   <a class="reference internal" href="tensor_model_zero_data_parallelism.html">
    Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   Activation Checkpointing Tutorial
   </a>
  </li>
 </ul>
@@ -472,6 +478,8 @@ It is already integrated with the Hugging Face Transformers, so you can enable i
 <div class="section" id="enable-oslo-activation-checkpointing">
 <h3>2.1. Enable OSLO activation checkpointing<a class="headerlink" href="#enable-oslo-activation-checkpointing" title="Permalink to this headline">¶</a></h3>
 <p>Please initialize oslo engine like the following instead of calling <code class="docutils literal notranslate"><span class="pre">model.gradient_checkpointing_enable()</span></code>.</p>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">partitioned_checkpointing</span></code> is only available when you are using tensor model parallelism,
+and the <code class="docutils literal notranslate"><span class="pre">contiguous_checkpointing</span></code> is only available when you are using the <code class="docutils literal notranslate"><span class="pre">partitioned_checkpointing</span></code>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
     <span class="n">model</span><span class="p">,</span>
     <span class="n">config</span><span class="o">=</span><span class="p">{</span>
@@ -529,7 +537,14 @@ It is already integrated with the Hugging Face Transformers, so you can enable i
               
             
                 <!-- Previous / next buttons -->
-<div class='prev-next-area'>
+<div class='prev-next-area'> 
+    <a class='left-prev' id="prev-link" href="tensor_model_zero_data_parallelism.html" title="previous page">
+        <i class="fas fa-angle-left"></i>
+        <div class="prev-next-info">
+            <p class="prev-next-subtitle">previous</p>
+            <p class="prev-next-title">Tensor Model + ZeRO Data Parallelism Tutorial</p>
+        </div>
+    </a>
 </div>
             
         </div>

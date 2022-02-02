@@ -117,6 +117,9 @@ Most of the code used in `Training with pytorch activation checkpointing` is the
 ### 2.1. Enable OSLO activation checkpointing
 Please initialize oslo engine like the following instead of calling ``model.gradient_checkpointing_enable()``.
 
+Note that the ``partitioned_checkpointing`` is only available when you are using tensor model parallelism, 
+and the ``contiguous_checkpointing`` is only available when you are using the ``partitioned_checkpointing``.
+
 ```python
 model = oslo.initialize(
     model,
