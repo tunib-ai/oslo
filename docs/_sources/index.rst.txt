@@ -62,6 +62,7 @@ Documents
    :caption: CONFIGURATION
 
    CONFIGURATION/model_parallelism
+   CONFIGURATION/activation_checkpointing
 
 .. toctree::
    :maxdepth: 1

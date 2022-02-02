@@ -21,7 +21,10 @@ setup(
     author="TUNiB OSLO Team",
     author_email="contact@tunib.ai",
     install_requires=INSTALL_REQUIRES,
-    packages=find_packages(include=["oslo", "oslo.*"], exclude="tests"),
+    packages=find_packages(
+        include=["oslo", "oslo.*"],
+        exclude=("tests", "tutorial", "docs"),
+    ),
     python_requires=">=3.6.0",
     classifiers=[
         "Programming Language :: Python :: 3.6",
