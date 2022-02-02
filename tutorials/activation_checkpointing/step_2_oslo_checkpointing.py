@@ -60,7 +60,7 @@ for step, batch in enumerate(dataloader):
     loss = model(**input_batch, labels=input_batch["input_ids"], use_cache=False).loss
     if torch.distributed.get_rank() == 0:
         print(f"memory: {round(torch.cuda.memory_allocated() / (1024 ** 3), 4)}GiB")
-        # memory: 6.6810 GiB
+        # memory: 6.681 GiB
     loss.backward()
     optimizer.step()
 
