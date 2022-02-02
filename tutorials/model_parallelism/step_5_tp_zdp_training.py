@@ -32,7 +32,7 @@ tokenizer.pad_token = tokenizer.eos_token
 # If you specify the tp size, the dp size will be determined automatically.
 
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": 2}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": 2}}
 )
 
 # 4. Make the model ZeRO data parallelizable

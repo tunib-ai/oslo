@@ -1,5 +1,5 @@
 OSLO: Open Source framework for Large-scale transformer Optimization
-================
+=====================================================================
 
 .. container::
 

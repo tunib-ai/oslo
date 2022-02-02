@@ -4,11 +4,21 @@ You can specify your own model parallelism related configuration under `model_pa
 ```json
 {
   "model_parallelism": {
-    "tensor_parallel_size": int    
+    "enable": bool,
+    "tensor_parallel_size": int,
   }
 }
 ```
-### `tensor_parallel_size`: `int`
+### 1. enable: `bool`
+- type: bool
+- default: False
+
+Enable model parallelism
+
+### 2. tensor_parallel_size: `int`
+- type: int
+- default: 1
+
 This means tensor model parallelism degree. If you don't know what tensor model parallelism is, 
 you can find the detail of it from [here](https://huggingface.co/docs/transformers/parallelism).
 

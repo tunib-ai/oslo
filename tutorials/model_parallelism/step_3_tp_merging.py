@@ -19,7 +19,7 @@ model = AutoModelForCausalLM.from_pretrained("gpt2")
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": 4}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": 4}}
 )
 
 # 3. Load parallelized checkpoints

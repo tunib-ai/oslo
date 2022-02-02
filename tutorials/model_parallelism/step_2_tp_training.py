@@ -31,8 +31,10 @@ tokenizer.pad_token = tokenizer.eos_token
 # - ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
+# - ``tensor_parallel_size`` must be same or greater than hidden size
+# - ``tensor_parallel_size`` must be same or greater than the number of heads
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": 4}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": 4}}
 )
 
 # 4. Load dataset and create data loader

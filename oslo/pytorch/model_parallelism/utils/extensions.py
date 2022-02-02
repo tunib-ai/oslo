@@ -6,7 +6,6 @@ from typing import Optional, Union
 import torch
 import torch.distributed as dist
 
-from oslo.pytorch.model_parallelism import TPMapping
 from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
     TensorDeparallelEngine,
     TensorParallelEngine,
@@ -80,7 +79,7 @@ def save_parallelized(
     from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
     self = kwargs.pop("self")
-    mapping = kwargs.pop("tp_mapping", TPMapping())
+    mapping = kwargs.pop("tp_mapping", None)
 
     if (
         self.mpu.get_tensor_parallel_world_size() == 1

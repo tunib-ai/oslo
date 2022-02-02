@@ -52,12 +52,14 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2")
 - ``tensor_parallel_size`` must be same or smaller than total number of gpus.
 - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 - ``tensor_parallel_size`` must be positive number.
+- ``tensor_parallel_size`` must be same or greater than hidden size
+- ``tensor_parallel_size`` must be same or greater than the number of heads
 
 ```python
 import oslo
 
 model = oslo.initialize(
-    model, config={"model_parallelism": {"tensor_parallel_size": NUM_YOUR_GPUS}}
+    model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": NUM_YOUR_GPUS}}
 )
 ```
 
@@ -68,6 +70,7 @@ You can also use json file (example for 4GPUs)
 
 {
      "model_parallelism": {
+          "enable": true,
           "tensor_parallel_size": 4
       }
 }
@@ -219,7 +222,7 @@ model = oslo.initialize(
 
 ### 3.3 Load parallelized checkpoints
 We support `from_parallelized` method to load parallelized checkpoints.
-You can load them by just input the save path of parallelized checks.
+You can load them by just input the save path of parallelized checkpoints.
 ```python
 model = model.from_parallelized("./parallel_ckpt")
 ```
