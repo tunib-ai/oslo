@@ -45,6 +45,13 @@ in the PyPI project name.
 
    pip install oslo-core
 
+
+NOTE: OSLO 2.0.0 is still an alpha version, so you must specify the version.
+
+.. code:: console
+
+   pip install oslo-core==2.0.0a2
+
 Basic Usage
 ====================
 
