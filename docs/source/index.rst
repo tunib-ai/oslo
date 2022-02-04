@@ -11,11 +11,11 @@ OSLO: Open Source framework for Large-scale transformer Optimization
 What’s New:
 ===========
 
--  February 02, 2022 `Add activation checkpointing
+-  February 02, 2022 `Added activation checkpointing
    <https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1>`__.
 -  January 30, 2022 `Released OSLO 2.0 alpha
    version <https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0>`__.
--  December 30, 2021 `Add Deployment
+-  December 30, 2021 `Added Deployment
    Launcher <https://github.com/tunib-ai/oslo/releases/tag/v1.0>`__.
 -  December 21, 2021 `Released OSLO
    1.0 <https://github.com/tunib-ai/oslo/releases/tag/v1.0>`__.

@@ -2,7 +2,10 @@ import mmap
 
 import torch
 import torch.distributed as dist
-from oslo.pytorch.activation_checkpointing.utils import is_activation_to_checkpoint
+
+from oslo.pytorch.activation_checkpointing.utils.utils import (
+    is_activation_to_checkpoint,
+)
 
 
 class CheckpointPartitioner(object):

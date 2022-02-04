@@ -8,17 +8,17 @@
 - The source code of this tutorial can be found [here](https://github.com/tunib-ai/oslo/tree/main/tutorials).
 
 ### Table of contents
-* [0. Distributed Launcher](#0-distributed-launcher)
-* [1. Training with PyTorch activation checkpointing](#1-training-with-pytorch-activation-checkpointing)
-    + [1.1. Initialize some variables](#11-initialize-some-variables)
-    + [1.2. Create model and optimizer and tokenizer](#12-create-model-and-optimizer-and-tokenizer)
-    + [1.3. Parallelize the model](#13-parallelize-the-model)
-    + [1.4. Enable PyTorch activation checkpointing](#14-enable-pytorch-activation-checkpointing)
-    + [1.5. Load dataset and create data loader](#15-load-dataset-and-create-data-loader)
-    + [1.6. Do training as usual](#16-do-training-as-usual)
-* [2. Training with OSLO activation checkpointing](#2-training-with-oslo-activation-checkpointing)
-    + [2.1. Enable OSLO activation checkpointing](#21-enable-oslo-activation-checkpointing)
-    + [2.2. Do training as usual](#22-do-training-as-usual)
+* [0. Distributed Launcher](#distributed-launcher)
+* [1. Training with PyTorch activation checkpointing](#training-with-pytorch-activation-checkpointing)
+    + [1.1. Initialize some variables](#initialize-some-variables)
+    + [1.2. Create model and optimizer and tokenizer](#create-model-and-optimizer-and-tokenizer)
+    + [1.3. Parallelize the model](#parallelize-the-model)
+    + [1.4. Enable PyTorch activation checkpointing](#enable-pytorch-activation-checkpointing)
+    + [1.5. Load dataset and create data loader](#load-dataset-and-create-data-loader)
+    + [1.6. Do training as usual](#do-training-as-usual)
+* [2. Training with OSLO activation checkpointing](#training-with-oslo-activation-checkpointing)
+    + [2.1. Enable OSLO activation checkpointing](#enable-oslo-activation-checkpointing)
+    + [2.2. Do training as usual](#do-training-as-usual)
 
 ## 0. Distributed Launcher
 This tutorial must be launched using distributed launcher.

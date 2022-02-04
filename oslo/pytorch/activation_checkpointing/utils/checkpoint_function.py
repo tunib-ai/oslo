@@ -1,11 +1,12 @@
-import torch
-from deepspeed.runtime.utils import move_to_device
 from functools import partial
-from oslo.pytorch.activation_checkpointing.utils import (
-    extract_tensors,
-    copy_to_device,
-    is_activation_to_checkpoint,
+
+import torch
+
+from oslo.pytorch.activation_checkpointing.utils.utils import (
     detach,
+    extract_tensors,
+    is_activation_to_checkpoint,
+    copy_to_device,
 )
 
 
@@ -116,7 +117,7 @@ class CheckpointFunction(torch.autograd.Function):
             ctx.tensor_flags = ctx.tensor_flags[0::2]
             ctx.non_tensor_args = ctx.non_tensor_args[0::2]
         elif ctx.partitioner.cpu_checkpointing:
-            inputs = move_to_device(
+            inputs = copy_to_device(
                 ctx._saved_tensors,
                 torch.cuda.current_device(),
                 partial(

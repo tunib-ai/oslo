@@ -2,12 +2,12 @@
 Model parallelism tutorial step 5:
 How to use the tensor + ZeRO data parallelism for training?
 """
+import deepspeed
+import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader, DistributedSampler
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-import torch
-import deepspeed
 import oslo
 
 # NOTE: This script must be executed with multiprocessing

@@ -1,8 +1,12 @@
-from oslo.pytorch.activation_checkpointing.checkpoint_function import CheckpointFunction
-from oslo.pytorch.activation_checkpointing.checkpoint_partitioner import (
+from oslo.pytorch.activation_checkpointing.utils.checkpoint_function import (
+    CheckpointFunction,
+)
+from oslo.pytorch.activation_checkpointing.utils.checkpoint_partitioner import (
     CheckpointPartitioner,
 )
-from oslo.pytorch.activation_checkpointing.rng_state_tracker import CudaRNGStatesTracker
+from oslo.pytorch.activation_checkpointing.utils.rng_state_tracker import (
+    CudaRNGStatesTracker,
+)
 
 
 class ActivationCheckpointingEngine(object):

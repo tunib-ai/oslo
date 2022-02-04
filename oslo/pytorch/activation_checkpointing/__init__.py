@@ -1,11 +1,8 @@
 import importlib
-import os
 
 from oslo.pytorch.activation_checkpointing.checkpoint_engine import (
     ActivationCheckpointingEngine,
 )
-
-OPTIONS = {}
 
 
 def initialize_activation_checkpointing(model, config, **kwargs):

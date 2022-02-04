@@ -1,2 +1,4 @@
 torch
 transformers
+ninja
+pybind11
