@@ -19,9 +19,9 @@
 <br><br>
 
 ### What's New:
-* February 02, 2022 [Add activation checkpointing](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1).
+* February 02, 2022 [Added activation checkpointing](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1).
 *  January 30, 2022 [Released OSLO 2.0 alpha version](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0).
-* December 30, 2021 [Add Deployment Launcher](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
+* December 30, 2021 [Added Deployment Launcher](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
 * December 21, 2021 [Released OSLO 1.0](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
 
 ## What is OSLO about?
