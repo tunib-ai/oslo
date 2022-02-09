@@ -1,11 +1,13 @@
 import json
 import os
+from functools import partial
 from typing import Any, Dict, Union
 
 from oslo.pytorch.activation_checkpointing import (
     initialize_activation_checkpointing,
 )
 from oslo.pytorch.model_parallelism import initialize_model_parallelism
+from oslo.pytorch.utils.extenstions import restrict_embedding_resizing
 
 
 def _type(_type):
@@ -106,7 +108,13 @@ def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
         model (PreTrainedModel): The PyTorch Hugging Face Transformers model
         config (Union[str, os.PathLike, Dict[str, Any]]): dict object or json path
     """
-    model, config = _sanity_check(model, config)
-    model, config = initialize_model_parallelism(model, config, **kwargs)
-    model, config = initialize_activation_checkpointing(model, config, **kwargs)
+    if not hasattr(model, "oslo_initialized"):
+        model, config = _sanity_check(model, config)
+        model, config = initialize_model_parallelism(model, config, **kwargs)
+        model, config = initialize_activation_checkpointing(model, config, **kwargs)
+        model = restrict_embedding_resizing(model)
+        setattr(model, "oslo_initialized", True)
+    else:
+        raise RuntimeError("Can not OSLO initialize twice!")
+
     return model

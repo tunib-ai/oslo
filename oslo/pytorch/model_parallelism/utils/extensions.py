@@ -177,10 +177,3 @@ def save_parallelized(
 
     dist.barrier()
     logger.info(f"Model weights saved in {output_model_file}")
-
-
-def resize_token_embeddings(new_num_tokens: Optional[int] = None, **kwargs):
-    raise RuntimeError(
-        "you can't use ``model.resize_token_embeddings()`` when you are using tensor model parallelism.\n"
-        "please resize token embedding size before tensor parallelization."
-    )

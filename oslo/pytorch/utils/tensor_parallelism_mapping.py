@@ -1,13 +1,15 @@
 import copy
 import importlib
 
+from oslo.pytorch.utils import Mapping
+
 
 def update_module_arguments(module, **kwargs):
     for k, v in kwargs.items():
         setattr(module, k, v)
 
 
-class TPInfo(object):
+class TensorParallelismInfo(object):
     """
     A class to describe tensor parallelization information.
 
@@ -18,12 +20,7 @@ class TPInfo(object):
         reverse (bool): reversed param or not
     """
 
-    def __init__(
-        self,
-        *name,
-        combined_qkv: bool = False,
-        reverse: bool = False,
-    ):
+    def __init__(self, *name, combined_qkv: bool = False, reverse: bool = False):
         self.name = name
         self.combined_qkv = combined_qkv
         self.reverse = reverse
@@ -35,121 +32,83 @@ class TPInfo(object):
         return self.__str__()
 
 
-Col = type("COLUMN", (TPInfo,), {"code": "Col"})
-Row = type("ROW", (TPInfo,), {"code": "Row"})
-Update = type("UPDATE", (TPInfo,), {"code": "Update"})
+Column = type("Column", (TensorParallelismInfo,), {})
+Row = type("Row", (TensorParallelismInfo,), {})
+Update = type("Update", (TensorParallelismInfo,), {})
 
 
-class TPMapping(object):
+class TensorParallelismMapping(Mapping):
     __MAPPING__ = dict(
         Albert=[
-            Col("query", "key", "value", "ffn"),
+            Column("query", "key", "value", "ffn"),
             Row("attention.dense", "ffn_output"),
             Update("num_attention_heads", "all_head_size"),
         ],
         Bart=[
-            Col("q_proj", "k_proj", "v_proj", "fc1"),
+            Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
         ],
         Bert=[
-            Col("query", "key", "value", "intermediate.dense"),
+            Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
         ],
         T5=[
-            Col("q", "k", "v", "DenseReluDense.wi"),
+            Column("q", "k", "v", "DenseReluDense.wi"),
             Row("o", "DenseReluDense.wo", "relative_attention_bias"),
             Update("d_model", "n_heads", "inner_dim"),
         ],
         GPT2=[
-            Col("c_attn", reverse=True, combined_qkv=True),
-            Col("c_fc", "q_attn", reverse=True),
+            Column("c_attn", reverse=True, combined_qkv=True),
+            Column("c_fc", "q_attn", reverse=True),
             Row("c_proj", reverse=True),
             Update("embed_dim", "split_size", "num_heads"),
         ],
         GPTNeo=[
-            Col("q_proj", "k_proj", "v_proj", "c_fc"),
+            Column("q_proj", "k_proj", "v_proj", "c_fc"),
             Row("out_proj", "c_proj"),
             Update("embed_dim", "num_heads"),
         ],
         GPTJ=[
-            Col("q_proj", "k_proj", "v_proj", "fc_in"),
+            Column("q_proj", "k_proj", "v_proj", "fc_in"),
             Row("out_proj", "fc_out"),
             Update("embed_dim", "num_attention_heads"),
         ],
         Electra=[
-            Col("query", "key", "value", "intermediate.dense"),
+            Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
         ],
         Roberta=[
-            Col("query", "key", "value", "intermediate.dense"),
+            Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
         ],
     )
 
     def __init__(self):
-        cache_tp_mapping = {}
+        cache_mapping = {}
 
         for cls_name, mapping in self.__MAPPING__.items():
             cls = self._load_class_by_model_name(cls_name)
-            cache_tp_mapping[cls] = []
+            cache_mapping[cls] = []
 
             for elem in mapping:
                 for name in elem.name:
                     copy_elem = copy.deepcopy(elem)
                     copy_elem.name = name
-                    cache_tp_mapping[cls].append(copy_elem)
+                    cache_mapping[cls].append(copy_elem)
 
-        self.__MAPPING__ = {cls: {} for cls in cache_tp_mapping}
+        self.__MAPPING__ = {cls: {} for cls in cache_mapping}
         # clear exist mapping rather than making new mapping dict
 
-        for cls, mapping in cache_tp_mapping.items():
+        for cls, mapping in cache_mapping.items():
             for elem in mapping:
-                if elem.code in self.__MAPPING__[cls]:
-                    self.__MAPPING__[cls][elem.code].append(elem)
+                if elem.__class__.__qualname__ in self.__MAPPING__[cls]:
+                    self.__MAPPING__[cls][elem.__class__.__qualname__].append(elem)
                 else:
-                    self.__MAPPING__[cls][elem.code] = [elem]
-
-    @staticmethod
-    def _load_class_by_model_name(model_name):
-        """
-        Load base class obj by class name
-        Args:
-            model_name (str): model name (e.g. Bert, GPT2, T5, ...)
-
-        Returns:
-            class: XXXPreTrainedModel
-        """
-        transformers = importlib.import_module("transformers")
-        cls = getattr(transformers, f"{model_name}PreTrainedModel", None)
-        if cls is None:
-            cls = getattr(transformers, f"{model_name}PretrainedModel", None)
-        assert cls is not None, f"Can not import the model named {cls}."
-        return cls
-
-    def get_mapping(self, model):
-        """
-        Get mapping by model obj
-
-        Args:
-            model (PreTrainedModel): model object (e.g. BertForSequenceClassification)
-
-        Returns:
-            dict: mapping by model
-        """
-        mapping_by_model = None
-        for cls, mapping in self.__MAPPING__.items():
-            if isinstance(model, cls):
-                mapping_by_model = mapping
-
-        assert mapping_by_model is not None, (
-            f"Currently, {model.__class__.__qualname__} is not supported. "
-            f"The current supported models are {list(self.__MAPPING__.keys())}"
-        )
-        return mapping_by_model
+                    self.__MAPPING__[cls][elem.__class__.__qualname__] = [elem]
 
     def column_parallel_params(self, model):
         """
@@ -159,11 +118,11 @@ class TPMapping(object):
             model (PreTrainedModel): model obj
 
         Returns:
-            List[COLUMN]: list of column parallel param elements
+            List[Column]: list of column parallel param elements
         """
         mapping = self.get_mapping(model)
         if mapping is not None:
-            return mapping["Col"]
+            return mapping["Column"]
 
     def row_parallel_params(self, model):
         """
@@ -173,7 +132,7 @@ class TPMapping(object):
             model (PreTrainedModel): model obj
 
         Returns:
-            List[ROW]: list of row parallel param elements
+            List[Row]: list of row parallel param elements
         """
         mapping = self.get_mapping(model)
         if mapping is not None:
@@ -187,7 +146,7 @@ class TPMapping(object):
             model (PreTrainedModel): model obj
 
         Returns:
-            List[UPDATE]: list of update attribute elements
+            List[Update]: list of update attribute elements
         """
         mapping = self.get_mapping(model)
         if mapping is not None:
@@ -201,7 +160,7 @@ class TPMapping(object):
             model (PreTrainedModel): model obj
 
         Returns:
-            TPInfo: element by parameter name
+            TensorParallelismInfo: element by parameter name
         """
         mapping = self.get_mapping(model)
         count_contain_elem_in_param = 0
@@ -284,7 +243,7 @@ class TPMapping(object):
         """
         elem = self.search(model, param_name)
         if elem is not None:
-            return elem.code == "Col"
+            return isinstance(elem, Column)
 
     def is_row_parallel(self, model, param_name):
         """
@@ -299,4 +258,4 @@ class TPMapping(object):
         """
         elem = self.search(model, param_name)
         if elem is not None:
-            return elem.code == "Row"
+            return isinstance(elem, Row)

@@ -7,10 +7,10 @@ from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
 )
 from oslo.pytorch.model_parallelism.utils.extensions import (
     from_parallelized,
-    resize_token_embeddings,
     save_parallelized,
 )
-from oslo.pytorch.model_parallelism.utils.mappings import TPMapping
+from oslo.pytorch.utils.tensor_parallelism_mapping import \
+    TensorParallelismMapping
 
 
 def initialize_model_parallelism(model, config, **kwargs):
@@ -35,7 +35,7 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "``tensor_parallel_size`` must be divisible by ``num_attention_heads``. "
                         "Please check your model configuration."
                     )
-                    assert model.config.hidden_size % tp_size == 0, (
+                    assert model.config.hid_size % tp_size == 0, (
                         "``tensor_parallel_size`` must be divisible by ``hidden_size``. "
                         "Please check your model configuration."
                     )
@@ -43,19 +43,14 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "``tensor_parallel_size`` must be same or greather than ``num_attention_heads``. "
                         "Please check your model configuration."
                     )
-                    assert model.config.hidden_size >= tp_size, (
+                    assert model.config.hid_size >= tp_size, (
                         "``tensor_parallel_size`` must be same or greather than ``hidden_size``. "
                         "Please check your model configuration."
                     )
 
-                    mapping = kwargs.pop("tp_mapping", TPMapping())
+                    mapping = kwargs.pop("tp_mapping", TensorParallelismMapping())
                     tensor_parallel_engine = TensorParallelEngine(model, mpu, mapping)
                     tensor_parallel_engine.parallelize()
-                    setattr(
-                        model,
-                        "resize_token_embeddings",
-                        partial(resize_token_embeddings, self=model),
-                    )
 
                 setattr(
                     model, "from_parallelized", partial(from_parallelized, self=model)

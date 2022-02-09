@@ -10,8 +10,8 @@ from oslo.pytorch.model_parallelism.utils.distributed import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.pytorch.model_parallelism.utils.mappings import (
-    TPMapping,
+from oslo.pytorch.utils.tensor_parallelism_mapping import (
+    TensorParallelismMapping,
     update_module_arguments,
 )
 
@@ -20,7 +20,7 @@ class TensorParallelEngine(object):
     def __init__(self, model, mpu, mapping=None):
         self.model = model
         self.mpu = mpu
-        self.mapping = mapping if mapping is not None else TPMapping()
+        self.mapping = mapping if mapping is not None else TensorParallelismMapping()
         self.device = torch.cuda.current_device()
 
     def _update_mp_arguments(self):
@@ -206,7 +206,7 @@ class TensorDeparallelEngine(object):
     def __init__(self, model, mpu, mapping=None):
         self.model = model
         self.mpu = mpu
-        self.mapping = mapping if mapping is not None else TPMapping()
+        self.mapping = mapping if mapping is not None else TensorParallelismMapping()
         self.device = torch.cuda.current_device()
 
     def _update_mp_arguments(self):

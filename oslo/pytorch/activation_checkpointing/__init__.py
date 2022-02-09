@@ -32,7 +32,7 @@ def initialize_activation_checkpointing(model, config, **kwargs):
 
             engine = ActivationCheckpointingEngine(
                 mpu=mpu,
-                num_layers=model.config.num_hidden_layers,
+                num_layers=model.config.n_layers,
                 partitioned_checkpointing=ac_config.get(
                     "partitioned_checkpointing", False
                 ),
