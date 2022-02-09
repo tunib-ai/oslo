@@ -61,7 +61,7 @@ If you find our work useful, please consider citing:
 
 ```
 @misc{oslo,
-  author       = {Ko, Hyunwoong and Kim, Soohwan and Park, Kyubyong},
+  author       = {Ko, Hyunwoong and Kim, Soohwan and Lee, Yohan and Park, Kyubyong},
   title        = {OSLO: Open Source framework for Large-scale transformer Optimization},
   howpublished = {\url{https://github.com/tunib-ai/oslo}},
   year         = {2021},
