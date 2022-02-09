@@ -45,6 +45,7 @@ TASKS = {
 
 OSLO_CONFIG = {
     "model_parallelism": {
+        "enable": True,
         "tensor_parallel_size": args.tensor_parallel_size,
     }
 }
