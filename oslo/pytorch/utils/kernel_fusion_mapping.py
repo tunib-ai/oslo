@@ -1,5 +1,3 @@
-import copy
-
 from oslo.pytorch.kernel_fusion.params.bert import BertParams
 from oslo.pytorch.utils import Mapping
 

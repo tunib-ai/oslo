@@ -1,0 +1,3 @@
+GLOBAL_GRAPH_STORAGE = []
+
+

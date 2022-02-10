@@ -2,3 +2,4 @@ torch
 transformers
 ninja
 pybind11
+pydot
