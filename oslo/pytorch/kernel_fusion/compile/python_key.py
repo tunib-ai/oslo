@@ -6,7 +6,6 @@
 import functools
 from typing import Any, Dict, Optional, Tuple, Callable, Union
 import torch
-from torch._C import _disabled_torch_function_impl
 import torch.utils._pytree as pytree
 from torch.fx import Tracer, GraphModule
 import torch.fx as fx
@@ -81,8 +80,6 @@ class PythonTensor(torch.Tensor):
 
     def __repr__(self):
         return f"PythonTensor({self.elem})"
-
-    __torch_function__ = _disabled_torch_function_impl
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):

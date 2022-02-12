@@ -73,26 +73,10 @@ class TensorMeta(object):
         self.necessary = necessary
 
     def __str__(self):
-        return (
-            f"TensorMeta({self._size}, dtype={self.dtype}, necessary={self.necessary})"
-        )
+        return f"Size({self._size})"
 
     def __repr__(self):
-        return (
-            f"TensorMeta({self._size}, dtype={self.dtype}, necessary={self.necessary})"
-        )
-
-
-class StaticArgMeta(object):
-    def __init__(self, type, necessary=False):
-        self.type = type
-        self.necessary = necessary
-
-    def __str__(self):
-        return f"StaticArgMeta({self.type}, necessary={self.necessary})"
-
-    def __repr__(self):
-        return f"StaticArgMeta({self.type}, necessary={self.necessary})"
+        return f"Size({self._size})"
 
 
 class ModuleManager(object):

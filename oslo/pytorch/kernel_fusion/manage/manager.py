@@ -1,7 +1,8 @@
 import inspect
+from copy import deepcopy
 
 from oslo.pytorch.kernel_fusion.params import ModuleManager
-from oslo.pytorch.kernel_fusion.dynamic_shapes.replacer import GraphReplacer
+from oslo.pytorch.kernel_fusion.manage.replacer import GraphReplacer
 from oslo.pytorch.utils.kernel_fusion_mapping import KernelFusionMapping
 
 
@@ -10,13 +11,17 @@ class FusionManager(ModuleManager):
         self.model = model
         self.fuser = fuser
         self.memory_efficient_fusion = memory_efficient_fusion
+        self.is_fused = False
 
         mapping = KernelFusionMapping()
         self.params_cls = mapping.get_mapping(model)
         self.supported_args = self.params_cls(model).supported_args()
+        self.module2signature = None
 
     def register(self):
-        self.model.forward = self._create_new_model_forward(self.model.forward)
+        if not self.is_fused:
+            self.model.forward = self._create_new_model_forward(self.model.forward)
+            self.is_fused = True
 
     def _create_new_model_forward(self, orig_forward):
         def new_model_forward(*args, **kwargs):
@@ -44,17 +49,30 @@ class FusionManager(ModuleManager):
                     "forward arguments must be contains ``input_ids`` or ``hidden_states``."
                 )
 
-            if not hasattr(self.model, "is_fused"):
-                batch_size = input_tensor.size(0)
-                seq_len = input_tensor.size(1)
-                params_obj = self.params_cls(self.model, batch_size, seq_len)
-                module_translated_params = params_obj.translated_params()
+            batch_size = input_tensor.size(0)
+            seq_len = input_tensor.size(1)
+            params_obj = self.params_cls(self.model, batch_size, seq_len)
+            module_translated_params = params_obj.translated_params()
 
-                graph_replacer = GraphReplacer(self.model, self.fuser)
-                graph_replacer.replace_graph(
-                    batch_size, seq_len, module_translated_params, self.memory_efficient_fusion
-                )
-                setattr(self.model, "is_fused", True)
+            if self.module2signature is None:
+                self.module2signature = {}
+                for module, translated_params in module_translated_params.items():
+                    self.module2signature[
+                        (
+                            translated_params.module_name,
+                            translated_params.module_cls,
+                            translated_params.model_cls,
+                        )
+                    ] = deepcopy(dict(inspect.signature(module.forward).parameters))
+
+            graph_replacer = GraphReplacer(self.model, self.fuser)
+            graph_replacer.replace_graph(
+                batch_size,
+                seq_len,
+                module_translated_params,
+                self.module2signature,
+                self.memory_efficient_fusion,
+            )
 
             return orig_forward(*args, **kwargs)
 

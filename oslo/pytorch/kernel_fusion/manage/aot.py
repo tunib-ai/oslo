@@ -3,19 +3,19 @@ from copy import deepcopy
 
 import torch
 import torch.distributed as dist
-from oslo.pytorch._C import DEFAULT_TORCH_EXTENSION_PATH
-from oslo.pytorch.kernel_fusion.compile.partitioners import (
-    min_cut_rematerialization_partition,
-)
 
+from oslo.pytorch._C import DEFAULT_TORCH_EXTENSION_PATH
 from oslo.pytorch.kernel_fusion.compile.aot_autograd import aot_function
+from oslo.pytorch.kernel_fusion.compile.compat import _stateless
 from oslo.pytorch.kernel_fusion.compile.compilers import (
     ts_compile,
     default_decompositions,
 )
-from oslo.pytorch.kernel_fusion.dynamic_shapes import GLOBAL_GRAPH_STORAGE
-from oslo.pytorch.kernel_fusion.params import TensorMeta, StaticArgMeta
-from oslo.pytorch.kernel_fusion.utils import is_iterable
+from oslo.pytorch.kernel_fusion.compile.partitioners import (
+    min_cut_rematerialization_partition,
+)
+from oslo.pytorch.kernel_fusion.manage import GLOBAL_GRAPH_STORAGE
+from oslo.pytorch.kernel_fusion.params import TensorMeta
 
 
 class AOTManager(object):
@@ -23,23 +23,6 @@ class AOTManager(object):
         self.model = model
         self.batch_size = batch_size
         self.seq_len = seq_len
-
-    def meta2value(self, values):
-        if isinstance(values, TensorMeta):
-            values = torch.ones(
-                values.size,
-                device=self.model.device,
-                dtype=self.model.dtype if values.dtype is None else values.dtype,
-            )
-        elif isinstance(values, StaticArgMeta):
-            values = values.type()
-        elif is_iterable(values):
-            if isinstance(values, dict):
-                values = {k: self.meta2value(v) for k, v in values.items()}
-            else:
-                values = [self.meta2value(v) for v in values]
-
-        return values
 
     @staticmethod
     def graph_file_name(graph_info):
@@ -63,7 +46,7 @@ class AOTManager(object):
         config = {
             "fw_compiler": ts_compile,
             "bw_compiler": ts_compile,
-            "hasher_type": "StaticShapheHasher",
+            "hasher_type": "StaticShapeHasher",
             "decompositions": default_decompositions,
             "static_argnums": static_argnums,
         }
@@ -82,24 +65,24 @@ class AOTManager(object):
         memory_efficient_fusion,
     ):
         graph_info = deepcopy(graph_info)
-        graph_info["params"] = "-".join(list(param.keys()))
         static_argnums = tuple(
             i for i, p in enumerate(param.values()) if not isinstance(p, TensorMeta)
         )
 
-        aot_forward = aot_function(
-            module.forward,
+        def functional_call(named_params, named_buffers, *args, **kwargs):
+            params_and_buffers = {**named_params, **named_buffers}
+            return _stateless.functional_call(module, params_and_buffers, args, kwargs)
+
+        aot_graph = aot_function(
+            functional_call,
             **self.compile_config(
                 static_argnums=static_argnums if len(static_argnums) > 0 else None,
                 memory_efficient_fusion=memory_efficient_fusion,
             ),
         )
 
-        tensor_param = self.meta2value(param)
-        aot_forward(**tensor_param)
         graph_info["params"] = param
-        graph_info["graph"] = aot_forward
-        del tensor_param
+        graph_info["graph"] = aot_graph
 
         if dist.is_initialized():
             dist.barrier()
