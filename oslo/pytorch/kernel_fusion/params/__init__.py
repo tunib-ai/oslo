@@ -31,6 +31,9 @@ class TranslatedParams(object):
             and other.model_cls == self.model_cls
         )
 
+    def key(self):
+        return self.module_name, self.module_cls, self.model_cls
+
 
 def parametrized(dec):
     def layer(*args, **kwargs):
@@ -130,6 +133,8 @@ class ModuleManager(object):
 
         if len(arg_list) != 0:
             for param_name, param_value in orig_forward_parameters.items():
+                if len(arg_list) == 0:
+                    break
                 if param_name not in param_dict:
                     input_value = arg_list[0]
                     if input_value == param_value.default:
@@ -201,7 +206,7 @@ class Params(ModuleManager):
 
         for predefined_name in predefined_names:
             if hasattr(self.config, predefined_name):
-                return 15
+                return getattr(self.config, predefined_name)
 
         raise ValueError("Can not find max length from config object !")
 

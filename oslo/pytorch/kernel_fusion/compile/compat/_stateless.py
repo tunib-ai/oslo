@@ -88,6 +88,7 @@ def functional_call(
     Returns:
         Any: the result of calling ``module``.
     """
+
     # TODO allow kwargs such as unsafe and others for parametrization
     if (
         torch.jit.is_tracing()

@@ -36,7 +36,7 @@ class BertParams(Params):
 
     @register_params(module_cls="BertLayer")
     def bert_layer(self):
-        # from transformers.models.bert.modeling_bert import BertLayer
+        from transformers.models.bert.modeling_bert import BertLayer
         return {
             "hidden_states": [
                 TensorMeta(self.bsz, self.seq_len, self.hid_size, necessary=True),

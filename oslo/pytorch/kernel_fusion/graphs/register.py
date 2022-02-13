@@ -1,12 +1,12 @@
 import inspect
 from copy import deepcopy
 
+from oslo.pytorch.kernel_fusion.graphs.replacer import GraphReplacer
 from oslo.pytorch.kernel_fusion.params import ModuleManager
-from oslo.pytorch.kernel_fusion.manage.replacer import GraphReplacer
 from oslo.pytorch.utils.kernel_fusion_mapping import KernelFusionMapping
 
 
-class FusionManager(ModuleManager):
+class GraphRegister(ModuleManager):
     def __init__(self, model, fuser, memory_efficient_fusion=False):
         self.model = model
         self.fuser = fuser
@@ -57,15 +57,15 @@ class FusionManager(ModuleManager):
             if self.module2signature is None:
                 self.module2signature = {}
                 for module, translated_params in module_translated_params.items():
-                    self.module2signature[
-                        (
-                            translated_params.module_name,
-                            translated_params.module_cls,
-                            translated_params.model_cls,
-                        )
-                    ] = deepcopy(dict(inspect.signature(module.forward).parameters))
+                    self.module2signature[translated_params.key()] = deepcopy(
+                        dict(inspect.signature(module.forward).parameters)
+                    )
 
-            graph_replacer = GraphReplacer(self.model, self.fuser)
+            graph_replacer = GraphReplacer(
+                self.model,
+                self.fuser,
+            )
+
             graph_replacer.replace_graph(
                 batch_size,
                 seq_len,

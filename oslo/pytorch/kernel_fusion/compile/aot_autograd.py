@@ -6,6 +6,7 @@ import torch.utils._pytree as pytree
 import torch.utils.dlpack
 
 from .compat import _stateless
+from .compat._stateless import reparametrize_module
 from .compat.aot_autograd import CompileCache
 from .decompositions import register_decomposition
 from .partitioners import default_partition
@@ -395,6 +396,7 @@ def aot_function(
                 out_spec.set(spec)
                 return flat_out
 
+            # goto flat function
             compiled_fn = create_aot_autograd_function(
                 flat_fn,
                 fw_compiler,
