@@ -1,5 +1,7 @@
 import torch
 
+from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
+
 
 def initialize_kernel_fusion(model, config, **kwargs):
     if "kernel_fusion" in config:
@@ -24,12 +26,24 @@ def initialize_kernel_fusion(model, config, **kwargs):
                     raise ValueError(
                         "``memory_efficient_fusion`` is not compatible with model parallelism."
                     )
+                if (
+                    "activation_checkpointing" in config
+                    and config["activation_checkpointing"]["enable"] is True
+                ):
+                    raise ValueError(
+                        "``memory_efficient_fusion`` is not compatible with activation checkpointing."
+                    )
+
+                if not higher_than(1, 9):
+                    raise EnvironmentError(
+                        "``memory_efficient_fusion`` is compatible with PyTorch 1.9+"
+                    )
 
             engine = KernelFusionEngine(
                 model=model,
                 memory_efficient_fusion=memory_efficient_fusion,
                 custom_cuda_kernels=custom_cuda_kernels,
             )
-            engine.fuse()
+            model = engine.fuse()
 
     return model, config

@@ -11,6 +11,10 @@ OSLO: Open Source framework for Large-scale transformer Optimization
 What’s New:
 ===========
 
+-  February 15, 2022 `Added kernel fusion
+   <https://github.com/tunib-ai/oslo/releases/tag/v2.0.0>`__.
+-  February 15, 2021 `Released OSLO 2.0
+   <https://github.com/tunib-ai/oslo/releases/tag/v2.0.0>`__.
 -  February 02, 2022 `Added activation checkpointing
    <https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1>`__.
 -  January 30, 2022 `Released OSLO 2.0 alpha
@@ -46,12 +50,6 @@ in the PyPI project name.
    pip install oslo-core
 
 
-NOTE: OSLO 2.0.0 is still an alpha version, so you must specify the version.
-
-.. code:: console
-
-   pip install oslo-core==2.0.0a2
-
 Basic Usage
 ====================
 
@@ -72,6 +70,7 @@ Documents
 
    CONFIGURATION/model_parallelism
    CONFIGURATION/activation_checkpointing
+   CONFIGURATION/kernel_fusion
 
 .. toctree::
    :maxdepth: 1
@@ -81,6 +80,7 @@ Documents
    TUTORIALS/tensor_model_data_parallelism
    TUTORIALS/tensor_model_zero_data_parallelism
    TUTORIALS/activation_checkpointing
+   TUTORIALS/kernel_fusion
 
 Administrative Notes
 ====================
@@ -93,7 +93,7 @@ If you find our work useful, please consider citing:
 ::
 
    @misc{oslo,
-     author       = {Ko, Hyunwoong and Kim, Soohwan and Park, Kyubyong},
+     author       = {Ko, Hyunwoong and Kim, Soohwan and Lee, Yohan and Park, Kyubyong},
      title        = {OSLO: Open Source framework for Large-scale transformer Optimization},
      howpublished = {\url{https://github.com/tunib-ai/oslo}},
      year         = {2021},

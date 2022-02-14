@@ -2,6 +2,8 @@ from contextlib import suppress
 
 import torch
 
+from oslo.pytorch.kernel_fusion.jit_partial.fused_gelu import fused_gelu
+
 
 class JITPartialCompilingEngine(object):
     def __init__(self, model):
@@ -19,4 +21,7 @@ class JITPartialCompilingEngine(object):
             with suppress(Exception):
                 for key, val in child.__dict__.items():
                     if val in activations:
-                        child.__dict__[key] = torch.jit.script(val)
+                        if "gelu" in key.lower():
+                            child.__dict__[key] = fused_gelu
+                        else:
+                            child.__dict__[key] = torch.jit.script(val)

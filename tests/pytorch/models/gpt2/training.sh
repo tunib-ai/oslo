@@ -12,7 +12,7 @@ python -m torch.distributed.launch \
        --nproc_per_node="$NUM_GPUS" \
        ../../testcases/training.py \
        --task=causal-lm \
-       --model=gpt2 \
+       --model=hf-internal-testing/tiny-random-gpt2 \
        --batch_size="$BATCH_SIZE" \
        --sequence_length="$SEQ_LENGTH" \
        --train_step="$TRAIN_STEP" \

@@ -2,37 +2,12 @@ from logging import getLogger
 
 import torch
 
-
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
 
 logger = getLogger(__name__)
 
 
-class TensorMeta(object):
-    def __init__(self, *sizes, dtype):
-        self.sizes = sizes
-        self.dtype = dtype
-
-    def __str__(self):
-        return f"Size{self.sizes}"
-
-    def __repr__(self):
-        return f"Size{self.sizes}"
-
-    def __eq__(self, other):
-        return other.sizes == self.sizes and other.dtype == self.dtype
-
-
-def is_iterable(elem):
-    try:
-        iter(elem)
-        return True
-    except:
-        return False
-
-
 class KernelFusionEngine(object):
-
     def __init__(
         self,
         model,
@@ -69,7 +44,7 @@ class KernelFusionEngine(object):
                 mem_efficient_fusion_engine = MemoryEfficientFusionEngine(
                     model=self.model
                 )
-                mem_efficient_fusion_engine.fuse()
+                self.model = mem_efficient_fusion_engine.fuse()
             else:
                 from oslo.pytorch.kernel_fusion.jit_partial.engine import (
                     JITPartialCompilingEngine,
@@ -81,6 +56,8 @@ class KernelFusionEngine(object):
                 jit_partial_compiling_engine.fuse()
 
             self.is_fused = True
+
+        return self.model
 
     @staticmethod
     def _set_jit_fusion_options():

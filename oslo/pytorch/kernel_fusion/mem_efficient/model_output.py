@@ -12,10 +12,8 @@ class OutputManager(object):
     def build_model_output_class(cls, fields, values):
         model_output_obj = cls()
         for key, val in zip(fields, values):
-            if torch.is_tensor(val):
-                val.requires_grad = True
-            setattr(model_output_obj, key, val)
-
+            if isinstance(val, torch.Tensor):
+                setattr(model_output_obj, key, val)
         return model_output_obj
 
     def register_model_output_classes(self):
@@ -34,7 +32,10 @@ class OutputManager(object):
             fields = asdict(output.__class__()).keys()
             pytree._register_pytree_node(
                 output.__class__,
-                lambda x: ([getattr(x, k) for k in fields], None),
+                lambda x: (
+                    [getattr(x, f) for f in fields if getattr(x, f) is not None],
+                    None,
+                ),
                 lambda values, _: self.build_model_output_class(
                     output.__class__, fields, values
                 ),
