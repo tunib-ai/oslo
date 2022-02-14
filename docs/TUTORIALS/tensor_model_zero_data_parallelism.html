@@ -1,0 +1,809 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tensor Model + ZeRO Data Parallelism Tutorial &#8212; OSLO  documentation</title>
+    
+  <link href="../_static/css/theme.css" rel="stylesheet">
+  <link href="../_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
+
+    
+  <link rel="stylesheet"
+    href="../_static/vendor/fontawesome/5.13.0/css/all.min.css">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-solid-900.woff2">
+  <link rel="preload" as="font" type="font/woff2" crossorigin
+    href="../_static/vendor/fontawesome/5.13.0/webfonts/fa-brands-400.woff2">
+
+    
+      
+
+    
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    
+  <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
+
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Activation Checkpointing Tutorial" href="activation_checkpointing.html" />
+    <link rel="prev" title="Tensor Model + Data Parallelism Tutorial" href="tensor_model_data_parallelism.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="docsearch:language" content="None">
+    
+
+    <!-- Google Analytics -->
+    
+  </head>
+  <body data-spy="scroll" data-target="#bd-toc-nav" data-offset="80">
+    
+    <div class="container-fluid" id="banner"></div>
+
+    
+
+    <div class="container-xl">
+      <div class="row">
+          
+<!-- Checkboxes to toggle the left sidebar -->
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle navigation sidebar">
+<label class="overlay" for="__navigation">
+    <div class="visually-hidden">Toggle navigation sidebar</div>
+</label>
+<div class="col-12 col-md-3 bd-sidebar site-navigation " id="site-navigation">
+    
+        <div class="navbar-brand-box">
+    <a class="navbar-brand text-wrap" href="../index.html">
+      
+      
+      
+      <h1 class="site-logo" id="site-title">OSLO  documentation</h1>
+      
+    </a>
+</div><form class="bd-search d-flex align-items-center" action="../search.html" method="get">
+  <i class="icon fas fa-search"></i>
+  <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
+</form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item active">
+        <p class="caption">
+ <span class="caption-text">
+  CONFIGURATION
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../CONFIGURATION/model_parallelism.html">
+   Model Parallelism
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../CONFIGURATION/activation_checkpointing.html">
+   Activation Checkpointing
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../CONFIGURATION/kernel_fusion.html">
+   Kernel Fusion
+  </a>
+ </li>
+</ul>
+<p class="caption">
+ <span class="caption-text">
+  TUTORIALS
+ </span>
+</p>
+<ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="tensor_model_parallelism.html">
+   Tensor Model Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="tensor_model_data_parallelism.html">
+   Tensor Model + Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="activation_checkpointing.html">
+   Activation Checkpointing Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="kernel_fusion.html">
+   Kernel Fusion Tutorial
+  </a>
+ </li>
+</ul>
+
+    </div>
+</nav> <!-- To handle the deprecated key -->
+
+<div class="navbar_extra_footer">
+  Theme by the <a href="https://ebp.jupyterbook.org">Executable Book Project</a>
+</div>
+
+</div>
+
+
+          
+
+
+          
+<!-- This is an invisible pixel that we watch to see if we've scrolled. -->
+<div class="sbt-scroll-pixel-helper"></div>
+<main class="col py-md-3 pl-md-4 bd-content overflow-auto" role="main">
+    
+    <div class="topbar container-xl fixed-top">
+    <div class="topbar-contents row">
+        <div class="col-12 col-md-3 bd-topbar-whitespace site-navigation show"></div>
+        <div class="col pl-md-4 topbar-main">
+            <div class="topbar-left">
+                
+                <label class="nav-toggle-button" for="__navigation">
+                    <div class="visually-hidden">Toggle navigation</div>
+                    <i class="fas fa-bars"></i>
+                </label>
+                
+            </div>
+            
+<div class="dropdown-buttons-trigger">
+    <button id="dropdown-buttons-trigger" class="btn btn-secondary topbarbtn" aria-label="Download this page"><i
+            class="fas fa-download"></i></button>
+
+    <div class="dropdown-buttons">
+        <!-- ipynb file if we had a myst markdown file -->
+        
+        <!-- Download raw file -->
+        <a class="dropdown-buttons" href="../_sources/TUTORIALS/tensor_model_zero_data_parallelism.md.txt"><button type="button"
+                class="btn btn-secondary topbarbtn" title="Download source file" data-toggle="tooltip"
+                data-placement="left">.md</button></a>
+        <!-- Download PDF via print -->
+        <button type="button" id="download-print" class="btn btn-secondary topbarbtn" title="Print to PDF"
+                onclick="printPdf(this)" data-toggle="tooltip" data-placement="left">.pdf</button>
+    </div>
+</div>
+
+            <!-- Source interaction buttons -->
+
+            <!-- Full screen (wrap in <a> to have style consistency -->
+
+<a class="full-screen-button"><button type="button" class="btn btn-secondary topbarbtn" data-toggle="tooltip"
+        data-placement="bottom" onclick="toggleFullScreen()" aria-label="Fullscreen mode"
+        title="Fullscreen mode"><i
+            class="fas fa-expand"></i></button></a>
+
+            <!-- Launch buttons -->
+
+        </div>
+
+        <!-- Table of contents -->
+        <div class="d-none d-md-block col-md-2 bd-toc show noprint">
+            
+            <div class="tocsection onthispage pt-5 pb-3">
+                <i class="fas fa-list"></i> Contents
+            </div>
+            <nav id="bd-toc-nav" aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#table-of-contents">
+   Table of contents
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#distributed-launcher">
+   0. Distributed Launcher
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#multi-dimensional-parallel-training">
+   1. Multi-dimensional Parallel Training
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#the-concept-of-multi-dimensional-parallel-training">
+     1.1. The concept of multi-dimensional parallel training
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#the-concept-of-mpu-model-parallel-unit">
+     1.2. The concept of MPU (Model Parallel Unit)
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#training">
+   2. Training
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#initialize-some-variables">
+     2.1. Initialize some variables
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-model-and-optimizer-and-tokenizer">
+     2.2. Create model and optimizer and tokenizer
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#parallelize-the-model">
+     2.3. Parallelize the model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#make-the-model-zero-data-parallelizable">
+     2.4. Make the model ZeRO data parallelizable
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-dataset">
+     2.5. Load dataset
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-distributedsampler-to-parallelize-dataset">
+     2.6. Create DistributedSampler to parallelize dataset
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-the-dataloader-with-sampler">
+     2.7. Create the dataloader with sampler.
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#do-training-as-usual">
+     2.8. Do training as usual
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#merging-checkpoints">
+   3. Merging Checkpoints
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-model">
+     3.1. Create model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#id1">
+     3.2. Parallelize the model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-parallelized-checkpoints">
+     3.3 Load parallelized checkpoints
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#merge-parallelized-checkpoints">
+     3.4. Merge parallelized checkpoints
+    </a>
+   </li>
+  </ul>
+ </li>
+</ul>
+
+            </nav>
+        </div>
+    </div>
+</div>
+    <div id="main-content" class="row">
+        <div class="col-12 col-md-9 pl-md-3 pr-md-0">
+            <!-- Table of contents that is only displayed when printing the page -->
+            <div id="jb-print-docs-body" class="onlyprint">
+                <h1>Tensor Model + ZeRO Data Parallelism Tutorial</h1>
+                <!-- Table of contents -->
+                <div id="print-main-content">
+                    <div id="jb-print-toc">
+                        
+                        <div>
+                            <h2> Contents </h2>
+                        </div>
+                        <nav aria-label="Page">
+                            <ul class="visible nav section-nav flex-column">
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#table-of-contents">
+   Table of contents
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#distributed-launcher">
+   0. Distributed Launcher
+  </a>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#multi-dimensional-parallel-training">
+   1. Multi-dimensional Parallel Training
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#the-concept-of-multi-dimensional-parallel-training">
+     1.1. The concept of multi-dimensional parallel training
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#the-concept-of-mpu-model-parallel-unit">
+     1.2. The concept of MPU (Model Parallel Unit)
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#training">
+   2. Training
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#initialize-some-variables">
+     2.1. Initialize some variables
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-model-and-optimizer-and-tokenizer">
+     2.2. Create model and optimizer and tokenizer
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#parallelize-the-model">
+     2.3. Parallelize the model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#make-the-model-zero-data-parallelizable">
+     2.4. Make the model ZeRO data parallelizable
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-dataset">
+     2.5. Load dataset
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-distributedsampler-to-parallelize-dataset">
+     2.6. Create DistributedSampler to parallelize dataset
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-the-dataloader-with-sampler">
+     2.7. Create the dataloader with sampler.
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#do-training-as-usual">
+     2.8. Do training as usual
+    </a>
+   </li>
+  </ul>
+ </li>
+ <li class="toc-h2 nav-item toc-entry">
+  <a class="reference internal nav-link" href="#merging-checkpoints">
+   3. Merging Checkpoints
+  </a>
+  <ul class="nav section-nav flex-column">
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#create-model">
+     3.1. Create model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#id1">
+     3.2. Parallelize the model
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#load-parallelized-checkpoints">
+     3.3 Load parallelized checkpoints
+    </a>
+   </li>
+   <li class="toc-h3 nav-item toc-entry">
+    <a class="reference internal nav-link" href="#merge-parallelized-checkpoints">
+     3.4. Merge parallelized checkpoints
+    </a>
+   </li>
+  </ul>
+ </li>
+</ul>
+
+                        </nav>
+                    </div>
+                </div>
+            </div>
+            
+              <div>
+                
+  <div class="section" id="tensor-model-zero-data-parallelism-tutorial">
+<h1>Tensor Model + ZeRO Data Parallelism Tutorial<a class="headerlink" href="#tensor-model-zero-data-parallelism-tutorial" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><p>If you haven’t read the <a class="reference external" href="https://tunib-ai.github.io/oslo/TUTORIALS/tensor_model_parallelism.html">Tensor model parallelism tutorial</a>, please read that first.</p></li>
+<li><p>The concepts of the tensor model parallelism and ZeRO data parallelism can be found <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p></li>
+<li><p>The source code of this tutorial can be found <a class="reference external" href="https://github.com/tunib-ai/oslo/tree/main/tutorials">here</a>.</p></li>
+</ul>
+<div class="section" id="table-of-contents">
+<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li><p><a class="reference external" href="#distributed-launcher">0. Distributed Launcher</a></p></li>
+<li><p><a class="reference external" href="#multi-dimensional-parallel-training">1. Multi-dimensional Parallel Training</a></p>
+<ul>
+<li><p><a class="reference external" href="#the-concept-of-multi-dimensional-parallel-training">1.1. The concept of multi-dimensional parallel training</a></p></li>
+<li><p><a class="reference external" href="#the-concept-of-mpu--model-parallel-unit-">1.2. The concept of MPU (Model Parallel Unit)</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference external" href="#training">2. Training</a></p>
+<ul>
+<li><p><a class="reference external" href="#initialize-some-variables">2.1. Initialize some variables</a></p></li>
+<li><p><a class="reference external" href="#create-model-and-optimizer-and-tokenizer">2.2. Create model and optimizer and tokenizer</a></p></li>
+<li><p><a class="reference external" href="#parallelize-the-model">2.3. Parallelize the model</a></p></li>
+<li><p><a class="reference external" href="#make-the-model-zero-data-parallelizable">2.4. Make the model ZeRO data parallelizable</a></p></li>
+<li><p><a class="reference external" href="#load-dataset">2.5. Load dataset</a></p></li>
+<li><p><a class="reference external" href="#create-distributedsampler-to-parallelize-dataset">2.6. Create DistributedSampler to parallelize dataset</a></p></li>
+<li><p><a class="reference external" href="#create-the-dataloader-with-sampler">2.7. Create the dataloader with sampler.</a></p></li>
+<li><p><a class="reference external" href="#do-training-as-usual">2.8. Do training as usual</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference external" href="#merging-checkpoints">3. Merging Checkpoints</a></p>
+<ul>
+<li><p><a class="reference external" href="#create-model">3.1. Create model</a></p></li>
+<li><p><a class="reference external" href="#parallelize-the-model">3.2. Parallelize the model</a></p></li>
+<li><p><a class="reference external" href="#load-parallelized-checkpoints">3.3 Load parallelized checkpoints</a></p></li>
+<li><p><a class="reference external" href="#merge-parallelized-checkpoints">3.4. Merge parallelized checkpoints</a></p></li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="distributed-launcher">
+<h2>0. Distributed Launcher<a class="headerlink" href="#distributed-launcher" title="Permalink to this headline">¶</a></h2>
+<p>This tutorial must be launched using distributed launcher.</p>
+<p>If you have 4 GPUs:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">python -m torch.distributed.launch --nproc_per_node=4 YOUR_SCRIPT.py</span>
+</pre></div>
+</div>
+<p>If you installed DeepSpeed in your environments, the following works the same.</p>
+<div class="highlight-colsole notranslate"><div class="highlight"><pre><span></span>deepspeed --num_gpus=4 YOUR_SCRIPT.py
+</pre></div>
+</div>
+<p>For more information of the distributed launchers, refer to:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://pytorch.org/docs/stable/distributed.html">Pytorch documents</a></p></li>
+<li><p><a class="reference external" href="https://www.deepspeed.ai/getting-started/#launching-deepspeed-training">DeepSpeed documents</a></p></li>
+</ul>
+</div>
+<div class="section" id="multi-dimensional-parallel-training">
+<h2>1. Multi-dimensional Parallel Training<a class="headerlink" href="#multi-dimensional-parallel-training" title="Permalink to this headline">¶</a></h2>
+<p>The Multi-dimensional Parallel Training section is same with Tensor Model + Data Parallel Training tutorial. So, if you have already seen the tutorial, you can skip this.</p>
+<div class="section" id="the-concept-of-multi-dimensional-parallel-training">
+<h3>1.1. The concept of multi-dimensional parallel training<a class="headerlink" href="#the-concept-of-multi-dimensional-parallel-training" title="Permalink to this headline">¶</a></h3>
+<p>Let’s suppose we have 4 GPUs.</p>
+<p>The model parallelism splits the model into multiple pieces and trains a single batch of data.
+If we use all these GPUs for model parallelism, It would look like the following.</p>
+<p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151702797-6432b656-7da1-459b-adc5-c0534c3470d3.png" /></p>
+<p>The data parallelism copies the model into each device and splits the data into multiple pieces and trains the multiple batches of data.
+If we use all these GPUs for data parallelism, It would look like the following.</p>
+<p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151702940-0dbbfaa5-2f03-4891-a326-6b28a0359475.png" /></p>
+<p>Now, we’ll mix these two parallelization methods.
+We first split the model into multiple pieces.</p>
+<p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151703444-09c1cdfc-805c-416a-9fa6-06cac5643664.png" /></p>
+<p>And we now replicate the parallelized model to different GPUs to apply data parallelism.
+They have coordinates such as (0, 0), (0, 1), (1, 0), (1, 1) with respect to (data, model) rank.
+For this reason, we call this training mechanism ‘multi-dimensional parallel training’.</p>
+<p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151708904-75653d57-2a04-4f7c-a712-e182cc56725f.png" /></p>
+<p>We can make some ‘groups’ to communicate easily for model and data parallelism.</p>
+<p>Model parallel communication is that sends and receives the results of segmented models,
+and data parallel communication is that sends and receives results of segmented data.
+Therefore, these communications must only take place inside the group.</p>
+<p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151709418-7a59a498-15e9-4e0f-b191-8cf4d2ac9d67.png" /></p>
+</div>
+<div class="section" id="the-concept-of-mpu-model-parallel-unit">
+<h3>1.2. The concept of MPU (Model Parallel Unit)<a class="headerlink" href="#the-concept-of-mpu-model-parallel-unit" title="Permalink to this headline">¶</a></h3>
+<p>So it would be nice to use the concept of MPU (Model Parallel Unit) to easily manage these communications. MPU was introduced by NVIDIA’s <a class="reference external" href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>, and OSLO borrowed this concept.
+OSLO’s MPU provides the following methods to facilitate 3D parallel communication, including pipeline model parallelism, a concept to be introduced later.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">oslo.pytorch.model_parallelism.network.mpu</span> <span class="kn">import</span> <span class="n">MPU</span>
+
+<span class="n">mpu</span> <span class="o">=</span> <span class="n">MPU</span><span class="p">(</span><span class="n">tensor_parallel_size</span><span class="o">=</span><span class="mi">4</span><span class="p">,</span> <span class="n">pipeline_parallel_size</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+<span class="c1"># Data parallel group, rank and world size</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_group</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_rank</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_world_size</span><span class="p">()</span>
+
+<span class="c1"># Tensor model parallel group, rank and world size</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_tensor_parallel_group</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_tensor_parallel_rank</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_tensor_parallel_world_size</span><span class="p">()</span>
+
+<span class="c1"># Pipeline model parallel group, rank and world size</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_pipeline_parallel_group</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_pipeline_parallel_rank</span><span class="p">()</span>
+<span class="n">mpu</span><span class="o">.</span><span class="n">get_pipeline_parallel_world_size</span><span class="p">()</span>
+</pre></div>
+</div>
+<p>When you use the <code class="docutils literal notranslate"><span class="pre">oslo.initialize(...)</span></code> function, the MPU is created automatically, and the model has its own mpu object.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span><span class="o">...</span><span class="p">)</span>
+
+<span class="c1"># Data parallel group, rank and world size</span>
+<span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_group</span><span class="p">()</span>
+<span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_rank</span><span class="p">()</span>
+<span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_world_size</span><span class="p">()</span>
+<span class="o">...</span>
+</pre></div>
+</div>
+<p>Let’s finish the explanation of multi-dimensional parallelism, and actually use this mechanism to train a model.</p>
+</div>
+</div>
+<div class="section" id="training">
+<h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline">¶</a></h2>
+<p>How to use the tensor model + ZeRO data parallelism for training?</p>
+<div class="section" id="initialize-some-variables">
+<h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">4</span>
+<span class="n">SEQ_LEN</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="n">SAVE_INTERVAL</span> <span class="o">=</span> <span class="mi">50</span>
+<span class="n">TRAIN_STEP</span> <span class="o">=</span> <span class="mi">100</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="create-model-and-optimizer-and-tokenizer">
+<h3>2.2. Create model and optimizer and tokenizer<a class="headerlink" href="#create-model-and-optimizer-and-tokenizer" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
+<span class="kn">from</span> <span class="nn">torch.optim</span> <span class="kn">import</span> <span class="n">Adam</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<span class="n">optimizer</span> <span class="o">=</span> <span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">3e-5</span><span class="p">)</span>
+<span class="n">tokenizer</span> <span class="o">=</span> <span class="n">AutoTokenizer</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<span class="c1"># Add pad token for batch training (GPT2 tokenizer doesn&#39;t have pad token)</span>
+<span class="n">tokenizer</span><span class="o">.</span><span class="n">pad_token</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="o">.</span><span class="n">eos_token</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="parallelize-the-model">
+<h3>2.3. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline">¶</a></h3>
+<p>Note that <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span></code>  * <code class="docutils literal notranslate"><span class="pre">ZeRO</span> <span class="pre">dp</span> <span class="pre">size</span></code> must be same or smaller than total num of gpus.
+If you have 4 GPUs, you can set <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span> <span class="pre">=</span> <span class="pre">2</span></code> * <code class="docutils literal notranslate"><span class="pre">ZeRO</span> <span class="pre">dp</span> <span class="pre">size</span> <span class="pre">=</span> <span class="pre">2</span></code>.
+If you specify the <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span></code>, the <code class="docutils literal notranslate"><span class="pre">ZeRO</span> <span class="pre">dp</span> <span class="pre">size</span></code> will be determined automatically.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">YOUR_TENSOR_PARALLEL_SIZE</span><span class="p">}}</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="make-the-model-zero-data-parallelizable">
+<h3>2.4. Make the model ZeRO data parallelizable<a class="headerlink" href="#make-the-model-zero-data-parallelizable" title="Permalink to this headline">¶</a></h3>
+<p>You can use <code class="docutils literal notranslate"><span class="pre">deepspeed.initialize(...)</span></code> with OSLO model parallelism. But note that you should input <code class="docutils literal notranslate"><span class="pre">model.mpu</span></code> to the <code class="docutils literal notranslate"><span class="pre">deepspeed.initialize(...)</span></code> function.
+The DeepSpeed engine can access the process groups and world sizes and ranks using this MPU object.
+If you are not famailar with the concept of MPU, please refer to <a class="reference external" href="https://github.com/tunib-ai/oslo/blob/master/oslo/pytorch/model_parallelism/network/mpu.py">here</a>.</p>
+<p>In addition to ZeRO DP, various functions in DeepSpeed can be used with OSLO.
+But, DeepSpeed is constantly adding features, so we haven’t checked all the features,
+but most of the features could be used together.
+If some errors occurs while using DeepSpeed with OSLO, please report it through issues.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">deepspeed</span>
+
+<span class="n">engine</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">deepspeed</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
+    <span class="n">model</span><span class="o">=</span><span class="n">model</span><span class="p">,</span>
+    <span class="n">model_parameters</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span>
+    <span class="n">mpu</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="p">,</span>
+    <span class="n">config</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;train_batch_size&quot;</span><span class="p">:</span> <span class="n">BATCH_SIZE</span><span class="p">,</span>
+        <span class="s2">&quot;fp16&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enabled&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+        <span class="s2">&quot;optimizer&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;Adam&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;lr&quot;</span><span class="p">:</span> <span class="mf">3e-5</span><span class="p">,</span>
+                <span class="s2">&quot;weight_decay&quot;</span><span class="p">:</span> <span class="mf">3e-7</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;scheduler&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;type&quot;</span><span class="p">:</span> <span class="s2">&quot;WarmupDecayLR&quot;</span><span class="p">,</span>
+            <span class="s2">&quot;params&quot;</span><span class="p">:</span> <span class="p">{</span>
+                <span class="s2">&quot;warmup_min_lr&quot;</span><span class="p">:</span> <span class="mi">0</span><span class="p">,</span>
+                <span class="s2">&quot;warmup_max_lr&quot;</span><span class="p">:</span> <span class="mf">3e-5</span><span class="p">,</span>
+                <span class="s2">&quot;warmup_num_steps&quot;</span><span class="p">:</span> <span class="n">TRAIN_STEP</span> <span class="o">//</span> <span class="mi">10</span><span class="p">,</span>
+                <span class="s2">&quot;total_num_steps&quot;</span><span class="p">:</span> <span class="n">TRAIN_STEP</span><span class="p">,</span>
+            <span class="p">},</span>
+        <span class="p">},</span>
+        <span class="s2">&quot;zero_optimization&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;stage&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">,</span>
+            <span class="s2">&quot;allgather_partitions&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;allgather_bucket_size&quot;</span><span class="p">:</span> <span class="mf">5e8</span><span class="p">,</span>
+            <span class="s2">&quot;overlap_comm&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;reduce_scatter&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;reduce_bucket_size&quot;</span><span class="p">:</span> <span class="mf">5e8</span><span class="p">,</span>
+            <span class="s2">&quot;contiguous_gradients&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+            <span class="s2">&quot;offload_param&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;cpu&quot;</span><span class="p">},</span>
+            <span class="s2">&quot;offload_optimizer&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="s2">&quot;cpu&quot;</span><span class="p">},</span>
+        <span class="p">},</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="load-dataset">
+<h3>2.5. Load dataset<a class="headerlink" href="#load-dataset" title="Permalink to this headline">¶</a></h3>
+<p>I used the Hugging Face <code class="docutils literal notranslate"><span class="pre">datasets</span></code> library in this tutorial.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">datasets</span> <span class="kn">import</span> <span class="n">load_dataset</span>
+
+<span class="n">datasets</span> <span class="o">=</span> <span class="n">load_dataset</span><span class="p">(</span><span class="s2">&quot;squad&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="s2">&quot;train&quot;</span><span class="p">][</span><span class="s2">&quot;context&quot;</span><span class="p">]</span>
+<span class="n">datasets</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">_</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">datasets</span><span class="p">[:</span> <span class="n">TRAIN_STEP</span> <span class="o">*</span> <span class="n">BATCH_SIZE</span><span class="p">]]</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="create-distributedsampler-to-parallelize-dataset">
+<h3>2.6. Create DistributedSampler to parallelize dataset<a class="headerlink" href="#create-distributedsampler-to-parallelize-dataset" title="Permalink to this headline">¶</a></h3>
+<p>You must specify the <code class="docutils literal notranslate"><span class="pre">num_replicas</span></code> and <code class="docutils literal notranslate"><span class="pre">rank</span></code> using <code class="docutils literal notranslate"><span class="pre">model.mpu</span></code> when you are creating sampler.
+If you are unfamiliar with <code class="docutils literal notranslate"><span class="pre">DistributedSampler</span></code>, please refer to <a class="reference external" href="https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler">here</a>.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DistributedSampler</span>
+
+<span class="n">sampler</span> <span class="o">=</span> <span class="n">DistributedSampler</span><span class="p">(</span>
+    <span class="n">dataset</span><span class="o">=</span><span class="n">datasets</span><span class="p">,</span>
+    <span class="n">shuffle</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">num_replicas</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_world_size</span><span class="p">(),</span>
+    <span class="n">rank</span><span class="o">=</span><span class="n">model</span><span class="o">.</span><span class="n">mpu</span><span class="o">.</span><span class="n">get_data_parallel_rank</span><span class="p">(),</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="create-the-dataloader-with-sampler">
+<h3>2.7. Create the dataloader with sampler.<a class="headerlink" href="#create-the-dataloader-with-sampler" title="Permalink to this headline">¶</a></h3>
+<p>Note that you should turn off shuffle of data loader.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
+
+<span class="n">dataloader</span> <span class="o">=</span> <span class="n">DataLoader</span><span class="p">(</span>
+    <span class="n">datasets</span><span class="p">,</span>
+    <span class="n">batch_size</span><span class="o">=</span><span class="n">BATCH_SIZE</span><span class="p">,</span>
+    <span class="n">shuffle</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">sampler</span><span class="o">=</span><span class="n">sampler</span><span class="p">,</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="do-training-as-usual">
+<h3>2.8. Do training as usual<a class="headerlink" href="#do-training-as-usual" title="Permalink to this headline">¶</a></h3>
+<p>Now that we’re all ready, it’s time to begin training.
+The training code is the same as the previous <a class="reference external" href="https://tunib-ai.github.io/oslo/TUTORIALS/model_parallelism.html#save-the-parallelized-model">Tensor Model Parallelism tutorial</a>.
+However, note that when input batch is forwarding, the DeepSpeed engine object is used not the model object,</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">dataloader</span><span class="p">):</span>
+    <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
+
+    <span class="c1"># Make batch</span>
+    <span class="n">input_batch</span> <span class="o">=</span> <span class="n">tokenizer</span><span class="p">(</span>
+        <span class="n">batch</span><span class="p">,</span>
+        <span class="n">return_tensors</span><span class="o">=</span><span class="s2">&quot;pt&quot;</span><span class="p">,</span>
+        <span class="n">padding</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">truncation</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">max_length</span><span class="o">=</span><span class="n">SEQ_LEN</span><span class="p">,</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">to</span><span class="p">(</span><span class="s2">&quot;cuda&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Forward-Backward-Step with DDP engine</span>
+    <span class="c1"># YOU MUST USE ``DEEPSPEED ENGINE``, NOT ``MODEL`` WHEN YOU ARE FORWARDING INPUT.</span>
+    <span class="n">loss</span> <span class="o">=</span> <span class="n">engine</span><span class="p">(</span><span class="o">**</span><span class="n">input_batch</span><span class="p">,</span> <span class="n">labels</span><span class="o">=</span><span class="n">input_batch</span><span class="p">[</span><span class="s2">&quot;input_ids&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">loss</span>
+    <span class="n">engine</span><span class="o">.</span><span class="n">backward</span><span class="p">(</span><span class="n">loss</span><span class="p">)</span>
+    <span class="n">engine</span><span class="o">.</span><span class="n">step</span><span class="p">()</span>
+
+    <span class="c1"># Save parallelized model</span>
+    <span class="c1"># This is same with </span>
+    <span class="k">if</span> <span class="n">step</span> <span class="o">%</span> <span class="n">SAVE_INTERVAL</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">model</span><span class="o">.</span><span class="n">save_parallelized</span><span class="p">(</span><span class="n">save_directory</span><span class="o">=</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">step</span> <span class="o">&gt;</span> <span class="n">TRAIN_STEP</span><span class="p">:</span>
+        <span class="k">break</span>
+</pre></div>
+</div>
+</div>
+</div>
+<div class="section" id="merging-checkpoints">
+<h2>3. Merging Checkpoints<a class="headerlink" href="#merging-checkpoints" title="Permalink to this headline">¶</a></h2>
+<p>How to merge the parallelized checkpoints?</p>
+<p>The Merging Checkpoints section is same with the Tensor Model Parallelism tutorial. So, if you have already seen the tutorial, you can skip this.</p>
+<div class="section" id="create-model">
+<h3>3.1. Create model<a class="headerlink" href="#create-model" title="Permalink to this headline">¶</a></h3>
+<p>Usually we create a GPT2 model like this:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>However, it is okay to create the randomly initialized model because we will load the local checkpoints after creation.
+Here’s how to crate a randomly initialized model:</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">GPT2Config</span><span class="p">,</span> <span class="n">GPT2LMHeadModel</span>
+
+<span class="n">config</span> <span class="o">=</span> <span class="n">GPT2Config</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
+<span class="n">model</span> <span class="o">=</span> <span class="n">GPT2LMHeadModel</span><span class="p">(</span><span class="n">config</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="id1">
+<h3>3.2. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
+
+<span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">config</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;enable&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s2">&quot;tensor_parallel_size&quot;</span><span class="p">:</span> <span class="n">NUM_YOUR_GPUS</span><span class="p">}}</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="load-parallelized-checkpoints">
+<h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<p>We support <code class="docutils literal notranslate"><span class="pre">from_parallelized</span></code> method to load parallelized checkpoints.
+You can load them by just input the save path of parallelized checkpoints.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">from_parallelized</span><span class="p">(</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="merge-parallelized-checkpoints">
+<h3>3.4. Merge parallelized checkpoints<a class="headerlink" href="#merge-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">save_parallelized</span></code> method have a special argument named <code class="docutils literal notranslate"><span class="pre">merge_checkpoints</span></code>.
+If you set this argument as Ture, the parallelized checkpoints of model will be saved as merged form.
+We recommend merging them after training because this process is a bit slow.</p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span><span class="o">.</span><span class="n">save_parallelized</span><span class="p">(</span><span class="s2">&quot;./merged_ckpt&quot;</span><span class="p">,</span> <span class="n">merge_checkpoints</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="o">//</span> <span class="n">merged_ckpt</span>
+
+<span class="n">pytorch_model</span><span class="o">.</span><span class="n">bin</span>    <span class="n">config</span><span class="o">.</span><span class="n">json</span>
+</pre></div>
+</div>
+<p>This concludes the tensor model + data parallelism tutorial. Thank you.</p>
+</div>
+</div>
+</div>
+
+
+              </div>
+              
+            
+                <!-- Previous / next buttons -->
+<div class='prev-next-area'> 
+    <a class='left-prev' id="prev-link" href="tensor_model_data_parallelism.html" title="previous page">
+        <i class="fas fa-angle-left"></i>
+        <div class="prev-next-info">
+            <p class="prev-next-subtitle">previous</p>
+            <p class="prev-next-title">Tensor Model + Data Parallelism Tutorial</p>
+        </div>
+    </a>
+    <a class='right-next' id="next-link" href="activation_checkpointing.html" title="next page">
+    <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Activation Checkpointing Tutorial</p>
+    </div>
+    <i class="fas fa-angle-right"></i>
+    </a>
+</div>
+            
+        </div>
+    </div>
+    <footer class="footer">
+  <p>
+    
+      By TUNiB<br/>
+    
+        &copy; Copyright 2021, TUNiB.<br/>
+  </p>
+</footer>
+</main>
+
+
+      </div>
+    </div>
+  
+  <script src="../_static/js/index.be7d3bbb2ef33a8344ce.js"></script>
+
+  </body>
+</html>

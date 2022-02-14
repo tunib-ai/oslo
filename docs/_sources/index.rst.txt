@@ -64,7 +64,6 @@ It only takes a single line of code. Now feel free to train and infer a large tr
 Documents
 ====================
 
-
 .. toctree::
    :maxdepth: 1
    :caption: CONFIGURATION
@@ -72,7 +71,6 @@ Documents
    CONFIGURATION/model_parallelism
    CONFIGURATION/activation_checkpointing
    CONFIGURATION/kernel_fusion
-
 
 .. toctree::
    :maxdepth: 1
@@ -83,7 +81,6 @@ Documents
    TUTORIALS/tensor_model_zero_data_parallelism
    TUTORIALS/activation_checkpointing
    TUTORIALS/kernel_fusion
-
 
 Administrative Notes
 ====================
