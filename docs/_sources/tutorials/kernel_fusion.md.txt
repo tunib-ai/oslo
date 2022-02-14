@@ -18,8 +18,8 @@
     + [2.2. Fuse kernels with AOT Autograd](#fuse-kernels-with-aot-autograd)
     + [2.3. Warm-up (compiling)](#warm-up-compiling)
     + [2.4. Benchmark](#benchmark)
-* [3. Custom CUDA Kernels](#custom-cuda-kernels)
-    + [3.1. Supported Kernels](#supported-kernels)
+* [3. Custom CUDA kernels](#custom-cuda-kernels)
+    + [3.1. Supported kernels](#supported-kernels)
     + [3.2. Initialize input tensor](#initialize-input-tensor)
     + [3.3. Create models for benchmarking](#create-models-for-benchmarking)
     + [3.4. Fuse kernels with the custom CUDA kernels](#34-fuse-kernels-with-the-custom-cuda-kernels)
@@ -162,13 +162,13 @@ The experimental result shows better performance than simple jit based fusion.
 The memory efficient fusion is the most efficient in training scenarios, so you will be able to train your model much more efficiently then simple jit based fusion.
 
 
-## 3. Custom CUDA Kernels
+## 3. Custom CUDA kernels
 How to use the custom CUDA kernels based fusion?
 
 OSLO provides several handcrafted custom CUDA kernels. 
 Currently, only two kernels are supported, but we will continue to expand these in the future.
 
-### 3.1. Supported Kernels
+### 3.1. Supported kernels
 - `FusedRMSNorm`: Efficient RMSNorm kernel, it's available when using the T5.
 - `FusedNoRepeatNGram`: Execute ngram blocking in GPU when generating text, it's very effective for large batch text generation.
 

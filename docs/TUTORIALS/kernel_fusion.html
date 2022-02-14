@@ -261,12 +261,12 @@
  </li>
  <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#custom-cuda-kernels">
-   3. Custom CUDA Kernels
+   3. Custom CUDA kernels
   </a>
   <ul class="nav section-nav flex-column">
    <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#supported-kernels">
-     3.1. Supported Kernels
+     3.1. Supported kernels
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
@@ -382,12 +382,12 @@
  </li>
  <li class="toc-h2 nav-item toc-entry">
   <a class="reference internal nav-link" href="#custom-cuda-kernels">
-   3. Custom CUDA Kernels
+   3. Custom CUDA kernels
   </a>
   <ul class="nav section-nav flex-column">
    <li class="toc-h3 nav-item toc-entry">
     <a class="reference internal nav-link" href="#supported-kernels">
-     3.1. Supported Kernels
+     3.1. Supported kernels
     </a>
    </li>
    <li class="toc-h3 nav-item toc-entry">
@@ -459,9 +459,9 @@
 <li><p><a class="reference external" href="#benchmark">2.4. Benchmark</a></p></li>
 </ul>
 </li>
-<li><p><a class="reference external" href="#custom-cuda-kernels">3. Custom CUDA Kernels</a></p>
+<li><p><a class="reference external" href="#custom-cuda-kernels">3. Custom CUDA kernels</a></p>
 <ul>
-<li><p><a class="reference external" href="#supported-kernels">3.1. Supported Kernels</a></p></li>
+<li><p><a class="reference external" href="#supported-kernels">3.1. Supported kernels</a></p></li>
 <li><p><a class="reference external" href="#initialize-input-tensor">3.2. Initialize input tensor</a></p></li>
 <li><p><a class="reference external" href="#create-models-for-benchmarking">3.3. Create models for benchmarking</a></p></li>
 <li><p><a class="reference external" href="#34-fuse-kernels-with-the-custom-cuda-kernels">3.4. Fuse kernels with the custom CUDA kernels</a></p></li>
@@ -612,12 +612,12 @@ In that case, please report the bug to the issue tracker of <a class="reference 
 </div>
 </div>
 <div class="section" id="custom-cuda-kernels">
-<h2>3. Custom CUDA Kernels<a class="headerlink" href="#custom-cuda-kernels" title="Permalink to this headline">¶</a></h2>
+<h2>3. Custom CUDA kernels<a class="headerlink" href="#custom-cuda-kernels" title="Permalink to this headline">¶</a></h2>
 <p>How to use the custom CUDA kernels based fusion?</p>
 <p>OSLO provides several handcrafted custom CUDA kernels.
 Currently, only two kernels are supported, but we will continue to expand these in the future.</p>
 <div class="section" id="supported-kernels">
-<h3>3.1. Supported Kernels<a class="headerlink" href="#supported-kernels" title="Permalink to this headline">¶</a></h3>
+<h3>3.1. Supported kernels<a class="headerlink" href="#supported-kernels" title="Permalink to this headline">¶</a></h3>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">FusedRMSNorm</span></code>: Efficient RMSNorm kernel, it’s available when using the T5.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">FusedNoRepeatNGram</span></code>: Execute ngram blocking in GPU when generating text, it’s very effective for large batch text generation.</p></li>
