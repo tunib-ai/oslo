@@ -1,8 +1,6 @@
 import copy
 import importlib
 
-from oslo.pytorch.utils import Mapping
-
 
 def update_module_arguments(module, **kwargs):
     for k, v in kwargs.items():
@@ -37,7 +35,7 @@ Row = type("Row", (TensorParallelismInfo,), {})
 Update = type("Update", (TensorParallelismInfo,), {})
 
 
-class TensorParallelismMapping(Mapping):
+class TensorParallelismMapping(object):
     __MAPPING__ = dict(
         Albert=[
             Column("query", "key", "value", "ffn"),
