@@ -1,15 +1,91 @@
+from logging import getLogger
+
 import torch
 
 
+from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
+
+logger = getLogger(__name__)
+
+
+class TensorMeta(object):
+    def __init__(self, *sizes, dtype):
+        self.sizes = sizes
+        self.dtype = dtype
+
+    def __str__(self):
+        return f"Size{self.sizes}"
+
+    def __repr__(self):
+        return f"Size{self.sizes}"
+
+    def __eq__(self, other):
+        return other.sizes == self.sizes and other.dtype == self.dtype
+
+
+def is_iterable(elem):
+    try:
+        iter(elem)
+        return True
+    except:
+        return False
+
+
 class KernelFusionEngine(object):
+
+    def __init__(
+        self,
+        model,
+        memory_efficient_fusion,
+        custom_cuda_kernels=None,
+    ):
+        if custom_cuda_kernels is None:
+            custom_cuda_kernels = []
+
+        self.model = model
+        self.custom_cuda_kernels = custom_cuda_kernels
+        self.memory_efficient_fusion = memory_efficient_fusion
+        self._set_jit_fusion_options()
+        self.is_fused = False
+
+    def fuse(self):
+        if not self.is_fused:
+            if len(self.custom_cuda_kernels) > 0:
+                from oslo.pytorch.kernel_fusion.cuda.engine import (
+                    CustomCUDAKernelEngine,
+                )
+
+                custom_cuda_kernel_engine = CustomCUDAKernelEngine(
+                    model=self.model,
+                    kernels=self.custom_cuda_kernels,
+                )
+                custom_cuda_kernel_engine.fuse()
+
+            if self.memory_efficient_fusion is True:
+                from oslo.pytorch.kernel_fusion.mem_efficient.engine import (
+                    MemoryEfficientFusionEngine,
+                )
+
+                mem_efficient_fusion_engine = MemoryEfficientFusionEngine(
+                    model=self.model
+                )
+                mem_efficient_fusion_engine.fuse()
+            else:
+                from oslo.pytorch.kernel_fusion.jit_partial.engine import (
+                    JITPartialCompilingEngine,
+                )
+
+                jit_partial_compiling_engine = JITPartialCompilingEngine(
+                    model=self.model
+                )
+                jit_partial_compiling_engine.fuse()
+
+            self.is_fused = True
+
     @staticmethod
     def _set_jit_fusion_options():
         """Set PyTorch JIT layer fusion options."""
-        TORCH_MAJOR = int(torch.__version__.split(".")[0])
-        TORCH_MINOR = int(torch.__version__.split(".")[1])
-
-        if (TORCH_MAJOR > 1) or (TORCH_MAJOR == 1 and TORCH_MINOR >= 10):
-            # nv fuser
+        if higher_than(1, 10):
             torch._C._jit_set_profiling_executor(True)
             torch._C._jit_set_profiling_mode(True)
             torch._C._jit_override_can_fuse_on_cpu(False)
@@ -19,7 +95,6 @@ class KernelFusionEngine(object):
             torch._C._debug_set_autodiff_subgraph_inlining(False)
             return "nv_fuser"
         else:
-            # legacy pytorch fuser
             torch._C._jit_set_profiling_mode(False)
             torch._C._jit_set_profiling_executor(False)
             torch._C._jit_override_can_fuse_on_cpu(True)

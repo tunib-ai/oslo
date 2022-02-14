@@ -9,6 +9,7 @@ DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
     os.path.expanduser("~"),
     ".cache",
     "torch_extensions",
+    "oslo",
 )
 
 
@@ -32,9 +33,7 @@ class Binder(object):
         ]
 
     def sources(self):
-        return [
-            "CompileCache.cpp",
-        ]
+        return []
 
     @staticmethod
     def _search_compatibility_version():
@@ -67,7 +66,7 @@ class Binder(object):
             cuda_version = output.split()
             cuda_bare_metal_version = cuda_version[
                 cuda_version.index("release") + 1
-                ].split(".")[0]
+            ].split(".")[0]
 
             if int(cuda_bare_metal_version) >= 11:
                 return 80  # A100
@@ -148,3 +147,21 @@ class Binder(object):
             additional_flags.append(f"-maxrregcount={maxrregcount}")
 
         return nvcc_flags + additional_flags
+
+
+class CompilingBinder(Binder):
+    @property
+    def name(self):
+        return "compiling"
+
+    def sources(self):
+        return ["CompileCache.cpp"]
+
+
+class CUDABinder(Binder):
+    @property
+    def name(self):
+        return "cuda"
+
+    def sources(self):
+        return ["FusedLayerNorm.cu", "FusedNoRepeatNGram.cu", "CUDABinder.cpp"]

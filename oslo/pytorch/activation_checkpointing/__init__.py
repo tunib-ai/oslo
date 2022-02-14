@@ -1,12 +1,14 @@
 import importlib
 
-from oslo.pytorch.activation_checkpointing.checkpoint_engine import (
-    ActivationCheckpointingEngine,
-)
+import torch
 
 
 def initialize_activation_checkpointing(model, config, **kwargs):
     if "activation_checkpointing" in config:
+        from oslo.pytorch.activation_checkpointing.checkpoint_engine import (
+            ActivationCheckpointingEngine,
+        )
+
         ac_config = config["activation_checkpointing"]
 
         if "enable" in ac_config and ac_config["enable"] is True:
@@ -30,9 +32,12 @@ def initialize_activation_checkpointing(model, config, **kwargs):
                     "Set ``partitioned_checkpointing`` to true in your config."
                 )
 
+            if model.device == torch.device("cpu"):
+                model = model.cuda()
+
             engine = ActivationCheckpointingEngine(
                 mpu=mpu,
-                num_layers=model.config.n_layers,
+                num_layers=model.config.num_hidden_layers,
                 partitioned_checkpointing=ac_config.get(
                     "partitioned_checkpointing", False
                 ),
