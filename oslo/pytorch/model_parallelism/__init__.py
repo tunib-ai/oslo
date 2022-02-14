@@ -1,23 +1,24 @@
 from functools import partial
 
-from oslo.pytorch.model_parallelism.network.mpu import MPU
-from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
-    TensorDeparallelEngine,
-    TensorParallelEngine,
-)
-from oslo.pytorch.model_parallelism.utils.extensions import (
-    from_parallelized,
-    save_parallelized,
-)
-from oslo.pytorch.utils.tensor_parallelism_mapping import \
-    TensorParallelismMapping
-
 
 def initialize_model_parallelism(model, config, **kwargs):
     if "model_parallelism" in config:
         mp_config = config["model_parallelism"]
 
         if "enable" in mp_config and mp_config["enable"] is True:
+            from oslo.pytorch.model_parallelism.network.mpu import MPU
+            from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
+                TensorDeparallelEngine,
+                TensorParallelEngine,
+            )
+            from oslo.pytorch.model_parallelism.utils.extensions import (
+                from_parallelized,
+                save_parallelized,
+            )
+            from oslo.pytorch.model_parallelism.utils.mappings import (
+                TensorParallelismMapping,
+            )
+
             tp_size = mp_config.get("tensor_parallel_size", 1)
             pp_size = mp_config.get("pipeline_parallel_size", 1)
 
@@ -35,7 +36,7 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "``tensor_parallel_size`` must be divisible by ``num_attention_heads``. "
                         "Please check your model configuration."
                     )
-                    assert model.config.hid_size % tp_size == 0, (
+                    assert model.config.hidden_size % tp_size == 0, (
                         "``tensor_parallel_size`` must be divisible by ``hidden_size``. "
                         "Please check your model configuration."
                     )
@@ -43,7 +44,7 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "``tensor_parallel_size`` must be same or greather than ``num_attention_heads``. "
                         "Please check your model configuration."
                     )
-                    assert model.config.hid_size >= tp_size, (
+                    assert model.config.hidden_size >= tp_size, (
                         "``tensor_parallel_size`` must be same or greather than ``hidden_size``. "
                         "Please check your model configuration."
                     )
