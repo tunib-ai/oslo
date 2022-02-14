@@ -21,20 +21,19 @@ oslo_model = oslo.initialize(
 BATCH_SIZE, SEQ_LEN = 256, 1
 input_tensor = torch.ones(BATCH_SIZE, SEQ_LEN).long().cuda()
 
-# warm up for non-oslo
+# Warm-up
 for _ in range(10):
     non_oslo_model.generate(input_tensor, no_repeat_ngram_size=3)
 
+for _ in range(10):
+    oslo_model.generate(input_tensor, no_repeat_ngram_size=3)
+
+# Bench mark
 start = time()
 for _ in range(10):
     non_oslo_model.generate(input_tensor, no_repeat_ngram_size=3)
 print(f"non-oslo: {time() - start}")
 # non-oslo: 1.1885042190551758
-
-# warm up for oslo
-for _ in range(10):
-    oslo_model.generate(input_tensor, no_repeat_ngram_size=3)
-
 
 start = time()
 for _ in range(10):

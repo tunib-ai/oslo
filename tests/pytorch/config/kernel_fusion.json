@@ -1,13 +1,7 @@
 {
-    "activation_checkpointing": {
-        "enable": true,
-        "cpu_checkpointing": true,
-        "partitioned_checkpointing": false,
-        "contiguous_checkpointing": false
-    },
     "kernel_fusion": {
         "enable": true,
         "memory_efficient_fusion": true,
-        "custom_cuda_kernels": ["FusedNoRepeatNGramLogitsProcessor"]
+        "custom_cuda_kernels": ["FusedNoRepeatNGram"]
     }
 }

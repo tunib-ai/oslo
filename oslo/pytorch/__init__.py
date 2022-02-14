@@ -1,6 +1,5 @@
 import json
 import os
-from functools import partial
 from typing import Any, Dict, Union
 
 from oslo.pytorch.activation_checkpointing import (

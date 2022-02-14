@@ -5,16 +5,15 @@ from logging import getLogger
 import torch
 import torch.distributed as dist
 
-from oslo.pytorch.kernel_fusion.mem_efficient.aot_autograd import aot_function
 from oslo.pytorch.kernel_fusion.mem_efficient.compilers import (
     ts_compile,
     default_decompositions,
+    memory_efficient_fusion,
 )
+from oslo.pytorch.kernel_fusion.mem_efficient.model_output import OutputManager
 from oslo.pytorch.kernel_fusion.mem_efficient.partitioners import (
     min_cut_rematerialization_partition,
-    default_partition,
 )
-from oslo.pytorch.kernel_fusion.utils.model_output import OutputManager
 
 logger = getLogger(__name__)
 
@@ -50,7 +49,11 @@ class MemoryEfficientFusionEngine(object):
 
     def fuse(self):
         OutputManager(self.model).register_model_output_classes()
-        self.model.forward = self.register_forward(self.model)
+        self.register_forward()
+        return memory_efficient_fusion(
+            self.model,
+            min_cut_rematerialization=True,
+        )
 
     @staticmethod
     def logging_rank_0(message):
@@ -94,11 +97,11 @@ class MemoryEfficientFusionEngine(object):
 
         return values
 
-    def register_forward(self, module):
-        forward_fn = module.forward
+    def register_forward(self):
+        forward_fn = self.model.forward
         forward_parameters = deepcopy(dict(inspect.signature(forward_fn).parameters))
 
-        def forward(*args, **kwargs):
+        def new_forward_fn(*args, **kwargs):
             param_dict = self.get_param_dict(
                 *args,
                 **kwargs,
@@ -113,15 +116,6 @@ class MemoryEfficientFusionEngine(object):
                     f"[MemoryEfficientFusion] Compiling new graph for {meta}."
                 )
 
-            aot_fn = aot_function(
-                forward_fn,
-                fw_compiler=ts_compile,
-                bw_compiler=ts_compile,
-                partition_fn=min_cut_rematerialization_partition,
-                hasher_type="StaticShapeHasher",
-                decompositions=default_decompositions,
-            )
+            return forward_fn(**param_dict)
 
-            return aot_fn(**param_dict)
-
-        return forward
+        self.model.forward = new_forward_fn

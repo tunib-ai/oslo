@@ -19,6 +19,8 @@
 <br><br>
 
 ### What's New:
+* February 15, 2022 [Added kernel fusion](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0).
+* February 15, 2021 [Released OSLO 2.0](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0).
 * February 02, 2022 [Added activation checkpointing](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1).
 *  January 30, 2022 [Released OSLO 2.0 alpha version](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0).
 * December 30, 2021 [Added Deployment Launcher](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
@@ -35,11 +37,6 @@ Be careful that the 'core' is in the PyPI project name.
 
 ```console
 pip install oslo-core
-```
-
-NOTE: OSLO 2.0.0 is still an alpha version, so you must specify the version.
-```console
-pip install oslo-core==2.0.0a2
 ```
 
 ## Basic Usage
@@ -61,7 +58,7 @@ If you find our work useful, please consider citing:
 
 ```
 @misc{oslo,
-  author       = {Ko, Hyunwoong and Kim, Soohwan and Park, Kyubyong},
+  author       = {Ko, Hyunwoong and Kim, Soohwan and Lee, Yohan and Park, Kyubyong},
   title        = {OSLO: Open Source framework for Large-scale transformer Optimization},
   howpublished = {\url{https://github.com/tunib-ai/oslo}},
   year         = {2021},

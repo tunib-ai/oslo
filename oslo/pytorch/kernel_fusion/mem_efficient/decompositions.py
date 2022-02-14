@@ -28,6 +28,7 @@ class Reduction(Enum):
     MEAN = 1
     SUM = 2
 
+
 @register_decomposition(aten.tanh_backward)
 def tanh_backward_decomposition(out_grad: Tensor, y: Tensor):
     return out_grad * (1 - y * y)

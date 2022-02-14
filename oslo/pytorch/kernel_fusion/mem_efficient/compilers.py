@@ -6,7 +6,11 @@ import torch
 
 from .aot_autograd import aot_function, aot_module
 from .decompositions import decomposition_table
-from .partitioners import draw_graph, min_cut_rematerialization_partition
+from .partitioners import (
+    draw_graph,
+    min_cut_rematerialization_partition,
+    default_partition,
+)
 
 
 def ts_compile(fx_g, _):
@@ -246,15 +250,21 @@ def print_compile(fx_g, _):
     return fx_g
 
 
-def memory_efficient_fusion(fn, static_argnums=None):
+def memory_efficient_fusion(fn, static_argnums=None, min_cut_rematerialization=False):
     """
     Recomputes the fwd pass in the bwd pass to perform memory efficient fusion.
     Uses NVFuser as the backend compiler.
     """
+
+    if min_cut_rematerialization:
+        partition_fn = min_cut_rematerialization_partition
+    else:
+        partition_fn = default_partition
+
     config = {
         "fw_compiler": ts_compile,
         "bw_compiler": ts_compile,
-        "partition_fn": min_cut_rematerialization_partition,
+        "partition_fn": partition_fn,
         "hasher_type": "StaticShapeHasher",
         "decompositions": default_decompositions,
         "static_argnums": static_argnums,

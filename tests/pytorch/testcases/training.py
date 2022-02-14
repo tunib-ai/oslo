@@ -18,6 +18,7 @@ from transformers import (
 )
 
 import oslo
+from oslo.pytorch.kernel_fusion.mem_efficient.python_key import PythonTensor
 
 
 def tokenize(args, tokenizer, sample):
@@ -32,11 +33,14 @@ def tokenize(args, tokenizer, sample):
 
 def train_step(name, model, optimizer, inputs, step):
     output = model(**inputs)
-    loss = output.loss
-    loss.backward()
+    if isinstance(output, PythonTensor):
+        output.backward()
+    else:
+        loss = output.loss
+        loss.backward()
     optimizer.step()
 
-    if dist.get_rank() == 0:
+    if not dist.is_initialized() or dist.get_rank() == 0:
         wandb.log({name: loss}, step=step)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -124,16 +128,16 @@ assert args.task in TASKS, (
 )
 
 # 4. Create parallelized model and optimizer
-model_oslo = TASKS[args.task]["class"](args.model)
-model_oslo = oslo.initialize(model_oslo, config=args.config)
+model_oslo = TASKS[args.task]["class"](args.model).train()
 optimizer_oslo = Adam(params=model_oslo.parameters(), lr=3e-5)
+model_oslo = oslo.initialize(model_oslo, config=args.config)
 
 # 5. Create non-parallelized model and optimizer
-model_no_oslo = TASKS[args.task]["class"](args.model).to("cuda")
+model_no_oslo = TASKS[args.task]["class"](args.model).to("cuda").train()
 optimizer_no_oslo = Adam(params=model_no_oslo.parameters(), lr=3e-5)
 
 # 6. Initialize wandb and create folders
-if dist.get_rank() == 0:
+if not dist.is_initialized() or dist.get_rank() == 0:
     wandb.init(project="oslo", name=name)
     os.makedirs("profile", exist_ok=True)
     os.makedirs("ckpt", exist_ok=True)
@@ -174,8 +178,9 @@ for i, sample in enumerate(tqdm(preprocessing)):
 
     # 12. Save parallelized checkpoints
     if i % args.save_interval == 0:
-        model_oslo.save_parallelized(
-            save_directory="ckpt",
-            save_config=True,
-            merge_checkpoints=False,
-        )
+        if hasattr(model_oslo, "save_parallelized"):
+            model_oslo.save_parallelized(
+                save_directory="ckpt",
+                save_config=True,
+                merge_checkpoints=False,
+            )
