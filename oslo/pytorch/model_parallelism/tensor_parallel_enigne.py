@@ -10,7 +10,7 @@ from oslo.pytorch.model_parallelism.utils.distributed import (
     RowParallelLinear,
     VocabParallelEmbedding,
 )
-from oslo.pytorch.utils.tensor_parallelism_mapping import (
+from oslo.pytorch.model_parallelism.utils.mappings import (
     TensorParallelismMapping,
     update_module_arguments,
 )

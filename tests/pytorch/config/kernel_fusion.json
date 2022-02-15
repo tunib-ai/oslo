@@ -1,0 +1,7 @@
+{
+    "kernel_fusion": {
+        "enable": true,
+        "memory_efficient_fusion": true,
+        "custom_cuda_kernels": ["FusedNoRepeatNGram"]
+    }
+}

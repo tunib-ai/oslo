@@ -1,11 +1,11 @@
 import json
 import os
-from functools import partial
 from typing import Any, Dict, Union
 
 from oslo.pytorch.activation_checkpointing import (
     initialize_activation_checkpointing,
 )
+from oslo.pytorch.kernel_fusion import initialize_kernel_fusion
 from oslo.pytorch.model_parallelism import initialize_model_parallelism
 from oslo.pytorch.utils.extenstions import restrict_embedding_resizing
 
@@ -38,6 +38,8 @@ SUPPORTED_FEATURES = {
     },
     "kernel_fusion": {
         "enable": _type(bool),
+        "memory_efficient_fusion": _type(bool),
+        "custom_cuda_kernels": _type(list),
     },
 }
 
@@ -112,6 +114,7 @@ def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
         model, config = _sanity_check(model, config)
         model, config = initialize_model_parallelism(model, config, **kwargs)
         model, config = initialize_activation_checkpointing(model, config, **kwargs)
+        model, config = initialize_kernel_fusion(model, config, **kwargs)
         model = restrict_embedding_resizing(model)
         setattr(model, "oslo_initialized", True)
     else:

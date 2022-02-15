@@ -87,6 +87,11 @@
    Activation Checkpointing
   </a>
  </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="CONFIGURATION/kernel_fusion.html">
+   Kernel Fusion
+  </a>
+ </li>
 </ul>
 <p class="caption">
  <span class="caption-text">
@@ -112,6 +117,11 @@
  <li class="toctree-l1">
   <a class="reference internal" href="TUTORIALS/activation_checkpointing.html">
    Activation Checkpointing Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="TUTORIALS/kernel_fusion.html">
+   Kernel Fusion Tutorial
   </a>
  </li>
 </ul>
@@ -335,6 +345,8 @@
 <div class="section" id="whats-new">
 <h1>What’s New:<a class="headerlink" href="#whats-new" title="Permalink to this headline">¶</a></h1>
 <ul class="simple">
+<li><p>February 15, 2022 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0">Added kernel fusion</a>.</p></li>
+<li><p>February 15, 2021 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0">Released OSLO 2.0</a>.</p></li>
 <li><p>February 02, 2022 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1">Added activation checkpointing</a>.</p></li>
 <li><p>January 30, 2022 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0">Released OSLO 2.0 alpha
 version</a>.</p></li>
@@ -365,10 +377,6 @@ in the PyPI project name.</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">pip install oslo-core</span>
 </pre></div>
 </div>
-<p>NOTE: OSLO 2.0.0 is still an alpha version, so you must specify the version.</p>
-<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">pip install oslo-core==2.0.0a2</span>
-</pre></div>
-</div>
 </div>
 <div class="section" id="basic-usage">
 <h1>Basic Usage<a class="headerlink" href="#basic-usage" title="Permalink to this headline">¶</a></h1>
@@ -386,6 +394,7 @@ in the PyPI project name.</p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/model_parallelism.html">Model Parallelism</a></li>
 <li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/activation_checkpointing.html">Activation Checkpointing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/kernel_fusion.html">Kernel Fusion</a></li>
 </ul>
 </div>
 <div class="toctree-wrapper compound">
@@ -395,6 +404,7 @@ in the PyPI project name.</p>
 <li class="toctree-l1"><a class="reference internal" href="TUTORIALS/tensor_model_data_parallelism.html">Tensor Model + Data Parallelism Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="TUTORIALS/tensor_model_zero_data_parallelism.html">Tensor Model + ZeRO Data Parallelism Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="TUTORIALS/activation_checkpointing.html">Activation Checkpointing Tutorial</a></li>
+<li class="toctree-l1"><a class="reference internal" href="TUTORIALS/kernel_fusion.html">Kernel Fusion Tutorial</a></li>
 </ul>
 </div>
 </div>
@@ -404,7 +414,7 @@ in the PyPI project name.</p>
 <h2>Citing OSLO<a class="headerlink" href="#citing-oslo" title="Permalink to this headline">¶</a></h2>
 <p>If you find our work useful, please consider citing:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@misc</span><span class="p">{</span><span class="n">oslo</span><span class="p">,</span>
-  <span class="n">author</span>       <span class="o">=</span> <span class="p">{</span><span class="n">Ko</span><span class="p">,</span> <span class="n">Hyunwoong</span> <span class="ow">and</span> <span class="n">Kim</span><span class="p">,</span> <span class="n">Soohwan</span> <span class="ow">and</span> <span class="n">Park</span><span class="p">,</span> <span class="n">Kyubyong</span><span class="p">},</span>
+  <span class="n">author</span>       <span class="o">=</span> <span class="p">{</span><span class="n">Ko</span><span class="p">,</span> <span class="n">Hyunwoong</span> <span class="ow">and</span> <span class="n">Kim</span><span class="p">,</span> <span class="n">Soohwan</span> <span class="ow">and</span> <span class="n">Lee</span><span class="p">,</span> <span class="n">Yohan</span> <span class="ow">and</span> <span class="n">Park</span><span class="p">,</span> <span class="n">Kyubyong</span><span class="p">},</span>
   <span class="n">title</span>        <span class="o">=</span> <span class="p">{</span><span class="n">OSLO</span><span class="p">:</span> <span class="n">Open</span> <span class="n">Source</span> <span class="n">framework</span> <span class="k">for</span> <span class="n">Large</span><span class="o">-</span><span class="n">scale</span> <span class="n">transformer</span> <span class="n">Optimization</span><span class="p">},</span>
   <span class="n">howpublished</span> <span class="o">=</span> <span class="p">{</span>\<span class="n">url</span><span class="p">{</span><span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">github</span><span class="o">.</span><span class="n">com</span><span class="o">/</span><span class="n">tunib</span><span class="o">-</span><span class="n">ai</span><span class="o">/</span><span class="n">oslo</span><span class="p">}},</span>
   <span class="n">year</span>         <span class="o">=</span> <span class="p">{</span><span class="mi">2021</span><span class="p">},</span>
