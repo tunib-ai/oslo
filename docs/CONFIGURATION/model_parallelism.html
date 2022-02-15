@@ -22,12 +22,12 @@
       
 
     
-    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
     
   <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
@@ -72,7 +72,7 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p class="caption">
+        <p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   CONFIGURATION
  </span>
@@ -91,6 +91,38 @@
  <li class="toctree-l1">
   <a class="reference internal" href="kernel_fusion.html">
    Kernel Fusion
+  </a>
+ </li>
+</ul>
+<p aria-level="2" class="caption" role="heading">
+ <span class="caption-text">
+  TUTORIALS
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_parallelism.html">
+   Tensor Model Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_data_parallelism.html">
+   Tensor Model + Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_zero_data_parallelism.html">
+   Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/activation_checkpointing.html">
+   Activation Checkpointing Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/kernel_fusion.html">
+   Kernel Fusion Tutorial
   </a>
  </li>
 </ul>
@@ -248,7 +280,7 @@
               <div>
                 
   <div class="section" id="model-parallelism">
-<h1>Model Parallelism<a class="headerlink" href="#model-parallelism" title="Permalink to this headline">¶</a></h1>
+<h1>Model Parallelism<a class="headerlink" href="#model-parallelism" title="Permalink to this headline"></a></h1>
 <p>You can specify your own model parallelism related configuration under <code class="docutils literal notranslate"><span class="pre">model_parallelism</span></code> like:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
   <span class="nt">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span>
@@ -259,7 +291,7 @@
 </pre></div>
 </div>
 <div class="section" id="enable-bool">
-<h2>1. enable: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#enable-bool" title="Permalink to this headline">¶</a></h2>
+<h2>1. enable: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#enable-bool" title="Permalink to this headline"></a></h2>
 <ul class="simple">
 <li><p>type: bool</p></li>
 <li><p>default: False</p></li>
@@ -267,7 +299,7 @@
 <p>Enable model parallelism.</p>
 </div>
 <div class="section" id="tensor-parallel-size-int">
-<h2>2. tensor_parallel_size: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline">¶</a></h2>
+<h2>2. tensor_parallel_size: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline"></a></h2>
 <ul class="simple">
 <li><p>type: int</p></li>
 <li><p>default: 1</p></li>
@@ -281,12 +313,14 @@ you can find the detail of it from <a class="reference external" href="https://h
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be positive number.</p></li>
 </ul>
 <div class="section" id="supported-models">
-<h3>SUPPORTED MODELS<a class="headerlink" href="#supported-models" title="Permalink to this headline">¶</a></h3>
+<h3>SUPPORTED MODELS<a class="headerlink" href="#supported-models" title="Permalink to this headline"></a></h3>
 <p>The following list includes currently supported models.</p>
 <ul class="simple">
 <li><p>Albert</p></li>
 <li><p>Bert</p></li>
 <li><p>Bart</p></li>
+<li><p>Blenderbot</p></li>
+<li><p>BlenderbotSmall</p></li>
 <li><p>T5</p></li>
 <li><p>GPT2</p></li>
 <li><p>GPTNeo</p></li>

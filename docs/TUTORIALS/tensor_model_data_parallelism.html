@@ -22,12 +22,12 @@
       
 
     
-    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
     
   <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
@@ -72,7 +72,7 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p class="caption">
+        <p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   CONFIGURATION
  </span>
@@ -94,7 +94,7 @@
   </a>
  </li>
 </ul>
-<p class="caption">
+<p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   TUTORIALS
  </span>
@@ -428,14 +428,14 @@
               <div>
                 
   <div class="section" id="tensor-model-data-parallelism-tutorial">
-<h1>Tensor Model + Data Parallelism Tutorial<a class="headerlink" href="#tensor-model-data-parallelism-tutorial" title="Permalink to this headline">¶</a></h1>
+<h1>Tensor Model + Data Parallelism Tutorial<a class="headerlink" href="#tensor-model-data-parallelism-tutorial" title="Permalink to this headline"></a></h1>
 <ul class="simple">
 <li><p>If you haven’t read the <a class="reference external" href="https://tunib-ai.github.io/oslo/TUTORIALS/tensor_model_parallelism.html">Tensor model parallelism tutorial</a>, please read that first.</p></li>
 <li><p>The concepts of the tensor model parallelism and data parallelism can be found <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p></li>
 <li><p>The source code of this tutorial can be found <a class="reference external" href="https://github.com/tunib-ai/oslo/tree/main/tutorials">here</a>.</p></li>
 </ul>
 <div class="section" id="table-of-contents">
-<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline">¶</a></h2>
+<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline"></a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="#distributed-launcher">0. Distributed Launcher</a></p></li>
 <li><p><a class="reference external" href="#multi-dimensional-parallel-training">1. Multi-dimensional Parallel Training</a></p>
@@ -467,7 +467,7 @@
 </ul>
 </div>
 <div class="section" id="distributed-launcher">
-<h2>0. Distributed Launcher<a class="headerlink" href="#distributed-launcher" title="Permalink to this headline">¶</a></h2>
+<h2>0. Distributed Launcher<a class="headerlink" href="#distributed-launcher" title="Permalink to this headline"></a></h2>
 <p>This tutorial must be launched using distributed launcher.</p>
 <p>If you have 4 GPUs:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">python -m torch.distributed.launch --nproc_per_node=4 YOUR_SCRIPT.py</span>
@@ -484,9 +484,9 @@
 </ul>
 </div>
 <div class="section" id="multi-dimensional-parallel-training">
-<h2>1. Multi-dimensional Parallel Training<a class="headerlink" href="#multi-dimensional-parallel-training" title="Permalink to this headline">¶</a></h2>
+<h2>1. Multi-dimensional Parallel Training<a class="headerlink" href="#multi-dimensional-parallel-training" title="Permalink to this headline"></a></h2>
 <div class="section" id="the-concept-of-multi-dimensional-parallel-training">
-<h3>1.1. The concept of multi-dimensional parallel training<a class="headerlink" href="#the-concept-of-multi-dimensional-parallel-training" title="Permalink to this headline">¶</a></h3>
+<h3>1.1. The concept of multi-dimensional parallel training<a class="headerlink" href="#the-concept-of-multi-dimensional-parallel-training" title="Permalink to this headline"></a></h3>
 <p>Let’s suppose we have 4 GPUs.</p>
 <p>The model parallelism splits the model into multiple pieces and trains a single batch of data.
 If we use all these GPUs for model parallelism, It would look like the following.</p>
@@ -508,7 +508,7 @@ Therefore, these communications must only take place inside the group.</p>
 <p><img alt="image" src="https://user-images.githubusercontent.com/38183241/151709418-7a59a498-15e9-4e0f-b191-8cf4d2ac9d67.png" /></p>
 </div>
 <div class="section" id="the-concept-of-mpu-model-parallel-unit">
-<h3>1.2. The concept of MPU (Model Parallel Unit)<a class="headerlink" href="#the-concept-of-mpu-model-parallel-unit" title="Permalink to this headline">¶</a></h3>
+<h3>1.2. The concept of MPU (Model Parallel Unit)<a class="headerlink" href="#the-concept-of-mpu-model-parallel-unit" title="Permalink to this headline"></a></h3>
 <p>So it would be nice to use the concept of MPU (Model Parallel Unit) to easily manage these communications. MPU was introduced by NVIDIA’s <a class="reference external" href="https://github.com/NVIDIA/Megatron-LM">Megatron-LM</a>, and OSLO borrowed this concept.
 OSLO’s MPU provides the following methods to facilitate 3D parallel communication, including pipeline model parallelism, a concept to be introduced later.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">oslo.pytorch.model_parallelism.network.mpu</span> <span class="kn">import</span> <span class="n">MPU</span>
@@ -547,10 +547,10 @@ OSLO’s MPU provides the following methods to facilitate 3D parallel communicat
 </div>
 </div>
 <div class="section" id="training">
-<h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline">¶</a></h2>
+<h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline"></a></h2>
 <p>How to use the tensor model + data parallelism for training?</p>
 <div class="section" id="initialize-some-variables">
-<h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline">¶</a></h3>
+<h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">4</span>
 <span class="n">SEQ_LEN</span> <span class="o">=</span> <span class="mi">64</span>
 <span class="n">SAVE_INTERVAL</span> <span class="o">=</span> <span class="mi">50</span>
@@ -559,7 +559,7 @@ OSLO’s MPU provides the following methods to facilitate 3D parallel communicat
 </div>
 </div>
 <div class="section" id="create-model-and-optimizer-and-tokenizer">
-<h3>2.2. Create model and optimizer and tokenizer<a class="headerlink" href="#create-model-and-optimizer-and-tokenizer" title="Permalink to this headline">¶</a></h3>
+<h3>2.2. Create model and optimizer and tokenizer<a class="headerlink" href="#create-model-and-optimizer-and-tokenizer" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
 <span class="kn">from</span> <span class="nn">torch.optim</span> <span class="kn">import</span> <span class="n">Adam</span>
 
@@ -572,7 +572,7 @@ OSLO’s MPU provides the following methods to facilitate 3D parallel communicat
 </div>
 </div>
 <div class="section" id="parallelize-the-model">
-<h3>2.3. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline">¶</a></h3>
+<h3>2.3. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline"></a></h3>
 <p>Note that <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span></code>  * <code class="docutils literal notranslate"><span class="pre">dp</span> <span class="pre">size</span></code> must be same or smaller than total num of gpus.
 If you have 4 GPUs, you can set <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span> <span class="pre">=</span> <span class="pre">2</span></code> * <code class="docutils literal notranslate"><span class="pre">dp</span> <span class="pre">size</span> <span class="pre">=</span> <span class="pre">2</span></code>.
 If you specify the <code class="docutils literal notranslate"><span class="pre">tp</span> <span class="pre">size</span></code>, the <code class="docutils literal notranslate"><span class="pre">dp</span> <span class="pre">size</span></code> will be determined automatically.</p>
@@ -585,7 +585,7 @@ If you specify the <code class="docutils literal notranslate"><span class="pre">
 </div>
 </div>
 <div class="section" id="make-the-model-data-parallelizable">
-<h3>2.4. Make the model data parallelizable<a class="headerlink" href="#make-the-model-data-parallelizable" title="Permalink to this headline">¶</a></h3>
+<h3>2.4. Make the model data parallelizable<a class="headerlink" href="#make-the-model-data-parallelizable" title="Permalink to this headline"></a></h3>
 <p>You can use torch DDP module with OSLO model parallelism, and you can access the process groups, world sizes and ranks using <code class="docutils literal notranslate"><span class="pre">model.mpu</span></code>.
 For more information about MPU, refer to <a class="reference external" href="https://github.com/tunib-ai/oslo/blob/master/oslo/pytorch/model_parallelism/network/mpu.py">here</a>.
 If you are unfamiliar with <code class="docutils literal notranslate"><span class="pre">DistributedDataParallel</span></code>, please refer to <a class="reference external" href="https://pytorch.org/tutorials/beginner/dist_overview.html#torch-nn-parallel-distributeddataparallel">here</a>.</p>
@@ -602,7 +602,7 @@ If you are unfamiliar with <code class="docutils literal notranslate"><span clas
 </div>
 </div>
 <div class="section" id="load-dataset">
-<h3>2.5. Load dataset<a class="headerlink" href="#load-dataset" title="Permalink to this headline">¶</a></h3>
+<h3>2.5. Load dataset<a class="headerlink" href="#load-dataset" title="Permalink to this headline"></a></h3>
 <p>I used the Hugging Face <code class="docutils literal notranslate"><span class="pre">datasets</span></code> library in this tutorial.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">datasets</span> <span class="kn">import</span> <span class="n">load_dataset</span>
 
@@ -612,7 +612,7 @@ If you are unfamiliar with <code class="docutils literal notranslate"><span clas
 </div>
 </div>
 <div class="section" id="create-distributedsampler-to-parallelize-dataset">
-<h3>2.6. Create DistributedSampler to parallelize dataset<a class="headerlink" href="#create-distributedsampler-to-parallelize-dataset" title="Permalink to this headline">¶</a></h3>
+<h3>2.6. Create DistributedSampler to parallelize dataset<a class="headerlink" href="#create-distributedsampler-to-parallelize-dataset" title="Permalink to this headline"></a></h3>
 <p>You must specify the <code class="docutils literal notranslate"><span class="pre">num_replicas</span></code> and <code class="docutils literal notranslate"><span class="pre">rank</span></code> using <code class="docutils literal notranslate"><span class="pre">model.mpu</span></code> when you are creating sampler.
 If you are unfamiliar with <code class="docutils literal notranslate"><span class="pre">DistributedSampler</span></code>, please refer to <a class="reference external" href="https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler">here</a>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DistributedSampler</span>
@@ -627,7 +627,7 @@ If you are unfamiliar with <code class="docutils literal notranslate"><span clas
 </div>
 </div>
 <div class="section" id="create-the-dataloader-with-sampler">
-<h3>2.7. Create the dataloader with sampler.<a class="headerlink" href="#create-the-dataloader-with-sampler" title="Permalink to this headline">¶</a></h3>
+<h3>2.7. Create the dataloader with sampler.<a class="headerlink" href="#create-the-dataloader-with-sampler" title="Permalink to this headline"></a></h3>
 <p>Note that you should turn off shuffle of data loader.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
 
@@ -641,7 +641,7 @@ If you are unfamiliar with <code class="docutils literal notranslate"><span clas
 </div>
 </div>
 <div class="section" id="do-training-as-usual">
-<h3>2.8. Do training as usual<a class="headerlink" href="#do-training-as-usual" title="Permalink to this headline">¶</a></h3>
+<h3>2.8. Do training as usual<a class="headerlink" href="#do-training-as-usual" title="Permalink to this headline"></a></h3>
 <p>Now that we’re all ready, it’s time to begin training.
 The training code is the same as the previous <a class="reference external" href="https://tunib-ai.github.io/oslo/TUTORIALS/model_parallelism.html#save-the-parallelized-model">Tensor Model Parallelism tutorial</a>.
 However, note that when input batch is forwarding, the DDP engine object is used not the model object,</p>
@@ -675,11 +675,11 @@ However, note that when input batch is forwarding, the DDP engine object is used
 </div>
 </div>
 <div class="section" id="merging-checkpoints">
-<h2>3. Merging Checkpoints<a class="headerlink" href="#merging-checkpoints" title="Permalink to this headline">¶</a></h2>
+<h2>3. Merging Checkpoints<a class="headerlink" href="#merging-checkpoints" title="Permalink to this headline"></a></h2>
 <p>How to merge the parallelized checkpoints?</p>
 <p>The Merging Checkpoints section is same with the Tensor Model Parallelism tutorial. So, if you have already seen the tutorial, you can skip this.</p>
 <div class="section" id="create-model">
-<h3>3.1. Create model<a class="headerlink" href="#create-model" title="Permalink to this headline">¶</a></h3>
+<h3>3.1. Create model<a class="headerlink" href="#create-model" title="Permalink to this headline"></a></h3>
 <p>Usually we create a GPT2 model like this:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
 
@@ -696,7 +696,7 @@ Here’s how to crate a randomly initialized model:</p>
 </div>
 </div>
 <div class="section" id="id1">
-<h3>3.2. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<h3>3.2. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
@@ -706,7 +706,7 @@ Here’s how to crate a randomly initialized model:</p>
 </div>
 </div>
 <div class="section" id="load-parallelized-checkpoints">
-<h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline"></a></h3>
 <p>We support <code class="docutils literal notranslate"><span class="pre">from_parallelized</span></code> method to load parallelized checkpoints.
 You can load them by just input the save path of parallelized checkpoints.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">from_parallelized</span><span class="p">(</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
@@ -714,7 +714,7 @@ You can load them by just input the save path of parallelized checkpoints.</p>
 </div>
 </div>
 <div class="section" id="merge-parallelized-checkpoints">
-<h3>3.4. Merge parallelized checkpoints<a class="headerlink" href="#merge-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<h3>3.4. Merge parallelized checkpoints<a class="headerlink" href="#merge-parallelized-checkpoints" title="Permalink to this headline"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">save_parallelized</span></code> method have a special argument named <code class="docutils literal notranslate"><span class="pre">merge_checkpoints</span></code>.
 If you set this argument as Ture, the parallelized checkpoints of model will be saved as merged form.
 We recommend merging them after training because this process is a bit slow.</p>
