@@ -33,7 +33,9 @@ The following list includes currently supported models.
 
 - Albert
 - Bert
-- Bart  
+- Bart
+- Blenderbot
+- BlenderbotSmall
 - T5
 - GPT2
 - GPTNeo
