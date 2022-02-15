@@ -52,6 +52,11 @@ class TensorParallelismMapping(object):
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
         ],
+        Blenderbot=[
+            Column("q_proj", "k_proj", "v_proj", "fc1"),
+            Row("out_proj", "fc2"),
+            Update("embed_dim", "num_heads"),
+        ],
         T5=[
             Column("q", "k", "v", "DenseReluDense.wi"),
             Row("o", "DenseReluDense.wo", "relative_attention_bias"),
