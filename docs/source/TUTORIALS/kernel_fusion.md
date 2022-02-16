@@ -16,15 +16,15 @@
 * [2. Memory efficient fusion](#memory-efficient-fusion)
     + [2.1. Limitation](#limitation)
     + [2.2. Fuse kernels with AOT Autograd](#fuse-kernels-with-aot-autograd)
-    + [2.3. Warm-up (compiling)](#warm-up-compiling)
-    + [2.4. Benchmark](#benchmark)
+    + [2.3. Warm-up (compiling)](#id1)
+    + [2.4. Benchmark](#id2)
 * [3. Custom CUDA kernels](#custom-cuda-kernels)
     + [3.1. Supported kernels](#supported-kernels)
-    + [3.2. Initialize input tensor](#initialize-input-tensor)
-    + [3.3. Create models for benchmarking](#create-models-for-benchmarking)
+    + [3.2. Initialize input tensor](#id3)
+    + [3.3. Create models for benchmarking](#id4)
     + [3.4. Fuse kernels with the custom CUDA kernels](#34-fuse-kernels-with-the-custom-cuda-kernels)
-    + [3.5. Warm-up (compiling)](#warm-up-compiling)
-    + [3.6. Benchmark](#benchmark)
+    + [3.5. Warm-up (compiling)](#id5)
+    + [3.6. Benchmark](#id6)
 
 ## 1. JIT based fusion
 How to use the JIT based fusion?
@@ -96,7 +96,7 @@ oslo: 0.20798110961914062
 ## 2. Memory efficient fusion
 How to use the memory efficient fusion?
 
-The memory efficient fusion is a kernel fusion mechanism that uses the AOT Autograd engine, a novel engine developed by the functorch team at PyTorch
+The memory efficient fusion is a kernel fusion mechanism that uses the AOT Autograd engine, a novel engine developed by the functorch team at PyTorch.
 The AOT Autograd fuses all fusible areas of the model and also optimizes the backward graph with a novel mechanism called [min-cut rematerialization](https://dev-discuss.pytorch.org/t/min-cut-optimal-recomputation-i-e-activation-checkpointing-with-aotautograd/467). 
 Because the backward graph can be optimized, the memory efficient fusion shows a huge performance boost in training rather than inference.
 
