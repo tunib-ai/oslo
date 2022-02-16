@@ -455,18 +455,18 @@
 <ul>
 <li><p><a class="reference external" href="#limitation">2.1. Limitation</a></p></li>
 <li><p><a class="reference external" href="#fuse-kernels-with-aot-autograd">2.2. Fuse kernels with AOT Autograd</a></p></li>
-<li><p><a class="reference external" href="#warm-up-compiling">2.3. Warm-up (compiling)</a></p></li>
-<li><p><a class="reference external" href="#benchmark">2.4. Benchmark</a></p></li>
+<li><p><a class="reference external" href="#id1">2.3. Warm-up (compiling)</a></p></li>
+<li><p><a class="reference external" href="#id2">2.4. Benchmark</a></p></li>
 </ul>
 </li>
 <li><p><a class="reference external" href="#custom-cuda-kernels">3. Custom CUDA kernels</a></p>
 <ul>
 <li><p><a class="reference external" href="#supported-kernels">3.1. Supported kernels</a></p></li>
-<li><p><a class="reference external" href="#initialize-input-tensor">3.2. Initialize input tensor</a></p></li>
-<li><p><a class="reference external" href="#create-models-for-benchmarking">3.3. Create models for benchmarking</a></p></li>
+<li><p><a class="reference external" href="#id3">3.2. Initialize input tensor</a></p></li>
+<li><p><a class="reference external" href="#id4">3.3. Create models for benchmarking</a></p></li>
 <li><p><a class="reference external" href="#34-fuse-kernels-with-the-custom-cuda-kernels">3.4. Fuse kernels with the custom CUDA kernels</a></p></li>
-<li><p><a class="reference external" href="#warm-up-compiling">3.5. Warm-up (compiling)</a></p></li>
-<li><p><a class="reference external" href="#benchmark">3.6. Benchmark</a></p></li>
+<li><p><a class="reference external" href="#id5">3.5. Warm-up (compiling)</a></p></li>
+<li><p><a class="reference external" href="#id6">3.6. Benchmark</a></p></li>
 </ul>
 </li>
 </ul>
@@ -544,7 +544,7 @@ However, this may vary depending on the model architecture.</p>
 <div class="section" id="memory-efficient-fusion">
 <h2>2. Memory efficient fusion<a class="headerlink" href="#memory-efficient-fusion" title="Permalink to this headline"></a></h2>
 <p>How to use the memory efficient fusion?</p>
-<p>The memory efficient fusion is a kernel fusion mechanism that uses the AOT Autograd engine, a novel engine developed by the functorch team at PyTorch
+<p>The memory efficient fusion is a kernel fusion mechanism that uses the AOT Autograd engine, a novel engine developed by the functorch team at PyTorch.
 The AOT Autograd fuses all fusible areas of the model and also optimizes the backward graph with a novel mechanism called <a class="reference external" href="https://dev-discuss.pytorch.org/t/min-cut-optimal-recomputation-i-e-activation-checkpointing-with-aotautograd/467">min-cut rematerialization</a>.
 Because the backward graph can be optimized, the memory efficient fusion shows a huge performance boost in training rather than inference.</p>
 <p>However, the AOT Autograd is still under development, so unexpected bugs could be occurred.
