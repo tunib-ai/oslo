@@ -115,6 +115,7 @@ class PythonTensor(torch.Tensor):
 
         proxy_args = pytree.tree_map(unwrap_proxy, args)
         proxy_kwargs = pytree.tree_map(unwrap_proxy, kwargs)
+
         proxy_out = func(*proxy_args, **proxy_kwargs)
 
         # Kind of a hacky way to test if an op is in-place or not

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 import torch
 from torch import Tensor
@@ -125,14 +125,34 @@ def leaky_relu_backward_decomposition(
 
 
 @register_decomposition(aten.gelu_backward)
-def gelu_backward_decomposition(grad: Tensor, self: Tensor):
+def gelu_backward_decomposition(grad: Tensor, self: Tensor, approximate: str = "none"):
+    M_SQRT2 = 1.41421356237309504880
     M_SQRT1_2 = 0.70710678118654752440
     M_2_SQRTPI = 1.12837916709551257390
-    kAlpha = M_SQRT1_2
-    kBeta = M_2_SQRTPI * M_SQRT1_2 * 0.5
-    cdf = 0.5 * (1 + aten.erf(self * kAlpha))
-    pdf = kBeta * aten.exp(self * self * -0.5)
-    return grad * (cdf + self * pdf)
+    if approximate == "none":
+        kAlpha = M_SQRT1_2
+        kBeta = M_2_SQRTPI * M_SQRT1_2 * 0.5
+        cdf = 0.5 * (1 + aten.erf(self * kAlpha))
+        pdf = kBeta * aten.exp(self * self * -0.5)
+        return grad * (cdf + self * pdf)
+    else:
+        kBeta = M_SQRT2 * M_2_SQRTPI * 0.5
+        kKappa = 0.044715
+        x_sq = self * self
+        x_cube = x_sq * self
+        inner = kBeta * (self + kKappa * x_cube)
+        tanh_inner = aten.tanh(inner)
+
+        left = 0.5 * self
+        right = 1 + tanh_inner
+
+        left_derivative = 0.5 * right
+
+        tanh_derivative = 1 - tanh_inner * tanh_inner
+        inner_derivative = kBeta * (1 + 3 * kKappa * x_sq)
+        right_derivative = left * tanh_derivative * inner_derivative
+
+        return grad * (left_derivative + right_derivative)
 
 
 @register_decomposition(aten.mish_backward)
@@ -152,16 +172,62 @@ def silu_backward(grad_output: Tensor, self: Tensor) -> Tensor:
 # whyyyy does log_sigmoid do 2 different things for CPU and CUDA >:(
 
 
+@register_decomposition(aten.softshrink_backward)
+def softshrink_backward(grad_output: Tensor, self: Tensor, lambd: float) -> Tensor:
+    return aten.where(
+        (self >= -lambd) & (self <= lambd), aten.new_zeros(grad_output, ()), grad_output
+    )
+
+
+@register_decomposition(aten.prelu_backward)
+def prelu_backward(
+    grad_output: Tensor, self: Tensor, weight: Tensor
+) -> Tuple[Tensor, Tensor]:
+    # Logic is more complicated than I would like.  Basically, weight can either
+    # be a scalar or a vector of size [C], and in the forward pass it's
+    # broadcast against [N, C, ...]. So now, we need to do the corresponding
+    # reduction, which is harder than we'd like...
+    cur_weight = weight
+    for _ in range(2, grad_output.dim()):
+        cur_weight = cur_weight.unsqueeze(-1)
+    input_grad = aten.where(self > 0, grad_output, cur_weight * grad_output)
+    weight_grad_collector = aten.where(
+        self > 0, aten.new_zeros(grad_output, ()), self * grad_output
+    )
+    out = aten.sum_to_size(weight_grad_collector, cur_weight.shape)
+    while out.dim() > weight.dim():
+        out = out.squeeze(-1)
+    return (input_grad, out)
+
+
+@register_decomposition(aten.rrelu_with_noise_backward)
+def rrelu_with_noise_backward(
+    grad_output: Tensor,
+    self: Tensor,
+    noise: Tensor,
+    lower: float,
+    upper: float,
+    training: bool,
+    self_is_result: bool,
+) -> Tensor:
+    if training and upper - lower > 1e-6:
+        return grad_output.mul(noise)
+    else:
+        negative_slope = (lower + upper) / 2
+        return aten.leaky_relu_backward(
+            grad_output, self, negative_slope, self_is_result
+        )
+
+
 @register_decomposition(aten.log_sigmoid_backward)
 def log_sigmoid_backward(grad_output: Tensor, self: Tensor, buffer: Tensor) -> Tensor:
     in_negative = self < 0
     max_deriv = aten.where(in_negative, 1, 0)
     sign = aten.where(in_negative, 1, -1)
-    if grad_output.is_cuda:  # buffer is not used on CUDA
-        z = aten.exp(-aten.abs(self))
-        return grad_output * (max_deriv - sign * (z / (1 + z)))
-    else:
-        return (max_deriv - sign * (buffer / (1 + buffer))) * grad_output
+    z = aten.exp(-aten.abs(self))
+    return grad_output * (max_deriv - sign * (z / (1 + z)))
+    # CPU has a special formula that uses buffer, but disabled for convenience sake
+    # return (max_deriv - sign * (buffer / (1 + buffer))) * grad_output
 
 
 @register_decomposition(aten.mse_loss_backward)
@@ -183,6 +249,22 @@ def huber_loss_backward(
         -norm * grad_output * delta,
         aten.where(x > delta, norm * grad_output * delta, norm * x * grad_output),
     )
+
+
+@register_decomposition(aten.binary_cross_entropy_backward)
+def binary_cross_entropy_backward(
+    grad_output: Tensor,
+    self: Tensor,
+    target: Tensor,
+    weight: Optional[Tensor] = None,
+    reduction: int = Reduction.MEAN,
+) -> Tensor:
+    if weight is None:
+        weight = 1
+    result = weight * (self - target) / self / (1 - self)
+    if reduction == Reduction.MEAN:
+        result = result * (1.0 / self.numel())
+    return result * grad_output
 
 
 @register_decomposition(aten.slice_backward)
@@ -252,6 +334,17 @@ def im2col_backward(
     return aten.col2im(grad_output, input_size, kernel_size, dilation, padding, stride)
 
 
+@register_decomposition(aten.col2im_backward)
+def col2im_backward(
+    grad_output: Tensor,
+    kernel_size: List[int],
+    dilation: List[int],
+    padding: List[int],
+    stride: List[int],
+) -> Tensor:
+    return aten.im2col(grad_output, kernel_size, dilation, padding, stride)
+
+
 @register_decomposition(aten.logit_backward)
 def logit_backward(
     grad_output: Tensor, self: Tensor, eps: Optional[float] = None
@@ -287,15 +380,114 @@ def _log_softmax(x: Tensor, dim: int, half_to_float: bool):
     return shifted - shifted_logsumexp
 
 
-@register_decomposition(aten.addmm)
-def addmm(self: Tensor, mat1: Tensor, mat2: Tensor, beta=1, alpha=1):
-    if not self.is_floating_point():
-        beta = int(beta)
-        alpha = int(alpha)
-    out = alpha * aten.mm(mat1, mat2)
-    if beta == 0:
-        return out
-    return beta * self + out
+@register_decomposition(aten.addcdiv)
+def addcdiv(self: Tensor, tensor1: Tensor, tensor2: Tensor, value: float = 1):
+    return self + value * (tensor1 / tensor2)
+
+
+@register_decomposition(aten.addcmul)
+def addcmul(self: Tensor, tensor1: Tensor, tensor2: Tensor, value: float = 1):
+    if self.is_floating_point():
+        return self + value * tensor1 * tensor2
+    else:
+        return self + int(value) * tensor1 * tensor2
+
+
+@register_decomposition(aten.embedding_dense_backward)
+def embedding_dense_backward(
+    grad_output: Tensor,
+    indices: Tensor,
+    num_weights: int,
+    padding_idx: int,
+    scale_grad_by_freq: bool,
+):
+    numel = indices.numel()
+    grad = grad_output.view(numel, grad_output.size(-1))
+    grad_weight = aten.new_zeros(grad_output, (num_weights, grad_output.shape[-1]))
+    indices_rank1 = indices.view(numel)
+    if scale_grad_by_freq:
+        counts = aten.new_zeros(indices, (num_weights,))
+        ones = aten.new_ones(indices, (numel,))
+        counts = aten.index_put(counts, [indices_rank1], ones, accumulate=True)
+        grad_weights_scale = aten.index(counts, [indices_rank1])
+        grad = grad / grad_weights_scale.unsqueeze(1)
+    skip_padding = (indices_rank1 != padding_idx).unsqueeze(1)
+    skip_padding = skip_padding.expand_as(grad)
+    zero_grad = aten.full_like(grad, 0)
+    return aten.index_put(
+        grad_weight,
+        [indices_rank1],
+        aten.where(skip_padding, grad, zero_grad),
+        accumulate=True,
+    )
+
+
+def prod(x):
+    r = 1
+    for i in x:
+        r *= i
+    return r
+
+
+@register_decomposition(aten.native_layer_norm)
+def native_layer_norm(
+    input: Tensor,
+    normalized_shape: List[int],
+    weight: Optional[Tensor],
+    bias: Optional[Tensor],
+    eps: float,
+) -> Tuple[Tensor, Tensor, Tensor]:
+    input_shape = input.shape
+    input_ndim = input.dim()
+
+    axis = input_ndim - len(normalized_shape)
+    M = prod(input_shape[:axis])
+
+    # Hmm... not sure how I get around this...
+    # Basically, native_batch_norm doesn't support 0-entry tensors, while
+    # native_layer_norm does (and is tested by OpInfos!)
+    if M > 0:
+        input_reshaped = input.view(1, M, -1)
+    else:
+        return (input, aten.new_empty(input, (0,)), aten.new_empty(input, (0,)))
+
+    # Unlike Batch Normalization, which applies scalar scale and bias for each
+    # entire channel/plane with the affine option, Layer Normalization applies
+    # per-element scale and bias. E.g. For input {N, C, H, W}, weight for
+    # batchnorm has shape {C} while weight for layernorm has shape {H, W} or {W}.
+    out, mean, rstd = aten.native_batch_norm(
+        input_reshaped,
+        weight=None,
+        bias=None,
+        running_mean=None,
+        running_var=None,
+        training=True,
+        momentum=0,
+        eps=eps,
+    )
+    out = out.view(input_shape)
+    if weight is not None:
+        out = out * weight
+    if bias is not None:
+        out = out + bias
+
+    stat_shape = list(input_shape[:axis])
+    for _ in range(axis, input.dim()):
+        stat_shape.append(1)
+    mean = mean.view(stat_shape)
+    rstd = rstd.view(stat_shape)
+    return (out, mean, rstd)
+
+
+# @register_decomposition(aten.addmm)
+# def addmm(self: Tensor, mat1: Tensor, mat2: Tensor, beta=1, alpha=1):
+#     if not self.is_floating_point():
+#         beta = int(beta)
+#         alpha = int(alpha)
+#     out = alpha * aten.mm(mat1, mat2)
+#     if beta == 0:
+#         return out
+#     return beta * self + out
 
 
 @register_decomposition(aten.clamp_min)
@@ -308,18 +500,14 @@ def clamp_max(self: Tensor, min: float):
     return aten.clamp(self, max=max)
 
 
-# @register_decomposition(aten._fused_dropout)
-# def _fused_dropout_decomposition(input, p, generator=None):
-#     mask = aten.to(aten.rand_like(input) < p, dtype=torch.uint8)
-#     res = mask.type_as(input) * input * (1./p)
-#     return [res, mask]
+@register_decomposition(aten._fused_dropout)
+def _fused_dropout_decomposition(input, p, generator=None):
+    mask = aten.to(aten.rand_like(input) < p, dtype=torch.uint8)
+    res = mask.type_as(input) * input * (1.0 / p)
+    return [res, mask]
 
 
 # Questionable decompositions
-@register_decomposition(aten._s_where)
-def _s_where_canonicalization(a, b, c):
-    return aten.where(a, b, c)
-
 
 # This is only valid if we're running the graph without autograd, such as if the backward pass has been traced.
 # Note that this decomposition causes issues with in-place ops
