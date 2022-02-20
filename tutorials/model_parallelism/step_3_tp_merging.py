@@ -18,6 +18,8 @@ model = AutoModelForCausalLM.from_pretrained("gpt2")
 # - ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 # - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 # - ``tensor_parallel_size`` must be positive number.
+# - ``hidden size`` must be same or greater than ``tensor_parallel_size``
+# - ``the number of heads`` must be same or greater than ``tensor_parallel_size``
 model = oslo.initialize(
     model, config={"model_parallelism": {"enable": True, "tensor_parallel_size": 4}}
 )

@@ -1,6 +1,6 @@
 """
 LAST UPSTREAM INFORMATION
 
-- date: 2022/02/14
-- commit: https://github.com/pytorch/functorch/commit/cd41d6ebc0402d94ae6af51f163ee728277a7aa4
+- date: 2022/02/21
+- commit: https://github.com/pytorch/functorch/commit/0c0f325ba3c83e70c215f231cfd810af68141767
 """

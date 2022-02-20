@@ -49,11 +49,11 @@ tokenizer = AutoTokenizer.from_pretrained("gpt2")
 ```
 
 ### 1.2. Parallelize the model
-- ``tensor_parallel_size`` must be same or smaller than total number of gpus.
+- ``tensor_parallel_size`` must be same or smaller than total num of gpus.
 - ``tensor_parallel_size`` must be power of 2. (e.g. 2, 4, 8, 16, ...)
 - ``tensor_parallel_size`` must be positive number.
-- ``tensor_parallel_size`` must be same or greater than hidden size
-- ``tensor_parallel_size`` must be same or greater than the number of heads
+- ``hidden size`` must be same or greater than ``tensor_parallel_size``
+- ``the number of heads`` must be same or greater than ``tensor_parallel_size``
 
 ```python
 import oslo
