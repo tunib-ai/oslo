@@ -486,11 +486,11 @@
 <div class="section" id="parallelize-the-model">
 <h3>1.2. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline">¶</a></h3>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or smaller than total number of gpus.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or smaller than total num of gpus.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be power of 2. (e.g. 2, 4, 8, 16, …)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be positive number.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or greater than hidden size</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or greater than the number of heads</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hidden</span> <span class="pre">size</span></code> must be same or greater than <code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">the</span> <span class="pre">number</span> <span class="pre">of</span> <span class="pre">heads</span></code> must be same or greater than <code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code></p></li>
 </ul>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
