@@ -22,12 +22,12 @@
       
 
     
-    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
     
   <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
@@ -72,7 +72,7 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p class="caption">
+        <p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   CONFIGURATION
  </span>
@@ -94,7 +94,7 @@
   </a>
  </li>
 </ul>
-<p class="caption">
+<p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   TUTORIALS
  </span>
@@ -418,13 +418,13 @@
               <div>
                 
   <div class="section" id="tensor-model-parallelism-tutorial">
-<h1>Tensor Model Parallelism Tutorial<a class="headerlink" href="#tensor-model-parallelism-tutorial" title="Permalink to this headline">¶</a></h1>
+<h1>Tensor Model Parallelism Tutorial<a class="headerlink" href="#tensor-model-parallelism-tutorial" title="Permalink to this headline"></a></h1>
 <ul class="simple">
 <li><p>The concept of the tensor model parallelism can be found <a class="reference external" href="https://huggingface.co/docs/transformers/parallelism">here</a>.</p></li>
 <li><p>The source code of this tutorial can be found <a class="reference external" href="https://github.com/tunib-ai/oslo/tree/main/tutorials">here</a>.</p></li>
 </ul>
 <div class="section" id="table-of-contents">
-<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline">¶</a></h2>
+<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline"></a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="#distributed-launcher">0. Distributed Launcher</a></p></li>
 <li><p><a class="reference external" href="#inference">1. Inference</a></p>
@@ -455,7 +455,7 @@
 </ul>
 </div>
 <div class="section" id="distributed-launcher">
-<h2>0. Distributed Launcher<a class="headerlink" href="#distributed-launcher" title="Permalink to this headline">¶</a></h2>
+<h2>0. Distributed Launcher<a class="headerlink" href="#distributed-launcher" title="Permalink to this headline"></a></h2>
 <p>This tutorial must be launched using distributed launcher.</p>
 <p>If you have 4 GPUs:</p>
 <div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">python -m torch.distributed.launch --nproc_per_node=4 YOUR_SCRIPT.py</span>
@@ -472,10 +472,10 @@
 </ul>
 </div>
 <div class="section" id="inference">
-<h2>1. Inference<a class="headerlink" href="#inference" title="Permalink to this headline">¶</a></h2>
+<h2>1. Inference<a class="headerlink" href="#inference" title="Permalink to this headline"></a></h2>
 <p>How to use the tensor model parallelism for inference?</p>
 <div class="section" id="create-model-and-tokenizer">
-<h3>1.1. Create model and tokenizer<a class="headerlink" href="#create-model-and-tokenizer" title="Permalink to this headline">¶</a></h3>
+<h3>1.1. Create model and tokenizer<a class="headerlink" href="#create-model-and-tokenizer" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">AutoModelForCausalLM</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span>
@@ -484,7 +484,7 @@
 </div>
 </div>
 <div class="section" id="parallelize-the-model">
-<h3>1.2. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline">¶</a></h3>
+<h3>1.2. Parallelize the model<a class="headerlink" href="#parallelize-the-model" title="Permalink to this headline"></a></h3>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be same or smaller than total num of gpus.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be power of 2. (e.g. 2, 4, 8, 16, …)</p></li>
@@ -516,7 +516,7 @@
 </div>
 </div>
 <div class="section" id="do-inference-as-usual">
-<h3>1.3. Do inference as usual<a class="headerlink" href="#do-inference-as-usual" title="Permalink to this headline">¶</a></h3>
+<h3>1.3. Do inference as usual<a class="headerlink" href="#do-inference-as-usual" title="Permalink to this headline"></a></h3>
 <p>This is an example of text generation.
 In addition to this, it can be used in various tasks such as sequence classification or masked lm.
 Likewise, you can write the code as usual.</p>
@@ -531,10 +531,10 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="training">
-<h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline">¶</a></h2>
+<h2>2. Training<a class="headerlink" href="#training" title="Permalink to this headline"></a></h2>
 <p>How to use the tensor model parallelism for training?</p>
 <div class="section" id="initialize-some-variables">
-<h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline">¶</a></h3>
+<h3>2.1. Initialize some variables<a class="headerlink" href="#initialize-some-variables" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">BATCH_SIZE</span> <span class="o">=</span> <span class="mi">4</span>
 <span class="n">SEQ_LEN</span> <span class="o">=</span> <span class="mi">64</span>
 <span class="n">SAVE_INTERVAL</span> <span class="o">=</span> <span class="mi">50</span>
@@ -543,7 +543,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="create-model-optimizer-and-tokenizer">
-<h3>2.2. Create model, optimizer and tokenizer<a class="headerlink" href="#create-model-optimizer-and-tokenizer" title="Permalink to this headline">¶</a></h3>
+<h3>2.2. Create model, optimizer and tokenizer<a class="headerlink" href="#create-model-optimizer-and-tokenizer" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">torch.optim</span> <span class="kn">import</span> <span class="n">Adam</span>
 <span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span><span class="p">,</span> <span class="n">AutoTokenizer</span>
 
@@ -558,7 +558,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="id1">
-<h3>2.3. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<h3>2.3. Parallelize the model<a class="headerlink" href="#id1" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
@@ -568,7 +568,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="load-dataset-and-create-dataloader">
-<h3>2.4. Load dataset and create dataloader<a class="headerlink" href="#load-dataset-and-create-dataloader" title="Permalink to this headline">¶</a></h3>
+<h3>2.4. Load dataset and create dataloader<a class="headerlink" href="#load-dataset-and-create-dataloader" title="Permalink to this headline"></a></h3>
 <p>In this tutorial, I used <code class="docutils literal notranslate"><span class="pre">datasets</span></code> library of Hugging Face.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">datasets</span> <span class="kn">import</span> <span class="n">load_dataset</span>
 <span class="kn">from</span> <span class="nn">torch.utils.data</span> <span class="kn">import</span> <span class="n">DataLoader</span>
@@ -580,7 +580,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="do-training-as-usual">
-<h3>2.5. Do training as usual<a class="headerlink" href="#do-training-as-usual" title="Permalink to this headline">¶</a></h3>
+<h3>2.5. Do training as usual<a class="headerlink" href="#do-training-as-usual" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">step</span><span class="p">,</span> <span class="n">batch</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">dataloader</span><span class="p">):</span>
     <span class="n">optimizer</span><span class="o">.</span><span class="n">zero_grad</span><span class="p">()</span>
 
@@ -601,7 +601,7 @@ Likewise, you can write the code as usual.</p>
 </div>
 </div>
 <div class="section" id="save-the-parallelized-model">
-<h3>2.6. Save the parallelized model<a class="headerlink" href="#save-the-parallelized-model" title="Permalink to this headline">¶</a></h3>
+<h3>2.6. Save the parallelized model<a class="headerlink" href="#save-the-parallelized-model" title="Permalink to this headline"></a></h3>
 <p>We support <code class="docutils literal notranslate"><span class="pre">save_parallelized</span></code> method, and this is similar with <a class="reference external" href="https://huggingface.co/docs/transformers/main_classes/model#transformers.PreTrainedModel.save_pretrained"><code class="docutils literal notranslate"><span class="pre">save_pretrained</span></code></a> in the Transformers.
 So, it can be used with the same argument with <a class="reference external" href="https://huggingface.co/docs/transformers/main_classes/model#transformers.PreTrainedModel.save_pretrained"><code class="docutils literal notranslate"><span class="pre">save_pretrained</span></code></a>.
 Then, the checkpoints like <code class="docutils literal notranslate"><span class="pre">pytorch_model_tp_0_pp_0.bin</span></code> will be saved in your local path.</p>
@@ -633,10 +633,10 @@ Then, the checkpoints like <code class="docutils literal notranslate"><span clas
 </div>
 </div>
 <div class="section" id="merging-checkpoints">
-<h2>3. Merging Checkpoints<a class="headerlink" href="#merging-checkpoints" title="Permalink to this headline">¶</a></h2>
+<h2>3. Merging Checkpoints<a class="headerlink" href="#merging-checkpoints" title="Permalink to this headline"></a></h2>
 <p>How to merge the parallelized checkpoints?</p>
 <div class="section" id="create-model">
-<h3>3.1. Create model<a class="headerlink" href="#create-model" title="Permalink to this headline">¶</a></h3>
+<h3>3.1. Create model<a class="headerlink" href="#create-model" title="Permalink to this headline"></a></h3>
 <p>Usually we create a GPT2 model like this:</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">AutoModelForCausalLM</span>
 
@@ -653,7 +653,7 @@ Here’s how to crate a randomly initialized model:</p>
 </div>
 </div>
 <div class="section" id="id2">
-<h3>3.2. Parallelize the model<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h3>
+<h3>3.2. Parallelize the model<a class="headerlink" href="#id2" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
 <span class="n">model</span> <span class="o">=</span> <span class="n">oslo</span><span class="o">.</span><span class="n">initialize</span><span class="p">(</span>
@@ -663,7 +663,7 @@ Here’s how to crate a randomly initialized model:</p>
 </div>
 </div>
 <div class="section" id="load-parallelized-checkpoints">
-<h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<h3>3.3 Load parallelized checkpoints<a class="headerlink" href="#load-parallelized-checkpoints" title="Permalink to this headline"></a></h3>
 <p>We support <code class="docutils literal notranslate"><span class="pre">from_parallelized</span></code> method to load parallelized checkpoints.
 You can load them by just input the save path of parallelized checkpoints.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">model</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">from_parallelized</span><span class="p">(</span><span class="s2">&quot;./parallel_ckpt&quot;</span><span class="p">)</span>
@@ -671,7 +671,7 @@ You can load them by just input the save path of parallelized checkpoints.</p>
 </div>
 </div>
 <div class="section" id="merge-parallelized-checkpoints">
-<h3>3.4. Merge parallelized checkpoints<a class="headerlink" href="#merge-parallelized-checkpoints" title="Permalink to this headline">¶</a></h3>
+<h3>3.4. Merge parallelized checkpoints<a class="headerlink" href="#merge-parallelized-checkpoints" title="Permalink to this headline"></a></h3>
 <p>The <code class="docutils literal notranslate"><span class="pre">save_parallelized</span></code> method have a special argument named <code class="docutils literal notranslate"><span class="pre">merge_checkpoints</span></code>.
 If you set this argument as Ture, the parallelized checkpoints of model will be saved as merged form.
 We recommend merging them after training because this process is a bit slow.</p>

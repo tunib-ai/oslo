@@ -22,12 +22,12 @@
       
 
     
-    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
-    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
     
   <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
@@ -71,7 +71,7 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p class="caption">
+        <p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   CONFIGURATION
  </span>
@@ -93,7 +93,7 @@
   </a>
  </li>
 </ul>
-<p class="caption">
+<p aria-level="2" class="caption" role="heading">
  <span class="caption-text">
   TUTORIALS
  </span>
@@ -427,7 +427,7 @@
               <div>
                 
   <div class="section" id="kernel-fusion-tutorial">
-<h1>Kernel Fusion Tutorial<a class="headerlink" href="#kernel-fusion-tutorial" title="Permalink to this headline">¶</a></h1>
+<h1>Kernel Fusion Tutorial<a class="headerlink" href="#kernel-fusion-tutorial" title="Permalink to this headline"></a></h1>
 <ul class="simple">
 <li><p>Kernel fusion is a technology that can improve training or inference speed.</p></li>
 <li><p>OSLO kernel fusion supports the following kernel fusion mechanisms.</p>
@@ -440,7 +440,7 @@
 <li><p>The source code of this tutorial can be found <a class="reference external" href="https://github.com/tunib-ai/oslo/tree/main/tutorials">here</a>.</p></li>
 </ul>
 <div class="section" id="table-of-contents">
-<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline">¶</a></h2>
+<h2>Table of contents<a class="headerlink" href="#table-of-contents" title="Permalink to this headline"></a></h2>
 <ul class="simple">
 <li><p><a class="reference external" href="#jit-based-fusion">1. JIT based fusion</a></p>
 <ul>
@@ -472,10 +472,10 @@
 </ul>
 </div>
 <div class="section" id="jit-based-fusion">
-<h2>1. JIT based fusion<a class="headerlink" href="#jit-based-fusion" title="Permalink to this headline">¶</a></h2>
+<h2>1. JIT based fusion<a class="headerlink" href="#jit-based-fusion" title="Permalink to this headline"></a></h2>
 <p>How to use the JIT based fusion?</p>
 <div class="section" id="initialize-input-tensor">
-<h3>1.1. Initialize input tensor<a class="headerlink" href="#initialize-input-tensor" title="Permalink to this headline">¶</a></h3>
+<h3>1.1. Initialize input tensor<a class="headerlink" href="#initialize-input-tensor" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">SEQ_LEN</span> <span class="o">=</span> <span class="mi">256</span><span class="p">,</span> <span class="mi">16</span>
@@ -484,7 +484,7 @@
 </div>
 </div>
 <div class="section" id="create-models-for-benchmarking">
-<h3>1.2. Create models for benchmarking<a class="headerlink" href="#create-models-for-benchmarking" title="Permalink to this headline">¶</a></h3>
+<h3>1.2. Create models for benchmarking<a class="headerlink" href="#create-models-for-benchmarking" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">GPT2LMHeadModel</span>
 
 <span class="n">non_oslo_model</span> <span class="o">=</span> <span class="n">GPT2LMHeadModel</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span><span class="s2">&quot;gpt2&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">cuda</span><span class="p">()</span>
@@ -493,7 +493,7 @@
 </div>
 </div>
 <div class="section" id="fuse-kernels">
-<h3>1.3. Fuse kernels<a class="headerlink" href="#fuse-kernels" title="Permalink to this headline">¶</a></h3>
+<h3>1.3. Fuse kernels<a class="headerlink" href="#fuse-kernels" title="Permalink to this headline"></a></h3>
 <p>If <code class="docutils literal notranslate"><span class="pre">enable</span></code> is set to True, JIT based fusion is used by default.</p>
 <p>Note that currently JIT based fusion only supports fused activation function like <code class="docutils literal notranslate"><span class="pre">FusedGELU</span></code>.
 In fact, more areas could be fused, but we didn’t use model specific policies to make it easier to support many models.</p>
@@ -506,7 +506,7 @@ In fact, more areas could be fused, but we didn’t use model specific policies 
 </div>
 </div>
 <div class="section" id="warm-up-compiling">
-<h3>1.4. Warm-up (compiling)<a class="headerlink" href="#warm-up-compiling" title="Permalink to this headline">¶</a></h3>
+<h3>1.4. Warm-up (compiling)<a class="headerlink" href="#warm-up-compiling" title="Permalink to this headline"></a></h3>
 <p>JIT compiles the graph at runtime.
 So we should do a warm up to not include compile time in our benchmarks.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
@@ -518,7 +518,7 @@ So we should do a warm up to not include compile time in our benchmarks.</p>
 </div>
 </div>
 <div class="section" id="benchmark">
-<h3>1.5. Benchmark<a class="headerlink" href="#benchmark" title="Permalink to this headline">¶</a></h3>
+<h3>1.5. Benchmark<a class="headerlink" href="#benchmark" title="Permalink to this headline"></a></h3>
 <p>Experimental results show that 25% faster computation is possible using the kernel fusion engine.
 However, this may vary depending on the model architecture.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">time</span>
@@ -542,7 +542,7 @@ However, this may vary depending on the model architecture.</p>
 </div>
 </div>
 <div class="section" id="memory-efficient-fusion">
-<h2>2. Memory efficient fusion<a class="headerlink" href="#memory-efficient-fusion" title="Permalink to this headline">¶</a></h2>
+<h2>2. Memory efficient fusion<a class="headerlink" href="#memory-efficient-fusion" title="Permalink to this headline"></a></h2>
 <p>How to use the memory efficient fusion?</p>
 <p>The memory efficient fusion is a kernel fusion mechanism that uses the AOT Autograd engine, a novel engine developed by the functorch team at PyTorch.
 The AOT Autograd fuses all fusible areas of the model and also optimizes the backward graph with a novel mechanism called <a class="reference external" href="https://dev-discuss.pytorch.org/t/min-cut-optimal-recomputation-i-e-activation-checkpointing-with-aotautograd/467">min-cut rematerialization</a>.
@@ -550,7 +550,7 @@ Because the backward graph can be optimized, the memory efficient fusion shows a
 <p>However, the AOT Autograd is still under development, so unexpected bugs could be occurred.
 In that case, please report the bug to the issue tracker of <a class="reference external" href="https://github.com/tunib-ai/oslo/issues">OSLO</a> or <a class="reference external" href="https://github.com/pytorch/functorch/issues">functorch</a>.</p>
 <div class="section" id="limitation">
-<h3>2.1. Limitation<a class="headerlink" href="#limitation" title="Permalink to this headline">¶</a></h3>
+<h3>2.1. Limitation<a class="headerlink" href="#limitation" title="Permalink to this headline"></a></h3>
 <p>The AOT Autograd currently has the following limitations:</p>
 <ol class="simple">
 <li><p>Incompatible with model parallelism</p></li>
@@ -560,7 +560,7 @@ In that case, please report the bug to the issue tracker of <a class="reference 
 </ol>
 </div>
 <div class="section" id="fuse-kernels-with-aot-autograd">
-<h3>2.2. Fuse kernels with AOT Autograd<a class="headerlink" href="#fuse-kernels-with-aot-autograd" title="Permalink to this headline">¶</a></h3>
+<h3>2.2. Fuse kernels with AOT Autograd<a class="headerlink" href="#fuse-kernels-with-aot-autograd" title="Permalink to this headline"></a></h3>
 <p>Compared to the JIT based fusion section, all other parts are the same. Only this part is different.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
@@ -577,7 +577,7 @@ In that case, please report the bug to the issue tracker of <a class="reference 
 </div>
 </div>
 <div class="section" id="id1">
-<h3>2.3. Warm-up (compiling)<a class="headerlink" href="#id1" title="Permalink to this headline">¶</a></h3>
+<h3>2.3. Warm-up (compiling)<a class="headerlink" href="#id1" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># Warm-up</span>
 <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
     <span class="n">non_oslo_model</span><span class="p">(</span><span class="n">input_tensor</span><span class="p">)</span>
@@ -588,7 +588,7 @@ In that case, please report the bug to the issue tracker of <a class="reference 
 </div>
 </div>
 <div class="section" id="id2">
-<h3>2.4. Benchmark<a class="headerlink" href="#id2" title="Permalink to this headline">¶</a></h3>
+<h3>2.4. Benchmark<a class="headerlink" href="#id2" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">time</span>
 
 <span class="c1"># Bench mark</span>
@@ -612,19 +612,19 @@ In that case, please report the bug to the issue tracker of <a class="reference 
 </div>
 </div>
 <div class="section" id="custom-cuda-kernels">
-<h2>3. Custom CUDA kernels<a class="headerlink" href="#custom-cuda-kernels" title="Permalink to this headline">¶</a></h2>
+<h2>3. Custom CUDA kernels<a class="headerlink" href="#custom-cuda-kernels" title="Permalink to this headline"></a></h2>
 <p>How to use the custom CUDA kernels based fusion?</p>
 <p>OSLO provides several handcrafted custom CUDA kernels.
 Currently, only two kernels are supported, but we will continue to expand these in the future.</p>
 <div class="section" id="supported-kernels">
-<h3>3.1. Supported kernels<a class="headerlink" href="#supported-kernels" title="Permalink to this headline">¶</a></h3>
+<h3>3.1. Supported kernels<a class="headerlink" href="#supported-kernels" title="Permalink to this headline"></a></h3>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">FusedRMSNorm</span></code>: Efficient RMSNorm kernel, it’s available when using the T5.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">FusedNoRepeatNGram</span></code>: Execute ngram blocking in GPU when generating text, it’s very effective for large batch text generation.</p></li>
 </ul>
 </div>
 <div class="section" id="id3">
-<h3>3.2. Initialize input tensor<a class="headerlink" href="#id3" title="Permalink to this headline">¶</a></h3>
+<h3>3.2. Initialize input tensor<a class="headerlink" href="#id3" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">torch</span>
 
 <span class="n">BATCH_SIZE</span><span class="p">,</span> <span class="n">SEQ_LEN</span> <span class="o">=</span> <span class="mi">256</span><span class="p">,</span> <span class="mi">1</span>
@@ -633,7 +633,7 @@ Currently, only two kernels are supported, but we will continue to expand these 
 </div>
 </div>
 <div class="section" id="id4">
-<h3>3.3. Create models for benchmarking<a class="headerlink" href="#id4" title="Permalink to this headline">¶</a></h3>
+<h3>3.3. Create models for benchmarking<a class="headerlink" href="#id4" title="Permalink to this headline"></a></h3>
 <p>In this section, I used the T5 model to use <code class="docutils literal notranslate"><span class="pre">FusedRMSNorm</span></code>.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">transformers</span> <span class="kn">import</span> <span class="n">T5ForConditionalGeneration</span>
 
@@ -643,7 +643,7 @@ Currently, only two kernels are supported, but we will continue to expand these 
 </div>
 </div>
 <div class="section" id="fuse-kernels-with-the-custom-cuda-kernels">
-<h3>3.4. Fuse kernels with the custom CUDA kernels<a class="headerlink" href="#fuse-kernels-with-the-custom-cuda-kernels" title="Permalink to this headline">¶</a></h3>
+<h3>3.4. Fuse kernels with the custom CUDA kernels<a class="headerlink" href="#fuse-kernels-with-the-custom-cuda-kernels" title="Permalink to this headline"></a></h3>
 <p>Input the names of kernels you want to use into the <code class="docutils literal notranslate"><span class="pre">custom_cuda_kernels</span></code>.
 Note that custom cuda kernels are compatible with all other mechanisms like the JIT based fusion and the memory efficient fusion.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
@@ -661,7 +661,7 @@ Note that custom cuda kernels are compatible with all other mechanisms like the 
 </div>
 </div>
 <div class="section" id="id5">
-<h3>3.5. Warm-up (compiling)<a class="headerlink" href="#id5" title="Permalink to this headline">¶</a></h3>
+<h3>3.5. Warm-up (compiling)<a class="headerlink" href="#id5" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
     <span class="n">non_oslo_model</span><span class="o">.</span><span class="n">generate</span><span class="p">(</span><span class="n">input_tensor</span><span class="p">,</span> <span class="n">no_repeat_ngram_size</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
 
@@ -671,7 +671,7 @@ Note that custom cuda kernels are compatible with all other mechanisms like the 
 </div>
 </div>
 <div class="section" id="id6">
-<h3>3.6. Benchmark<a class="headerlink" href="#id6" title="Permalink to this headline">¶</a></h3>
+<h3>3.6. Benchmark<a class="headerlink" href="#id6" title="Permalink to this headline"></a></h3>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">time</span> <span class="kn">import</span> <span class="n">time</span>
 
 <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="p">()</span>
