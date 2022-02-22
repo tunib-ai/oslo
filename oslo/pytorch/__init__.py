@@ -25,6 +25,7 @@ def _one_of_(*args):
 
 
 SUPPORTED_FEATURES = {
+    "commons": {"force_gpu": _type(bool)},
     "model_parallelism": {
         "enable": _type(bool),
         "tensor_parallel_size": _type(int),
@@ -102,6 +103,16 @@ def _sanity_check(
     return model, config
 
 
+def _initialize_commons(config):
+    if "commons" not in config:
+        config["commons"] = {}
+
+    if "force_gpu" not in config["commons"]:
+        config["commons"]["force_gpu"] = True
+
+    return config
+
+
 def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
     """
     Initialize OSLO engine.
@@ -112,6 +123,8 @@ def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
     """
     if not hasattr(model, "oslo_initialized"):
         model, config = _sanity_check(model, config)
+        config = _initialize_commons(config)
+
         model, config = initialize_model_parallelism(model, config, **kwargs)
         model, config = initialize_activation_checkpointing(model, config, **kwargs)
         model, config = initialize_kernel_fusion(model, config, **kwargs)

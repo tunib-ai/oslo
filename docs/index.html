@@ -22,19 +22,19 @@
       
 
     
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
     
   <link rel="preload" as="script" href="_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+    <script id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
     <script src="_static/jquery.js"></script>
     <script src="_static/underscore.js"></script>
     <script src="_static/doctools.js"></script>
     <script src="_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Model Parallelism" href="CONFIGURATION/model_parallelism.html" />
+    <link rel="next" title="Commons" href="CONFIGURATION/commons.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
     
@@ -71,12 +71,17 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p aria-level="2" class="caption" role="heading">
+        <p class="caption">
  <span class="caption-text">
   CONFIGURATION
  </span>
 </p>
 <ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="CONFIGURATION/commons.html">
+   Commons
+  </a>
+ </li>
  <li class="toctree-l1">
   <a class="reference internal" href="CONFIGURATION/model_parallelism.html">
    Model Parallelism
@@ -93,7 +98,7 @@
   </a>
  </li>
 </ul>
-<p aria-level="2" class="caption" role="heading">
+<p class="caption">
  <span class="caption-text">
   TUTORIALS
  </span>
@@ -333,7 +338,7 @@
               <div>
                 
   <div class="section" id="oslo-open-source-framework-for-large-scale-transformer-optimization">
-<h1>OSLO: Open Source framework for Large-scale transformer Optimization<a class="headerlink" href="#oslo-open-source-framework-for-large-scale-transformer-optimization" title="Permalink to this headline"></a></h1>
+<h1>OSLO: Open Source framework for Large-scale transformer Optimization<a class="headerlink" href="#oslo-open-source-framework-for-large-scale-transformer-optimization" title="Permalink to this headline">¶</a></h1>
 <div class="docutils container">
 <img alt="https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png" src="https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png" />
 </div>
@@ -343,7 +348,7 @@
 </div>
 </div>
 <div class="section" id="whats-new">
-<h1>What’s New:<a class="headerlink" href="#whats-new" title="Permalink to this headline"></a></h1>
+<h1>What’s New:<a class="headerlink" href="#whats-new" title="Permalink to this headline">¶</a></h1>
 <ul class="simple">
 <li><p>February 15, 2022 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0">Added kernel fusion</a>.</p></li>
 <li><p>February 15, 2021 <a class="reference external" href="https://github.com/tunib-ai/oslo/releases/tag/v2.0.0">Released OSLO 2.0</a>.</p></li>
@@ -357,7 +362,7 @@ Launcher</a>.</p></li>
 </ul>
 </div>
 <div class="section" id="what-is-oslo-about">
-<h1>What is OSLO about?<a class="headerlink" href="#what-is-oslo-about" title="Permalink to this headline"></a></h1>
+<h1>What is OSLO about?<a class="headerlink" href="#what-is-oslo-about" title="Permalink to this headline">¶</a></h1>
 <p>OSLO is a framework that provides various GPU based optimization
 technologies for large-scale modeling. 3D Parallelism and Kernel Fusion
 which could be useful when training a large model like
@@ -368,7 +373,7 @@ Transformers</a> that is
 being considered as a de facto standard in 2021.</p>
 </div>
 <div class="section" id="installation">
-<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline"></a></h1>
+<h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
 <p>OSLO can be easily installed using the pip package manager. All the
 dependencies such as <a class="reference external" href="https://pypi.org/project/torch/">torch</a> and
 <a class="reference external" href="https://pypi.org/project/transformers/">transformers</a> should be installed
@@ -379,7 +384,7 @@ in the PyPI project name.</p>
 </div>
 </div>
 <div class="section" id="basic-usage">
-<h1>Basic Usage<a class="headerlink" href="#basic-usage" title="Permalink to this headline"></a></h1>
+<h1>Basic Usage<a class="headerlink" href="#basic-usage" title="Permalink to this headline">¶</a></h1>
 <p>It only takes a single line of code. Now feel free to train and infer a large transformer model. 😎</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">oslo</span>
 
@@ -388,17 +393,18 @@ in the PyPI project name.</p>
 </div>
 </div>
 <div class="section" id="documents">
-<h1>Documents<a class="headerlink" href="#documents" title="Permalink to this headline"></a></h1>
+<h1>Documents<a class="headerlink" href="#documents" title="Permalink to this headline">¶</a></h1>
 <div class="toctree-wrapper compound">
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">CONFIGURATION</span></p>
+<p class="caption"><span class="caption-text">CONFIGURATION</span></p>
 <ul>
+<li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/commons.html">Commons</a></li>
 <li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/model_parallelism.html">Model Parallelism</a></li>
 <li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/activation_checkpointing.html">Activation Checkpointing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="CONFIGURATION/kernel_fusion.html">Kernel Fusion</a></li>
 </ul>
 </div>
 <div class="toctree-wrapper compound">
-<p aria-level="2" class="caption" role="heading"><span class="caption-text">TUTORIALS</span></p>
+<p class="caption"><span class="caption-text">TUTORIALS</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="TUTORIALS/tensor_model_parallelism.html">Tensor Model Parallelism Tutorial</a></li>
 <li class="toctree-l1"><a class="reference internal" href="TUTORIALS/tensor_model_data_parallelism.html">Tensor Model + Data Parallelism Tutorial</a></li>
@@ -409,9 +415,9 @@ in the PyPI project name.</p>
 </div>
 </div>
 <div class="section" id="administrative-notes">
-<h1>Administrative Notes<a class="headerlink" href="#administrative-notes" title="Permalink to this headline"></a></h1>
+<h1>Administrative Notes<a class="headerlink" href="#administrative-notes" title="Permalink to this headline">¶</a></h1>
 <div class="section" id="citing-oslo">
-<h2>Citing OSLO<a class="headerlink" href="#citing-oslo" title="Permalink to this headline"></a></h2>
+<h2>Citing OSLO<a class="headerlink" href="#citing-oslo" title="Permalink to this headline">¶</a></h2>
 <p>If you find our work useful, please consider citing:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="nd">@misc</span><span class="p">{</span><span class="n">oslo</span><span class="p">,</span>
   <span class="n">author</span>       <span class="o">=</span> <span class="p">{</span><span class="n">Ko</span><span class="p">,</span> <span class="n">Hyunwoong</span> <span class="ow">and</span> <span class="n">Kim</span><span class="p">,</span> <span class="n">Soohwan</span> <span class="ow">and</span> <span class="n">Lee</span><span class="p">,</span> <span class="n">Yohan</span> <span class="ow">and</span> <span class="n">Park</span><span class="p">,</span> <span class="n">Kyubyong</span><span class="p">},</span>
@@ -423,13 +429,13 @@ in the PyPI project name.</p>
 </div>
 </div>
 <div class="section" id="licensing">
-<h2>Licensing<a class="headerlink" href="#licensing" title="Permalink to this headline"></a></h2>
+<h2>Licensing<a class="headerlink" href="#licensing" title="Permalink to this headline">¶</a></h2>
 <p>The Code of the OSLO project is licensed under the terms of the <a class="reference external" href="LICENSE.apache-2.0">Apache
 License 2.0</a>.</p>
 <p>Copyright 2021 TUNiB Inc. <a class="reference external" href="http://www.tunib.ai">http://www.tunib.ai</a> All Rights Reserved.</p>
 </div>
 <div class="section" id="acknowledgements">
-<h2>Acknowledgements<a class="headerlink" href="#acknowledgements" title="Permalink to this headline"></a></h2>
+<h2>Acknowledgements<a class="headerlink" href="#acknowledgements" title="Permalink to this headline">¶</a></h2>
 <p>The OSLO project is built with GPU support from the <a class="reference external" href="http://www.aica-gj.kr">AICA (Artificial
 Intelligence Industry Cluster Agency)</a>.</p>
 </div>
@@ -441,10 +447,10 @@ Intelligence Industry Cluster Agency)</a>.</p>
             
                 <!-- Previous / next buttons -->
 <div class='prev-next-area'>
-    <a class='right-next' id="next-link" href="CONFIGURATION/model_parallelism.html" title="next page">
+    <a class='right-next' id="next-link" href="CONFIGURATION/commons.html" title="next page">
     <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Model Parallelism</p>
+        <p class="prev-next-title">Commons</p>
     </div>
     <i class="fas fa-angle-right"></i>
     </a>

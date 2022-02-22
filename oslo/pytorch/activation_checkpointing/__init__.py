@@ -10,6 +10,7 @@ def initialize_activation_checkpointing(model, config, **kwargs):
         )
 
         ac_config = config["activation_checkpointing"]
+        force_gpu = config["commons"]["force_gpu"]
 
         if "enable" in ac_config and ac_config["enable"] is True:
             mpu = model.mpu if hasattr(model, "mpu") else None
@@ -32,7 +33,7 @@ def initialize_activation_checkpointing(model, config, **kwargs):
                     "Set ``partitioned_checkpointing`` to true in your config."
                 )
 
-            if model.device == torch.device("cpu"):
+            if force_gpu is True and model.device == torch.device("cpu"):
                 model = model.cuda()
 
             engine = ActivationCheckpointingEngine(

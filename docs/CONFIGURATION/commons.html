@@ -5,7 +5,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Activation Checkpointing &#8212; OSLO  documentation</title>
+    <title>Commons &#8212; OSLO  documentation</title>
     
   <link href="../_static/css/theme.css" rel="stylesheet">
   <link href="../_static/css/index.ff1ffe594081f20da1ef19478df9384b.css" rel="stylesheet">
@@ -34,8 +34,8 @@
     <script src="../_static/sphinx-book-theme.9d8b4a8b9bb19db25eeaddc40d639ba2.js"></script>
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
-    <link rel="next" title="Kernel Fusion" href="kernel_fusion.html" />
-    <link rel="prev" title="Model Parallelism" href="model_parallelism.html" />
+    <link rel="next" title="Model Parallelism" href="model_parallelism.html" />
+    <link rel="prev" title="OSLO: Open Source framework for Large-scale transformer Optimization" href="../index.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
     
@@ -78,19 +78,56 @@
  </span>
 </p>
 <ul class="current nav bd-sidenav">
+ <li class="toctree-l1 current active">
+  <a class="current reference internal" href="#">
+   Commons
+  </a>
+ </li>
  <li class="toctree-l1">
   <a class="reference internal" href="model_parallelism.html">
    Model Parallelism
   </a>
  </li>
- <li class="toctree-l1 current active">
-  <a class="current reference internal" href="#">
+ <li class="toctree-l1">
+  <a class="reference internal" href="activation_checkpointing.html">
    Activation Checkpointing
   </a>
  </li>
  <li class="toctree-l1">
   <a class="reference internal" href="kernel_fusion.html">
    Kernel Fusion
+  </a>
+ </li>
+</ul>
+<p class="caption">
+ <span class="caption-text">
+  TUTORIALS
+ </span>
+</p>
+<ul class="nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_parallelism.html">
+   Tensor Model Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_data_parallelism.html">
+   Tensor Model + Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/tensor_model_zero_data_parallelism.html">
+   Tensor Model + ZeRO Data Parallelism Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/activation_checkpointing.html">
+   Activation Checkpointing Tutorial
+  </a>
+ </li>
+ <li class="toctree-l1">
+  <a class="reference internal" href="../TUTORIALS/kernel_fusion.html">
+   Kernel Fusion Tutorial
   </a>
  </li>
 </ul>
@@ -134,7 +171,7 @@
         <!-- ipynb file if we had a myst markdown file -->
         
         <!-- Download raw file -->
-        <a class="dropdown-buttons" href="../_sources/CONFIGURATION/activation_checkpointing.md.txt"><button type="button"
+        <a class="dropdown-buttons" href="../_sources/CONFIGURATION/commons.md.txt"><button type="button"
                 class="btn btn-secondary topbarbtn" title="Download source file" data-toggle="tooltip"
                 data-placement="left">.md</button></a>
         <!-- Download PDF via print -->
@@ -165,38 +202,8 @@
             <nav id="bd-toc-nav" aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#enable-bool">
-   1. enable:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#cpu-checkpointing-bool">
-   2. cpu_checkpointing:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#partitioned-checkpointing-bool">
-   3. partitioned_checkpointing:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#contiguous-checkpointing-bool">
-   4. contiguous_checkpointing:
+  <a class="reference internal nav-link" href="#force-gpu-bool">
+   1. force_gpu:
    <code class="docutils literal notranslate">
     <span class="pre">
      bool
@@ -214,7 +221,7 @@
         <div class="col-12 col-md-9 pl-md-3 pr-md-0">
             <!-- Table of contents that is only displayed when printing the page -->
             <div id="jb-print-docs-body" class="onlyprint">
-                <h1>Activation Checkpointing</h1>
+                <h1>Commons</h1>
                 <!-- Table of contents -->
                 <div id="print-main-content">
                     <div id="jb-print-toc">
@@ -225,38 +232,8 @@
                         <nav aria-label="Page">
                             <ul class="visible nav section-nav flex-column">
  <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#enable-bool">
-   1. enable:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#cpu-checkpointing-bool">
-   2. cpu_checkpointing:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#partitioned-checkpointing-bool">
-   3. partitioned_checkpointing:
-   <code class="docutils literal notranslate">
-    <span class="pre">
-     bool
-    </span>
-   </code>
-  </a>
- </li>
- <li class="toc-h2 nav-item toc-entry">
-  <a class="reference internal nav-link" href="#contiguous-checkpointing-bool">
-   4. contiguous_checkpointing:
+  <a class="reference internal nav-link" href="#force-gpu-bool">
+   1. force_gpu:
    <code class="docutils literal notranslate">
     <span class="pre">
      bool
@@ -273,48 +250,25 @@
             
               <div>
                 
-  <div class="section" id="activation-checkpointing">
-<h1>Activation Checkpointing<a class="headerlink" href="#activation-checkpointing" title="Permalink to this headline">¶</a></h1>
-<p>You can specify your own activation checkpointing related configuration under <code class="docutils literal notranslate"><span class="pre">activation_checkpointing</span></code> like:</p>
+  <div class="section" id="commons">
+<h1>Commons<a class="headerlink" href="#commons" title="Permalink to this headline">¶</a></h1>
+<p>You can specify your common configuration under <code class="docutils literal notranslate"><span class="pre">commons</span></code> like:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-  <span class="nt">&quot;activation_checkpointing&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="nt">&quot;enable&quot;</span><span class="p">:</span> <span class="s2">&quot;bool&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;cpu_checkpointing&quot;</span><span class="p">:</span> <span class="s2">&quot;bool&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;partitioned_checkpointing&quot;</span><span class="p">:</span> <span class="s2">&quot;bool&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;contiguous_checkpointing&quot;</span><span class="p">:</span> <span class="s2">&quot;bool&quot;</span>
+  <span class="nt">&quot;commons&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;force_gpu&quot;</span><span class="p">:</span> <span class="s2">&quot;bool&quot;</span><span class="p">,</span>
   <span class="p">}</span>
 <span class="p">}</span>
 </pre></div>
 </div>
-<div class="section" id="enable-bool">
-<h2>1. enable: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#enable-bool" title="Permalink to this headline">¶</a></h2>
+<div class="section" id="force-gpu-bool">
+<h2>1. force_gpu: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#force-gpu-bool" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
 <li><p>type: bool</p></li>
-<li><p>default: False</p></li>
+<li><p>default: True</p></li>
 </ul>
-<p>Enable activation checkpointing.</p>
-</div>
-<div class="section" id="cpu-checkpointing-bool">
-<h2>2. cpu_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#cpu-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
-<ul class="simple">
-<li><p>type: bool</p></li>
-<li><p>default: False</p></li>
-</ul>
-<p>Enable cpu checkpointing.</p>
-</div>
-<div class="section" id="partitioned-checkpointing-bool">
-<h2>3. partitioned_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#partitioned-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
-<ul class="simple">
-<li><p>type: bool</p></li>
-<li><p>default: False</p></li>
-</ul>
-<p>Enable partitioned checkpointing.</p>
-<p>Note that this is only available when you are using tensor model parallelism.</p>
-</div>
-<div class="section" id="contiguous-checkpointing-bool">
-<h2>4. contiguous_checkpointing: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#contiguous-checkpointing-bool" title="Permalink to this headline">¶</a></h2>
-<p>Enable contiguous checkpointing.</p>
-<p>Note that this is only available when you are using partitioned checkpointing.</p>
+<p>When calling <code class="docutils literal notranslate"><span class="pre">oslo.initialize</span></code>, OSLO uploads the model to the GPU.
+If this feature is turned off, the user must manually upload the model to the GPU.
+If the model is not on the GPU, unexpected errors could be occur.</p>
 </div>
 </div>
 
@@ -324,17 +278,17 @@
             
                 <!-- Previous / next buttons -->
 <div class='prev-next-area'> 
-    <a class='left-prev' id="prev-link" href="model_parallelism.html" title="previous page">
+    <a class='left-prev' id="prev-link" href="../index.html" title="previous page">
         <i class="fas fa-angle-left"></i>
         <div class="prev-next-info">
             <p class="prev-next-subtitle">previous</p>
-            <p class="prev-next-title">Model Parallelism</p>
+            <p class="prev-next-title">OSLO: Open Source framework for Large-scale transformer Optimization</p>
         </div>
     </a>
-    <a class='right-next' id="next-link" href="kernel_fusion.html" title="next page">
+    <a class='right-next' id="next-link" href="model_parallelism.html" title="next page">
     <div class="prev-next-info">
         <p class="prev-next-subtitle">next</p>
-        <p class="prev-next-title">Kernel Fusion</p>
+        <p class="prev-next-title">Model Parallelism</p>
     </div>
     <i class="fas fa-angle-right"></i>
     </a>

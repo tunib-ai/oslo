@@ -22,12 +22,12 @@
       
 
     
-    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
-    <link rel="stylesheet" type="text/css" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/sphinx-book-theme.css?digest=84ace793992934648b4de8eed757e5a2" type="text/css" />
     
   <link rel="preload" as="script" href="../_static/js/index.be7d3bbb2ef33a8344ce.js">
 
-    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script id="documentation_options" data-url_root="../" src="../_static/documentation_options.js"></script>
     <script src="../_static/jquery.js"></script>
     <script src="../_static/underscore.js"></script>
     <script src="../_static/doctools.js"></script>
@@ -35,7 +35,7 @@
     <link rel="index" title="Index" href="../genindex.html" />
     <link rel="search" title="Search" href="../search.html" />
     <link rel="next" title="Activation Checkpointing" href="activation_checkpointing.html" />
-    <link rel="prev" title="OSLO: Open Source framework for Large-scale transformer Optimization" href="../index.html" />
+    <link rel="prev" title="Commons" href="commons.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="docsearch:language" content="None">
     
@@ -72,12 +72,17 @@
   <input type="search" class="form-control" name="q" id="search-input" placeholder="Search the docs ..." aria-label="Search the docs ..." autocomplete="off" >
 </form><nav class="bd-links" id="bd-docs-nav" aria-label="Main">
     <div class="bd-toc-item active">
-        <p aria-level="2" class="caption" role="heading">
+        <p class="caption">
  <span class="caption-text">
   CONFIGURATION
  </span>
 </p>
 <ul class="current nav bd-sidenav">
+ <li class="toctree-l1">
+  <a class="reference internal" href="commons.html">
+   Commons
+  </a>
+ </li>
  <li class="toctree-l1 current active">
   <a class="current reference internal" href="#">
    Model Parallelism
@@ -94,7 +99,7 @@
   </a>
  </li>
 </ul>
-<p aria-level="2" class="caption" role="heading">
+<p class="caption">
  <span class="caption-text">
   TUTORIALS
  </span>
@@ -280,7 +285,7 @@
               <div>
                 
   <div class="section" id="model-parallelism">
-<h1>Model Parallelism<a class="headerlink" href="#model-parallelism" title="Permalink to this headline"></a></h1>
+<h1>Model Parallelism<a class="headerlink" href="#model-parallelism" title="Permalink to this headline">¶</a></h1>
 <p>You can specify your own model parallelism related configuration under <code class="docutils literal notranslate"><span class="pre">model_parallelism</span></code> like:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
   <span class="nt">&quot;model_parallelism&quot;</span><span class="p">:</span> <span class="p">{</span>
@@ -291,7 +296,7 @@
 </pre></div>
 </div>
 <div class="section" id="enable-bool">
-<h2>1. enable: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#enable-bool" title="Permalink to this headline"></a></h2>
+<h2>1. enable: <code class="docutils literal notranslate"><span class="pre">bool</span></code><a class="headerlink" href="#enable-bool" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
 <li><p>type: bool</p></li>
 <li><p>default: False</p></li>
@@ -299,7 +304,7 @@
 <p>Enable model parallelism.</p>
 </div>
 <div class="section" id="tensor-parallel-size-int">
-<h2>2. tensor_parallel_size: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline"></a></h2>
+<h2>2. tensor_parallel_size: <code class="docutils literal notranslate"><span class="pre">int</span></code><a class="headerlink" href="#tensor-parallel-size-int" title="Permalink to this headline">¶</a></h2>
 <ul class="simple">
 <li><p>type: int</p></li>
 <li><p>default: 1</p></li>
@@ -313,7 +318,7 @@ you can find the detail of it from <a class="reference external" href="https://h
 <li><p><code class="docutils literal notranslate"><span class="pre">tensor_parallel_size</span></code> must be positive number.</p></li>
 </ul>
 <div class="section" id="supported-models">
-<h3>SUPPORTED MODELS<a class="headerlink" href="#supported-models" title="Permalink to this headline"></a></h3>
+<h3>SUPPORTED MODELS<a class="headerlink" href="#supported-models" title="Permalink to this headline">¶</a></h3>
 <p>The following list includes currently supported models.</p>
 <ul class="simple">
 <li><p>Albert</p></li>
@@ -339,11 +344,11 @@ you can find the detail of it from <a class="reference external" href="https://h
             
                 <!-- Previous / next buttons -->
 <div class='prev-next-area'> 
-    <a class='left-prev' id="prev-link" href="../index.html" title="previous page">
+    <a class='left-prev' id="prev-link" href="commons.html" title="previous page">
         <i class="fas fa-angle-left"></i>
         <div class="prev-next-info">
             <p class="prev-next-subtitle">previous</p>
-            <p class="prev-next-title">OSLO: Open Source framework for Large-scale transformer Optimization</p>
+            <p class="prev-next-title">Commons</p>
         </div>
     </a>
     <a class='right-next' id="next-link" href="activation_checkpointing.html" title="next page">
