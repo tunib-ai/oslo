@@ -4,6 +4,12 @@ from functools import partial
 def initialize_model_parallelism(model, config, **kwargs):
     if "model_parallelism" in config:
         mp_config = config["model_parallelism"]
+        force_gpu = config["commons"]["force_gpu"]
+
+        if force_gpu is False:
+            raise ValueError(
+                "``force_gpu=False`` is not compatible with model parallelism"
+            )
 
         if "enable" in mp_config and mp_config["enable"] is True:
             from oslo.pytorch.model_parallelism.network.mpu import MPU

@@ -6,13 +6,14 @@ from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
 def initialize_kernel_fusion(model, config, **kwargs):
     if "kernel_fusion" in config:
         kf_config = config["kernel_fusion"]
+        force_gpu = config["commons"]["force_gpu"]
 
         if "enable" in kf_config and kf_config["enable"] is True:
             from oslo.pytorch.kernel_fusion.kernel_fusion_engine import (
                 KernelFusionEngine,
             )
 
-            if model.device == torch.device("cpu"):
+            if force_gpu is True and model.device == torch.device("cpu"):
                 model = model.cuda()
 
             memory_efficient_fusion = kf_config.get("memory_efficient_fusion", False)

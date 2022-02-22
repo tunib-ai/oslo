@@ -68,6 +68,7 @@ Documents
    :maxdepth: 1
    :caption: CONFIGURATION
 
+   CONFIGURATION/commons
    CONFIGURATION/model_parallelism
    CONFIGURATION/activation_checkpointing
    CONFIGURATION/kernel_fusion
