@@ -27,6 +27,7 @@ def initialize_model_parallelism(model, config, **kwargs):
 
             tp_size = mp_config.get("tensor_parallel_size", 1)
             pp_size = mp_config.get("pipeline_parallel_size", 1)
+            deployment_mode = mp_config.get("deployment_mode", False)
 
             assert tp_size >= 1, "param `tensor_parallel_size` must be positive."
             assert pp_size >= 1, "param `pipeline_parallel_size` must be positive."
@@ -35,8 +36,6 @@ def initialize_model_parallelism(model, config, **kwargs):
             ), "param `tensor_parallel_size` must be power of 2."
 
             if tp_size * pp_size > 1:
-                mpu = MPU(tensor_parallel_size=tp_size, pipeline_parallel_size=pp_size)
-
                 if tp_size > 1:
                     assert model.config.num_attention_heads % tp_size == 0, (
                         "``tensor_parallel_size`` must be divisible by ``num_attention_heads``. "
@@ -55,9 +54,33 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "Please check your model configuration."
                     )
 
-                    mapping = kwargs.pop("tp_mapping", TensorParallelismMapping())
+                mapping = kwargs.pop("tp_mapping", TensorParallelismMapping())
+
+                if deployment_mode is False:
+                    mpu = MPU(
+                        tensor_parallel_size=tp_size, pipeline_parallel_size=pp_size
+                    )
                     tensor_parallel_engine = TensorParallelEngine(model, mpu, mapping)
                     tensor_parallel_engine.parallelize()
+                else:
+                    from oslo.pytorch.model_parallelism.deployment_engine import (
+                        DeploymentEngine,
+                    )
+
+                    master_addr = config.get("master_addr", "localhost")
+                    master_port = config.get("master_port", 29500)
+                    seed = config.get("seed", None)
+
+                    deployment_engine = DeploymentEngine(
+                        model,
+                        mapping=mapping,
+                        tp_size=tp_size,
+                        pp_size=pp_size,
+                        master_addr=master_addr,
+                        master_port=master_port,
+                        seed=seed,
+                    )
+                    deployment_engine.parallelize()
 
                 setattr(
                     model, "from_parallelized", partial(from_parallelized, self=model)

@@ -3,4 +3,3 @@ ninja
 pybind11
 pydot
 networkx
-anytree

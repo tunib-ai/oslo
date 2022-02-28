@@ -25,11 +25,17 @@ def _one_of_(*args):
 
 
 SUPPORTED_FEATURES = {
-    "commons": {"force_gpu": _type(bool)},
+    "commons": {
+        "force_gpu": _type(bool),
+        "master_port": _type(int),
+        "master_addr": _type(str),
+        "seed": _type(int),
+    },
     "model_parallelism": {
         "enable": _type(bool),
         "tensor_parallel_size": _type(int),
         "pipeline_parallel_size": _type(int),
+        "deployment_mode": _type(bool),
     },
     "activation_checkpointing": {
         "enable": _type(bool),

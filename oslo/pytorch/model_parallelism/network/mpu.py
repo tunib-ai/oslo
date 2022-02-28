@@ -161,7 +161,6 @@ class MPU(object):
 
         if not dist.is_initialized():
             device_count = torch.cuda.device_count()
-
             if device_count > 0:
                 device = rank % device_count
                 torch.cuda.set_device(device)
