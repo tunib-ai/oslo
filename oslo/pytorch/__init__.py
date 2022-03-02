@@ -7,7 +7,7 @@ from oslo.pytorch.activation_checkpointing import (
 )
 from oslo.pytorch.kernel_fusion import initialize_kernel_fusion
 from oslo.pytorch.model_parallelism import initialize_model_parallelism
-from oslo.pytorch.utils.extenstions import restrict_embedding_resizing
+from oslo.pytorch.utils.huggingface import restrict_embedding_resizing
 
 
 def _type(_type):
@@ -27,9 +27,9 @@ def _one_of_(*args):
 SUPPORTED_FEATURES = {
     "commons": {
         "force_gpu": _type(bool),
-        "master_port": _type(int),
-        "master_addr": _type(str),
         "seed": _type(int),
+        "master_addr": _type(str),
+        "master_port": _type(int),
     },
     "model_parallelism": {
         "enable": _type(bool),
@@ -85,12 +85,6 @@ def _sanity_check(
     model,
     config: Union[str, Dict[str, Any]],
 ):
-    from transformers import PreTrainedModel
-
-    assert isinstance(
-        model, PreTrainedModel
-    ), "An argument ``model`` must be the PyTorch Hugging Face Transformers model."
-
     assert isinstance(config, dict) or isinstance(
         config, str
     ), "An argument ``config`` must be the dictionary object or json path."
@@ -116,6 +110,15 @@ def _initialize_commons(config):
     if "force_gpu" not in config["commons"]:
         config["commons"]["force_gpu"] = True
 
+    if "seed" not in config["commons"]:
+        config["commons"]["seed"] = None
+
+    if "master_port" not in config["commons"]:
+        config["commons"]["master_port"] = 29500
+
+    if "master_addr" not in config["commons"]:
+        config["commons"]["master_addr"] = "localhost"
+
     return config
 
 
@@ -124,7 +127,7 @@ def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
     Initialize OSLO engine.
 
     Args:
-        model (PreTrainedModel): The PyTorch Hugging Face Transformers model
+        model (nn.Module): The PyTorch model
         config (Union[str, os.PathLike, Dict[str, Any]]): dict object or json path
     """
     if not hasattr(model, "oslo_initialized"):
@@ -136,6 +139,7 @@ def initialize(model, config: Union[str, Dict[str, Any]], **kwargs):
         model, config = initialize_kernel_fusion(model, config, **kwargs)
         model = restrict_embedding_resizing(model)
         setattr(model, "oslo_initialized", True)
+
     else:
         raise RuntimeError("Can not OSLO initialize twice!")
 

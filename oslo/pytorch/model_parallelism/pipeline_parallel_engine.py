@@ -1,15 +1,10 @@
 import time
 from dataclasses import dataclass
-from itertools import combinations, chain
 from typing import Tuple
 
 import psutil
 import torch
-import torch.distributed as dist
 import torch.nn as nn
-from transformers import GPT2LMHeadModel
-
-from oslo.pytorch.model_parallelism.network.mpu import MPU
 
 BATCH_DIMENSIONS = {
     "input_ids": 0,
@@ -131,7 +126,7 @@ class PartitioningCostEstimator(object):
 
     def _add_computation_cost_hooks(self, node):
         # TODO: The time unit is not mentioned in the paper.
-        # I sent an email to author of paper !
+        # I sent an email to author of paper. but he didn't reply :(
 
         def pre_hook(*args, **kwargs):
             setattr(node, "execution_time_before_forwarding", time.time())
@@ -222,9 +217,3 @@ class PartitioningCostEstimator(object):
         # 2. normalize cost
         self._normalize_cost(self.root_node)
         delattr(self.root_node, "oslo_pp_unnormalized_cost")
-
-
-if __name__ == "__main__":
-    model = GPT2LMHeadModel.from_pretrained("gpt2")
-    mpu = MPU(1, 4)
-    PP = PipelineParallelEngine(model=model, mpu=mpu)

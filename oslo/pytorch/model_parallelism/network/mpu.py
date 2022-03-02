@@ -61,6 +61,9 @@ class MPU(object):
 
     """
 
+    # ranks to devices mapping
+    _rank2device = {}
+
     # process group
     _data_parallel_group = None
     _model_parallel_group = None
@@ -83,7 +86,13 @@ class MPU(object):
     _pipeline_parallel_global_ranks_per_group = None
     _pipeline_parallel_global_ranks_across_all_groups = []
 
-    def __init__(self, tensor_parallel_size: int, pipeline_parallel_size: int) -> None:
+    def __init__(
+        self,
+        tensor_parallel_size: int,
+        pipeline_parallel_size: int,
+        master_addr: str = None,
+        master_port: int = None,
+    ) -> None:
         """
         Initialize MPU object.
         All the process groups are initialized when this method is invoked.
@@ -92,10 +101,11 @@ class MPU(object):
             tensor_parallel_size (int): model parallel world size
             pipeline_parallel_size (int): pipeline parallel world size
             master_port (int): master port to initialize global process group
+            master_addr (str): master address to initialize global process group
         """
 
         if not dist.is_initialized():
-            self.initialize_distributed()
+            self.initialize_distributed(master_addr, master_port)
 
         current_rank = dist.get_rank()
         global_world_size = dist.get_world_size()
@@ -151,13 +161,38 @@ class MPU(object):
         self._scatter_fn = functions["scatter"]
         self._gather_fn = functions["gather"]
 
+        # 6. make rank2device mapping
+        rank_tensor = torch.tensor(
+            [
+                self.get_tensor_parallel_rank(),
+                self.get_pipeline_parallel_rank(),
+                self.get_data_parallel_rank(),
+            ],
+            dtype=torch.long,
+        ).cuda()
+
+        rank_tensor_list = [
+            torch.tensor([0, 0, 0], dtype=torch.long).cuda()
+            for _ in range(global_world_size)
+        ]
+
+        dist.all_gather(tensor_list=rank_tensor_list, tensor=rank_tensor)
+
+        for _rank, _rank_tensor in enumerate(rank_tensor_list):
+            self._rank2device[tuple(_rank_tensor.tolist())] = _rank
+
     # Initialization
 
     @staticmethod
-    def initialize_distributed():
+    def initialize_distributed(master_addr, master_port):
         """Initialize torch.distributed and mpu."""
         rank = int(os.getenv("RANK", 0))
         world_size = int(os.getenv("WORLD_SIZE", 1))
+
+        if master_addr is not None:
+            os.environ["MASTER_ADDR"] = str(master_addr)
+        if master_port is not None:
+            os.environ["MASTER_PORT"] = str(master_port)
 
         if not dist.is_initialized():
             device_count = torch.cuda.device_count()
@@ -203,6 +238,7 @@ class MPU(object):
                 ranks = list(range(start_rank + j, end_rank, tensor_parallel_size))
                 all_data_parallel_group_ranks.append(ranks)
                 group = dist.new_group(ranks)
+
                 if current_rank in ranks:
                     self._data_parallel_group = group
 
@@ -770,3 +806,6 @@ class MPU(object):
             "scatter": Scatter,
             "gather": Gather,
         }
+
+    def rank2device(self, tp_rank, pp_rank, dp_rank):
+        return self._rank2device[(tp_rank, pp_rank, dp_rank)]

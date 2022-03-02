@@ -2,6 +2,14 @@ from functools import partial
 from typing import Optional
 
 
+def is_huggingface_model(model):
+    try:
+        import transformers
+
+        return isinstance(model, transformers.PreTrainedModel)
+    except:
+        return False
+
 def restrict_embedding_resizing(model):
     def resize_token_embeddings(new_num_tokens: Optional[int] = None, **kwargs):
         raise RuntimeError(

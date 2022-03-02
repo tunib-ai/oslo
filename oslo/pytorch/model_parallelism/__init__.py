@@ -13,16 +13,13 @@ def initialize_model_parallelism(model, config, **kwargs):
 
         if "enable" in mp_config and mp_config["enable"] is True:
             from oslo.pytorch.model_parallelism.network.mpu import MPU
-            from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
-                TensorDeparallelEngine,
-                TensorParallelEngine,
+            from oslo.pytorch.model_parallelism.model_parallel_engine import (
+                ModelParallelEngine,
+                ModelDeparallelEngine,
             )
             from oslo.pytorch.model_parallelism.utils.extensions import (
                 from_parallelized,
                 save_parallelized,
-            )
-            from oslo.pytorch.model_parallelism.utils.mappings import (
-                TensorParallelismMapping,
             )
 
             tp_size = mp_config.get("tensor_parallel_size", 1)
@@ -54,31 +51,33 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "Please check your model configuration."
                     )
 
-                mapping = kwargs.pop("tp_mapping", TensorParallelismMapping())
+                master_addr = config.get("master_addr", "localhost")
+                master_port = config.get("master_port", 29500)
+                tp_mapping = kwargs.pop("tp_mapping", None)
 
                 if deployment_mode is False:
                     mpu = MPU(
-                        tensor_parallel_size=tp_size, pipeline_parallel_size=pp_size
+                        tensor_parallel_size=tp_size,
+                        pipeline_parallel_size=pp_size,
+                        master_addr=master_addr,
+                        master_port=master_port,
                     )
-                    tensor_parallel_engine = TensorParallelEngine(model, mpu, mapping)
-                    tensor_parallel_engine.parallelize()
+                    mp_engine = ModelParallelEngine(model, mpu, tp_mapping)
+                    mp_engine.parallelize()
+
                 else:
                     from oslo.pytorch.model_parallelism.deployment_engine import (
                         DeploymentEngine,
                     )
 
-                    master_addr = config.get("master_addr", "localhost")
-                    master_port = config.get("master_port", 29500)
-                    seed = config.get("seed", None)
-
                     deployment_engine = DeploymentEngine(
                         model,
-                        mapping=mapping,
+                        tp_mapping=tp_mapping,
                         tp_size=tp_size,
                         pp_size=pp_size,
                         master_addr=master_addr,
                         master_port=master_port,
-                        seed=seed,
+                        seed=config.get("seed", None),
                     )
                     deployment_engine.parallelize()
 

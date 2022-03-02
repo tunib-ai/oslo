@@ -6,14 +6,44 @@ from typing import Optional, Union
 import torch
 import torch.distributed as dist
 
-from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
-    TensorDeparallelEngine,
-    TensorParallelEngine,
+from oslo.pytorch.model_parallelism.model_parallel_engine import (
+    ModelDeparallelEngine,
+    ModelParallelEngine,
 )
+from oslo.pytorch.utils.huggingface import is_huggingface_model
 
 PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
 
 logger = getLogger(__name__)
+
+
+def unwrap_model(model):
+    """
+    Recursively unwraps a model from potential containers (as used in distributed training).
+
+    Args:
+        model (`torch.nn.Module`): The model to unwrap.
+    """
+    # since there could be multiple levels of wrapping, unwrap recursively
+    if hasattr(model, "module"):
+        return unwrap_model(model.module)
+    else:
+        return model
+
+
+def get_parameter_dtype(parameter):
+    try:
+        return next(parameter.parameters()).dtype
+    except StopIteration:
+        # For nn.DataParallel compatibility in PyTorch 1.5
+
+        def find_tensor_attributes(module):
+            tuples = [(k, v) for k, v in module.__dict__.items() if torch.is_tensor(v)]
+            return tuples
+
+        gen = parameter._named_members(get_members_fn=find_tensor_attributes)
+        first_tuple = next(gen)
+        return first_tuple[1].dtype
 
 
 def from_parallelized(parallelized_model_path, **kwargs):
@@ -74,51 +104,60 @@ def save_parallelized(
     state_dict: Optional[dict] = None,
     save_function: Callable = torch.save,
     merge_checkpoints: bool = False,
+    tp_mapping: dist = None,
     **kwargs,
 ):
-    from transformers.modeling_utils import get_parameter_dtype, unwrap_model
-
     self = kwargs.pop("self")
-    mapping = kwargs.pop("tp_mapping", None)
 
     if (
         self.mpu.get_tensor_parallel_world_size() == 1
         and self.mpu.get_pipeline_parallel_world_size() == 1
     ):
         if dist.get_rank() == 0:
-            self.save_pretrained(
-                save_directory=save_directory,
-                save_config=save_config,
-                state_dict=state_dict,
-                save_function=save_function,
-                **kwargs,
-            )
+            if is_huggingface_model(self):
+                self.save_pretrained(
+                    save_directory=save_directory,
+                    save_config=save_config,
+                    state_dict=state_dict,
+                    save_function=save_function,
+                    **kwargs,
+                )
+            else:
+                save_function(self.state_dict(), save_directory)
+
         dist.barrier()
         return None
 
     if merge_checkpoints:
         model_to_save = self.__class__(self.config).eval()
-        tensor_parallel_engine = TensorParallelEngine(model_to_save, self.mpu, mapping)
-        tensor_parallel_engine.parallelize()
+        mp_engine = ModelParallelEngine(model_to_save, self.mpu, tp_mapping)
+        mp_engine.parallelize()
 
         if state_dict is None:
             state_dict = unwrap_model(self).state_dict()
 
         model_to_save.load_state_dict(state_dict)
 
-        if self.mpu.get_tensor_parallel_world_size() > 1:
-            tensor_deparallel_engine = TensorDeparallelEngine(
-                model_to_save, model_to_save.mpu, mapping
+        if (
+            self.mpu.get_tensor_parallel_world_size() > 1
+            or self.mpu.get_pipeline_parallel_rank() > 1
+        ):
+            mdp_enigne = ModelDeparallelEngine(
+                model_to_save, model_to_save.mpu, tp_mapping
             )
-            tensor_deparallel_engine.deparallelize()
+            mdp_enigne.deparallelize()
 
         if dist.get_rank() == 0:
-            model_to_save.save_pretrained(
-                save_directory=save_directory,
-                save_config=save_config,
-                save_function=save_function,
-                **kwargs,
-            )
+            if is_huggingface_model(self):
+                self.save_pretrained(
+                    save_directory=save_directory,
+                    save_config=save_config,
+                    state_dict=state_dict,
+                    save_function=save_function,
+                    **kwargs,
+                )
+            else:
+                save_function(self.state_dict(), save_directory)
 
         del model_to_save
 
@@ -132,31 +171,25 @@ def save_parallelized(
         return
 
     os.makedirs(save_directory, exist_ok=True)
-
-    # Only save the model itself if we are using distributed training
     model_to_save = unwrap_model(self)
-
-    # save the string version of dtype to the config, e.g. convert torch.float32 => "float32"
-    # we currently don't use this setting automatically, but may start to use with v5
     dtype = get_parameter_dtype(model_to_save)
-    model_to_save.config.torch_dtype = str(dtype).split(".")[1]
 
-    # Attach architecture to the config
-    model_to_save.config.architectures = [model_to_save.__class__.__name__]
+    if is_huggingface_model(self):
+        model_to_save.config.torch_dtype = str(dtype).split(".")[1]
+        model_to_save.config.architectures = [model_to_save.__class__.__name__]
+        if save_config:
+            model_to_save.config.save_pretrained(save_directory)
 
-    # Save the config
-    if save_config:
-        model_to_save.config.save_pretrained(save_directory)
-
-    # Save the model
     if state_dict is None:
         state_dict = model_to_save.state_dict()
 
-    # Handle the case where some state_dict keys shouldn't be saved
-    if self._keys_to_ignore_on_save is not None:
-        state_dict = {
-            k: v for k, v in state_dict.items() if k not in self._keys_to_ignore_on_save
-        }
+    if is_huggingface_model(self):
+        if self._keys_to_ignore_on_save is not None:
+            state_dict = {
+                k: v
+                for k, v in state_dict.items()
+                if k not in self._keys_to_ignore_on_save
+            }
 
     # If we save using the predefined names, we can load using `from_pretrained`
     weights_name = PARALLELIZED_WEIGHTS_NAME

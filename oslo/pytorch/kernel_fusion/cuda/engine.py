@@ -47,7 +47,10 @@ class CustomCUDAKernelEngine(object):
 
     @staticmethod
     def fused_rms_norm(model):
-        from transformers.models.t5.modeling_t5 import T5LayerNorm, T5PreTrainedModel
+        from transformers.models.t5.modeling_t5 import (
+            T5LayerNorm,
+            T5PreTrainedModel,
+        )
 
         if not isinstance(model, T5PreTrainedModel):
             raise ValueError(

@@ -93,3 +93,21 @@ class RowParallelLinear(nn.Linear):
             outputs += self.bias
 
         return outputs
+
+
+def allocate(mpu, parameter):
+    tp_rank, pp_rank, dp_rank = 0, 0, 0
+
+    if hasattr(parameter, "tp_rank"):
+        tp_rank = parameter.tp_rank
+    if hasattr(parameter, "pp_rank"):
+        tp_rank = parameter.pp_rank
+    if hasattr(parameter, "dp_rank"):
+        tp_rank = parameter.dp_rank
+
+    device = mpu.rank2device(tp_rank, pp_rank, dp_rank)
+    parameter.data = parameter.to(f"cuda:{device}")
+
+
+def deallocate(parameter):
+    parameter.data = parameter.cpu()

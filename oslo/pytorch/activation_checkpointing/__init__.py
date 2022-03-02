@@ -48,11 +48,23 @@ def initialize_activation_checkpointing(model, config, **kwargs):
                 ),
             )
 
-            importlib.import_module(
-                model.__module__
-            ).torch.utils.checkpoint.checkpoint = engine.checkpoint
+            module = importlib.import_module(model.__module__)
 
-            model.gradient_checkpointing_enable()
+            for name, prop in module.__dict__.items():
+                if prop is torch:
+                    getattr(
+                        module, name
+                    ).utils.checkpoint.checkpoint = engine.checkpoint
+                elif prop is torch.utils:
+                    getattr(module, name).checkpoint.checkpoint = engine.checkpoint
+                elif prop is torch.utils.checkpoint:
+                    getattr(module, name).checkpoint = engine.checkpoint
+                elif prop is torch.utils.checkpoint.checkpoint:
+                    setattr(module, name, engine.checkpoint)
+
+            if hasattr(model, "gradient_checkpointing_enable"):
+                model.gradient_checkpointing_enable()
+
             model = model.train()
 
     return model, config

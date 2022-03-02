@@ -3,6 +3,7 @@ from logging import getLogger
 import torch
 
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
+from oslo.pytorch.utils.huggingface import is_huggingface_model
 
 logger = getLogger(__name__)
 
@@ -26,6 +27,10 @@ class KernelFusionEngine(object):
     def fuse(self):
         if not self.is_fused:
             if len(self.custom_cuda_kernels) > 0:
+                assert is_huggingface_model(
+                    self.model
+                ), "`custom_cuda_kernels` is only supported for HuggingFace Transformers model."
+
                 from oslo.pytorch.kernel_fusion.cuda.engine import (
                     CustomCUDAKernelEngine,
                 )
