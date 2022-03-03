@@ -7,9 +7,9 @@ import torch
 from .aot_autograd import aot_function, aot_module
 from .decompositions import decomposition_table
 from .partitioners import (
+    default_partition,
     draw_graph,
     min_cut_rematerialization_partition,
-    default_partition,
 )
 
 
@@ -133,10 +133,11 @@ def draw_graph_compile(name):
 def _tvm_compile(
     fx_module, example_inputs, target=None, tuning_logfile=None, use_ansor_tuning=False
 ):
-    import tvm
-    from tvm import relay, auto_scheduler
-    from tvm.contrib import graph_executor
     import os
+
+    import tvm
+    from tvm import auto_scheduler, relay
+    from tvm.contrib import graph_executor
 
     # Find the target and device for TVM.
     dev = tvm.cpu(0)

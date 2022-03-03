@@ -11,4 +11,3 @@ python -m torch.distributed.launch \
        --model=hf-internal-testing/tiny-random-gpt2 \
        --tensor_parallel_size="$NUM_GPUS" \
        --config="$CONFIG"
-

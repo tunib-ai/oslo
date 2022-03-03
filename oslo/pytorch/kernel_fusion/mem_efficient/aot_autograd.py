@@ -1,4 +1,4 @@
-from typing import Callable, List, Dict, Any, Tuple, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -7,12 +7,12 @@ import torch.utils.dlpack
 from torch import Tensor
 from torch.fx import immutable_collections
 
+from ..utils.torch_version import higher_than
 from .compat import _stateless
 from .compat.aot_autograd import CompileCache
 from .decompositions import register_decomposition
 from .partitioners import default_partition
 from .python_key import make_fx
-from ..utils.torch_version import higher_than
 
 pytree._register_pytree_node(
     immutable_collections.immutable_list,
@@ -108,7 +108,6 @@ if higher_than(1, 11):
     @register_decomposition(aten._reshape_alias, aot_autograd_decompositions)
     def _reshape_alias(x, shape, strides):
         return aten.view(x, shape)
-
 
 
 def create_aot_autograd_function(

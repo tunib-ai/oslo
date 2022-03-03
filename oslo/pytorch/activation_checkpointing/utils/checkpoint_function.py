@@ -3,10 +3,10 @@ from functools import partial
 import torch
 
 from oslo.pytorch.activation_checkpointing.utils.utils import (
+    copy_to_device,
     detach,
     extract_tensors,
     is_activation_to_checkpoint,
-    copy_to_device,
 )
 
 

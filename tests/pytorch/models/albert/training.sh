@@ -18,4 +18,3 @@ python -m torch.distributed.launch \
        --save_interval="$SAVE_INTERVAL" \
        --tensor_parallel_size="$NUM_GPUS" \
        --config="$CONFIG"
-

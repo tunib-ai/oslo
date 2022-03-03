@@ -72,7 +72,7 @@ class Binder(object):
                 return 80  # A100
             else:
                 return 70  # V100
-        except:
+        except:  # noqa: E722
             return 0
 
     def get_compatibility_version(self):

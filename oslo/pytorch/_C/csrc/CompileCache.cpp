@@ -57,7 +57,7 @@ static uint8_t packFlags(const LocalState &state, const at::Tensor &v) {
 }
 
 using hash_key_t = std::vector<int64_t>;
-/// Per-tensor cache specialization key targetting dynamic shapes. Records
+/// Per-tensor cache specialization key targeting dynamic shapes. Records
 /// dtype, dispatch options, aliasing, and per-dim contiguity/broadcasting
 /// information.
 
@@ -132,7 +132,7 @@ hash_key_t dynamic_hasher(const LocalState &state, const at::Tensor &v) {
   return hash;
 }
 
-/// Per-tensor cache specialization key targetting static shapes. Recordsdtype,
+/// Per-tensor cache specialization key targeting static shapes. Recordsdtype,
 /// dispatch options, aliasing, and full shapes and strides.
 hash_key_t static_hasher(const LocalState &state, const at::Tensor &v) {
   hash_key_t hash = {STATIC_HASH, static_cast<int>(packFlags(state, v)),
@@ -301,9 +301,9 @@ void initCompileCacheBindings(PyObject *module) {
 } // namespace at
 
 namespace at {
-  namespace functorch {
-    PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-      at::functorch::initCompileCacheBindings(m.ptr());
-    }
-  }
+namespace functorch {
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  at::functorch::initCompileCacheBindings(m.ptr());
 }
+} // namespace functorch
+} // namespace at

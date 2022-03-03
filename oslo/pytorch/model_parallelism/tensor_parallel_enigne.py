@@ -11,8 +11,8 @@ from oslo.pytorch.model_parallelism.utils.distributed import (
     VocabParallelEmbedding,
 )
 from oslo.pytorch.model_parallelism.utils.mappings import (
-    update_module_arguments,
     TensorParallelMapping,
+    update_module_arguments,
 )
 
 

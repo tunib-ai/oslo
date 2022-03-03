@@ -7,8 +7,9 @@ def is_huggingface_model(model):
         import transformers
 
         return isinstance(model, transformers.PreTrainedModel)
-    except:
+    except ImportError:
         return False
+
 
 def restrict_embedding_resizing(model):
     def resize_token_embeddings(new_num_tokens: Optional[int] = None, **kwargs):

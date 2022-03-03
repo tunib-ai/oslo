@@ -1,8 +1,9 @@
 import torch
 from torch import Tensor
 
-from oslo.pytorch.kernel_fusion.mem_efficient.decompositions import \
-    register_decomposition
+from oslo.pytorch.kernel_fusion.mem_efficient.decompositions import (
+    register_decomposition,
+)
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
 
 aten = torch.ops.aten
