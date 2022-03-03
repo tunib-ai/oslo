@@ -12,5 +12,3 @@ python -m torch.distributed.launch \
        --tokenizer=gpt2 \
        --tensor_parallel_size="$NUM_GPUS" \
        --config="$CONFIG"
-
-

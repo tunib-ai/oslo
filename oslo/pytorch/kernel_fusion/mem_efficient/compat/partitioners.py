@@ -1,4 +1,5 @@
 import torch
+
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
 
 aten = torch.ops.aten
@@ -11,7 +12,6 @@ unrecomputable_ops = [
     aten.rand_like,
     aten.randn_like,
     aten.upsample_bilinear2d,
-
 ]
 
 if higher_than(1, 11):

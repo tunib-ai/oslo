@@ -5,13 +5,13 @@
 # LICENSE file in the root directory of this source tree.
 import functools
 from contextlib import contextmanager
-from typing import Any, Dict, Optional, Tuple, Callable, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 import torch.fx as fx
 import torch.utils._pytree as pytree
 from torch._C import _disabled_torch_function_impl
-from torch.fx import Tracer, GraphModule
+from torch.fx import GraphModule, Tracer
 
 from oslo.pytorch.kernel_fusion.mem_efficient.compat.python_key import (
     _make_wrapper_subclass,

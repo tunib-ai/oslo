@@ -6,9 +6,9 @@ import torch
 import torch.distributed as dist
 
 from oslo.pytorch.kernel_fusion.mem_efficient.compilers import (
-    ts_compile,
     default_decompositions,
     memory_efficient_fusion,
+    ts_compile,
 )
 from oslo.pytorch.kernel_fusion.mem_efficient.model_output import OutputManager
 from oslo.pytorch.kernel_fusion.mem_efficient.partitioners import (
@@ -37,7 +37,7 @@ def is_iterable(elem):
     try:
         iter(elem)
         return True
-    except:
+    except:  # noqa: E722
         return False
 
 

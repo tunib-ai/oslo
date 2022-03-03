@@ -1,8 +1,11 @@
 from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
-    TensorParallelEngine,
     TensorDeparallelEngine,
+    TensorParallelEngine,
 )
-from oslo.pytorch.model_parallelism.utils.distributed import allocate, deallocate
+from oslo.pytorch.model_parallelism.utils.distributed import (
+    allocate,
+    deallocate,
+)
 
 
 class ModelParallelEngine(object):

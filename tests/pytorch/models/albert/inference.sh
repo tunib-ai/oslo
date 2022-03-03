@@ -19,4 +19,3 @@ python -m torch.distributed.launch \
        --model=Alireza1044/albert-base-v2-sst2 \
        --tensor_parallel_size="$NUM_GPUS" \
        --config="$CONFIG"
-

@@ -1,7 +1,6 @@
 import torch
-from torch import Tensor
 import torch.distributed as dist
-
+from torch import Tensor
 
 NoneType = type(None)
 

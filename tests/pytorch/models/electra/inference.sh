@@ -19,4 +19,3 @@ python -m torch.distributed.launch \
        --model=EMBEDDIA/bertic-tweetsentiment \
        --tensor_parallel_size="$NUM_GPUS" \
        --config="$CONFIG"
-

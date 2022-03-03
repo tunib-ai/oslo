@@ -52,7 +52,7 @@ SUPPORTED_FEATURES = {
 
 
 def _config_check(arg, user):
-    assert len(user) > 0, f"There are no arguments in dictionary."
+    assert len(user) > 0, "There are no arguments in dictionary."
 
     if isinstance(user, dict):
         for k in user:

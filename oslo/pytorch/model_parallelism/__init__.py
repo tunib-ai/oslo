@@ -12,11 +12,11 @@ def initialize_model_parallelism(model, config, **kwargs):
             )
 
         if "enable" in mp_config and mp_config["enable"] is True:
-            from oslo.pytorch.model_parallelism.network.mpu import MPU
             from oslo.pytorch.model_parallelism.model_parallel_engine import (
-                ModelParallelEngine,
                 ModelDeparallelEngine,
+                ModelParallelEngine,
             )
+            from oslo.pytorch.model_parallelism.network.mpu import MPU
             from oslo.pytorch.model_parallelism.utils.extensions import (
                 from_parallelized,
                 save_parallelized,
@@ -43,11 +43,11 @@ def initialize_model_parallelism(model, config, **kwargs):
                         "Please check your model configuration."
                     )
                     assert model.config.num_attention_heads >= tp_size, (
-                        "``tensor_parallel_size`` must be same or greather than ``num_attention_heads``. "
+                        "``tensor_parallel_size`` must be same or greater than ``num_attention_heads``. "
                         "Please check your model configuration."
                     )
                     assert model.config.hidden_size >= tp_size, (
-                        "``tensor_parallel_size`` must be same or greather than ``hidden_size``. "
+                        "``tensor_parallel_size`` must be same or greater than ``hidden_size``. "
                         "Please check your model configuration."
                     )
 

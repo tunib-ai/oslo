@@ -9,8 +9,9 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
-from oslo.pytorch.model_parallelism.model_parallel_engine import \
-    ModelParallelEngine
+from oslo.pytorch.model_parallelism.model_parallel_engine import (
+    ModelParallelEngine,
+)
 from oslo.pytorch.model_parallelism.network.mpu import MPU
 
 
@@ -73,7 +74,7 @@ class DeploymentEngine(object):
 
     def send(self, *args, **kwargs):
         self.assert_about_device(*args, **kwargs)
-        method_name = kwargs.pop("oslo_deployment_method_name")
+        kwargs.pop("oslo_deployment_method_name")
 
         for process in self.processes:
             process.inference_mutex.set()

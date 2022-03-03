@@ -43,6 +43,7 @@ def train_step(name, model, optimizer, inputs, step):
     if not dist.is_initialized() or dist.get_rank() == 0:
         wandb.log({name: loss}, step=step)
 
+
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
 parser = ArgumentParser()
@@ -59,9 +60,7 @@ parser.add_argument("--tensor_parallel_size", default=1, type=int)
 args = parser.parse_args()
 args.tokenizer = args.tokenizer if args.tokenizer else args.model
 name = (
-    f"{args.model}-{args.task}-"
-    f"bsz={args.batch_size}-"
-    f"len={args.sequence_length}"
+    f"{args.model}-{args.task}-" f"bsz={args.batch_size}-" f"len={args.sequence_length}"
 )
 
 # 1. Create a tokenizer

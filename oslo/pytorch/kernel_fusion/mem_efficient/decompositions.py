@@ -1,9 +1,9 @@
 from enum import Enum
-from typing import Optional, List, Tuple
+from typing import List, Optional, Tuple
 
 import torch
-from torch import Tensor
 import torch.distributed as dist
+from torch import Tensor
 
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
 

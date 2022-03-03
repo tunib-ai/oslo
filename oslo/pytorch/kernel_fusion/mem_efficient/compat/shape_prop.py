@@ -1,4 +1,4 @@
-from typing import NamedTuple, Tuple, Optional, Dict, Any
+from typing import Any, Dict, NamedTuple, Optional, Tuple
 
 import torch
 
