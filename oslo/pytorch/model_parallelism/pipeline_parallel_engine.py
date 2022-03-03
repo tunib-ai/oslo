@@ -6,7 +6,9 @@ import psutil
 import torch
 import torch.nn as nn
 
-BATCH_DIMENSIONS = {
+from oslo.pytorch.utils.huggingface import is_huggingface_model
+
+HF_BATCH_DIMENSIONS = {
     "input_ids": 0,
     "attention_mask": 0,
     "token_type_ids": 0,
@@ -50,14 +52,24 @@ class PipelineParallelEngine(object):
         https://arxiv.org/abs/2111.05972
     """
 
-    def __init__(self, model, mpu, memory_computation_balance_factor=1.0):
+    def __init__(
+        self, model, mpu, tracing_inputs=None, memory_computation_balance_factor=1.0
+    ):
         self.model = model
         self.mpu = mpu
+        self.tracing_inputs = tracing_inputs
+
+        if tracing_inputs is None and not is_huggingface_model(model):
+            raise ValueError(
+                "`tracing_inputs` must not be None "
+                "if the model is not Hugging Face Transformers model"
+            )
 
         # 1. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
             root_node=self.model,
             alpha=memory_computation_balance_factor,
+            tracing_inputs=tracing_inputs,
         )
         cost_estimator.compute_cost()
 
@@ -75,11 +87,13 @@ class PipelineParallelEngine(object):
         # d(n)
         setattr(self.model, "oslo_pp_device", self.model.oslo_pp_device_cands[0])
 
-        self.make_segment_costs(self.model)
+    def make_segments(self, node):
+        L = self.mpu.get_pipeline_parallel_world_size()
+        len_Q = len([_ for _ in node.children()])
 
-    def make_segment_costs(self, module):
-        for child in module.children():
-            setattr(child, "oslo_pp_device_cands", module.oslo_pp_device_cands)
+        for i in range(0, len_Q):
+            for k in range(2, L + 1):
+                pass
 
 
 class PartitioningCostEstimator(object):
@@ -90,18 +104,20 @@ class PartitioningCostEstimator(object):
     2. memory cost: computes memory cost via the number of parameters of the module.
     """
 
-    def __init__(self, root_node, alpha):
+    def __init__(self, root_node, alpha, tracing_inputs):
         self.root_node = root_node
         self.alpha = alpha
+        self.tracing_inputs = tracing_inputs
+
         self.hooks = []
+        if is_huggingface_model(root_node):
+            self.orig_gradient_checkpointing_status = (
+                self.root_node.is_gradient_checkpointing
+            )
 
-        self.orig_gradient_checkpointing_status = (
-            self.root_node.is_gradient_checkpointing
-        )
-
-        # enable gradient checkpointing for memory safer tracing.
-        if self.root_node.supports_gradient_checkpointing:
-            self.root_node.gradient_checkpointing_enable()
+            # enable gradient checkpointing for memory safer tracing.
+            if self.root_node.supports_gradient_checkpointing:
+                self.root_node.gradient_checkpointing_enable()
 
         # prevent tracing for very large model.
         if self.alpha < 1.0:
@@ -112,7 +128,7 @@ class PartitioningCostEstimator(object):
                 )
                 self.use_computation_cost = False
             else:
-                self._trace_computation_cost()
+                self._trace_computation_cost(tracing_inputs)
 
     @staticmethod
     def _is_available_tracing(module):
@@ -149,13 +165,15 @@ class PartitioningCostEstimator(object):
         for child in node.children():
             self._add_computation_cost_hooks(child)
 
-    def _trace_computation_cost(self):
+    def _trace_computation_cost(self, tracing_inputs):
         # 1. tracing the model
         with torch.no_grad():
-            dummy_inputs = self.root_node.dummy_inputs
-            dummy_inputs["use_cache"] = False  # for checkpointing
+            if tracing_inputs is None:
+                tracing_inputs = self.root_node.dummy_inputs
+                tracing_inputs["use_cache"] = False  # for checkpointing
+
             self._add_computation_cost_hooks(self.root_node)
-            self.root_node(**dummy_inputs)
+            self.root_node(**tracing_inputs)
 
         # 2. removing hooks
         for hooks in self.hooks:
