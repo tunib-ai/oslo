@@ -1,4 +1,4 @@
-from oslo.pytorch.model_parallelism.tensor_parallel_enigne import (
+from oslo.pytorch.model_parallelism.tensor_parallel_engine import (
     TensorDeparallelEngine,
     TensorParallelEngine,
 )

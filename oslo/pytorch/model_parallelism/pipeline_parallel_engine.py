@@ -6,7 +6,9 @@ import psutil
 import torch
 import torch.nn as nn
 
-BATCH_DIMENSIONS = {
+from oslo.pytorch.utils.huggingface import is_huggingface_model
+
+HF_BATCH_DIMENSIONS = {
     "input_ids": 0,
     "attention_mask": 0,
     "token_type_ids": 0,
@@ -50,14 +52,22 @@ class PipelineParallelEngine(object):
         https://arxiv.org/abs/2111.05972
     """
 
-    def __init__(self, model, mpu, memory_computation_balance_factor=1.0):
+    def __init__(
+        self, model, mpu, tracing_inputs=None, memory_computation_balance_factor=0.9
+    ):
+        assert hasattr(
+            model, "get_input_embeddings"
+        ), "model must have method named ``get_input_embeddings()``."
+
         self.model = model
         self.mpu = mpu
+        self.tracing_inputs = tracing_inputs
 
         # 1. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
             root_node=self.model,
             alpha=memory_computation_balance_factor,
+            tracing_inputs=tracing_inputs,
         )
         cost_estimator.compute_cost()
 
@@ -75,11 +85,19 @@ class PipelineParallelEngine(object):
         # d(n)
         setattr(self.model, "oslo_pp_device", self.model.oslo_pp_device_cands[0])
 
-        self.make_segment_costs(self.model)
+        self.make_segments(self.model)
 
-    def make_segment_costs(self, module):
-        for child in module.children():
-            setattr(child, "oslo_pp_device_cands", module.oslo_pp_device_cands)
+    def make_segments(self, node):
+        children = sorted(
+            node.children(),
+            key=lambda x: x.oslo_execution_order,
+        )
+
+        for child in children:
+            pass
+
+    def dhondt(self, node):
+        pass
 
 
 class PartitioningCostEstimator(object):
@@ -90,18 +108,22 @@ class PartitioningCostEstimator(object):
     2. memory cost: computes memory cost via the number of parameters of the module.
     """
 
-    def __init__(self, root_node, alpha):
+    def __init__(self, root_node, alpha, tracing_inputs):
         self.root_node = root_node
         self.alpha = alpha
+        self.tracing_inputs = tracing_inputs
+        self.node_order = 0
+
         self.hooks = []
-
-        self.orig_gradient_checkpointing_status = (
-            self.root_node.is_gradient_checkpointing
-        )
-
-        # enable gradient checkpointing for memory safer tracing.
-        if self.root_node.supports_gradient_checkpointing:
-            self.root_node.gradient_checkpointing_enable()
+        if is_huggingface_model(root_node):
+            # enable gradient checkpointing for memory safer tracing.
+            self.orig_gradient_checkpointing_status = (
+                self.root_node.is_gradient_checkpointing
+            )
+            if self.root_node.supports_gradient_checkpointing:
+                self.root_node.gradient_checkpointing_enable()
+        else:
+            self.orig_gradient_checkpointing_status = None
 
         # prevent tracing for very large model.
         if self.alpha < 1.0:
@@ -112,7 +134,12 @@ class PartitioningCostEstimator(object):
                 )
                 self.use_computation_cost = False
             else:
-                self._trace_computation_cost()
+                if tracing_inputs is None and not is_huggingface_model(self.root_node):
+                    raise ValueError(
+                        "`tracing_inputs` must not be None "
+                        "if the model is not Hugging Face Transformers model"
+                    )
+                self._trace_computation_cost(tracing_inputs)
 
     @staticmethod
     def _is_available_tracing(module):
@@ -129,33 +156,37 @@ class PartitioningCostEstimator(object):
         # I sent an email to author of paper. but he didn't reply :(
 
         def pre_hook(*args, **kwargs):
-            setattr(node, "execution_time_before_forwarding", time.time())
+            setattr(node, "execution_time_before_tracing", time.time())
+            setattr(node, "oslo_execution_order", self.node_order)
+            self.node_order += 1
 
         def post_hook(*args, **kwargs):
             setattr(
                 node,
                 "oslo_pp_computation_cost",
-                time.time() - getattr(node, "execution_time_before_forwarding"),
+                time.time() - getattr(node, "execution_time_before_tracing"),
             )
-            delattr(node, "execution_time_before_forwarding")
+            delattr(node, "execution_time_before_tracing")
 
         self.hooks.append(
             {
-                "pre_hook": node.module.register_forward_pre_hook(pre_hook),
-                "post_hook": node.module.register_forward_hook(post_hook),
+                "pre_hook": node.register_forward_pre_hook(pre_hook),
+                "post_hook": node.register_forward_hook(post_hook),
             }
         )
 
-        for child in node.children():
+        for name, child in node.named_children():
             self._add_computation_cost_hooks(child)
 
-    def _trace_computation_cost(self):
+    def _trace_computation_cost(self, tracing_inputs):
         # 1. tracing the model
         with torch.no_grad():
-            dummy_inputs = self.root_node.dummy_inputs
-            dummy_inputs["use_cache"] = False  # for checkpointing
+            if tracing_inputs is None:
+                tracing_inputs = self.root_node.dummy_inputs
+                tracing_inputs["use_cache"] = False  # for checkpointing
+
             self._add_computation_cost_hooks(self.root_node)
-            self.root_node(**dummy_inputs)
+            self.root_node(**tracing_inputs)
 
         # 2. removing hooks
         for hooks in self.hooks:
@@ -163,7 +194,7 @@ class PartitioningCostEstimator(object):
             hooks["post_hook"].remove()
 
         # 3. turn off gradient checkpointing
-        if not self.orig_gradient_checkpointing_status:
+        if self.orig_gradient_checkpointing_status is False:
             self.root_node.gradient_checkpointing_disable()
 
     def _compute_node_cost(self, node):
@@ -172,16 +203,15 @@ class PartitioningCostEstimator(object):
 
         # 2. compute computation cost if available
         computation_cost = (
-            node.computation_cost if hasattr(node, "oslo_pp_computation_cost") else 0.0
+            node.oslo_pp_computation_cost
+            if hasattr(node, "oslo_pp_computation_cost")
+            else 0.0
         )
 
         # 3. compute total cost
         total_cost = (self.alpha * memory_cost) + ((1 - self.alpha) * computation_cost)
 
         setattr(node, "oslo_pp_unnormalized_cost", total_cost)
-
-        if hasattr(node, "oslo_pp_computation_cost"):
-            delattr(node, "oslo_pp_computation_cost")
 
     def _compute_cost(self, node):
         if not hasattr(self.root_node, "oslo_pp_unnormalized_cost"):
@@ -217,3 +247,28 @@ class PartitioningCostEstimator(object):
         # 2. normalize cost
         self._normalize_cost(self.root_node)
         delattr(self.root_node, "oslo_pp_unnormalized_cost")
+
+        previous_order, additional_order_count = 0, 0
+        for name, module in self.root_node.named_modules():
+            if not hasattr(module, "oslo_execution_order"):
+                # for module list
+                setattr(module, "oslo_execution_order", previous_order + 1)
+                additional_order_count += 1
+            else:
+                setattr(
+                    module,
+                    "oslo_execution_order",
+                    module.oslo_execution_order + additional_order_count,
+                )
+
+            previous_order = module.oslo_execution_order
+
+
+# if __name__ == "__main__":
+#     from transformers import GPT2Model
+#
+#     from oslo.pytorch.model_parallelism.network.mpu import MPU
+#
+#     model = GPT2Model.from_pretrained("gpt2")
+#     mpu = MPU(1, 2)
+#     pp = PipelineParallelEngine(model, mpu)
