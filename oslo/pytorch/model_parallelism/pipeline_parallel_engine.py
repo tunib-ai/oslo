@@ -131,21 +131,13 @@ class PipelineParallelEngine(object):
 
         def c(k, i):
             if (k, i) not in memo:
-                if i == 1:
-                    memo[(k, i)] = -1
-
                 for j in range(i + 1):
                     sum_j_costs = sum([q.oslo_pp_cost for q in q_n[:j]])
 
                     if k == 1:
                         memo[(k, i)] = sum_j_costs
                     else:
-                        _max = [max(c(k - 1, j), sum_j_costs)]
-
-                        if len(_max) > 0:
-                            memo[(k, i)] = min(_max)
-                        else:
-                            memo[(k, i)] = -1
+                        memo[(k, i)] = min([max(c(k - 1, j), sum_j_costs)])
 
             return memo[(k, i)]
 
