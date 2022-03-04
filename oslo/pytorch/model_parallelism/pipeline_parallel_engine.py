@@ -51,6 +51,8 @@ class PipelineParallelEngine(object):
         self.mpu = mpu
         self.tracing_inputs = tracing_inputs
         self.visited = {}
+
+        # 1. construct tree
         self.root_node = Node(
             name="ROOT",
             parent=None,
@@ -60,8 +62,9 @@ class PipelineParallelEngine(object):
             oslo_pp_cost=1.0,
         )
         self.construct_tree(self.root_node)
+        del self.visited  # remove visited dict
 
-        # 1. compute the partitioning cost
+        # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
             root_node=self.root_node,
             alpha=memory_computation_balance_factor,
@@ -69,7 +72,7 @@ class PipelineParallelEngine(object):
         )
         cost_estimator.compute_cost()
 
-        # 2. Do partitioning
+        # 3. Do partitioning
         self.initialize_partition()
 
     @staticmethod
@@ -111,15 +114,15 @@ class PipelineParallelEngine(object):
         setattr(
             self.root_node, "oslo_pp_device", self.root_node.oslo_pp_device_cands[0]
         )
-        self.recur(self.root_node)
+        self.print(self.root_node)
 
-    def recur(self, node):
+    def print(self, node):
         for child in node.children:
             if torch.distributed.get_rank() == 0:
                 print(
                     f"{child.name}: order={child.oslo_execution_order}, cost={child.oslo_pp_cost}"
                 )
-            self.recur(child)
+            self.print(child)
 
 
 class PartitioningCostEstimator(object):
