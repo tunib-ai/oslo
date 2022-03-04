@@ -8,20 +8,6 @@ import torch.nn as nn
 
 from oslo.pytorch.utils.huggingface import is_huggingface_model
 
-HF_BATCH_DIMENSIONS = {
-    "input_ids": 0,
-    "attention_mask": 0,
-    "token_type_ids": 0,
-    "position_ids": 0,
-    "head_mask": None,
-    "inputs_embeds": 0,
-    "labels": 0,
-    "use_cache": None,
-    "output_attentions": None,
-    "output_hidden_states": None,
-    "return_dict": None,
-}
-
 
 @dataclass
 class Segment(object):
@@ -53,7 +39,11 @@ class PipelineParallelEngine(object):
     """
 
     def __init__(
-        self, model, mpu, tracing_inputs=None, memory_computation_balance_factor=0.9
+        self,
+        model,
+        mpu,
+        tracing_inputs=None,
+        memory_computation_balance_factor=1.0,
     ):
         assert hasattr(
             model, "get_input_embeddings"
@@ -93,8 +83,9 @@ class PipelineParallelEngine(object):
             key=lambda x: x.oslo_execution_order,
         )
 
-        for child in children:
-            pass
+        for i, child in enumerate(children):
+            if torch.distributed.get_rank() == 0:
+                print(child.oslo_execution_order)
 
     def dhondt(self, node):
         pass
@@ -264,11 +255,11 @@ class PartitioningCostEstimator(object):
             previous_order = module.oslo_execution_order
 
 
-# if __name__ == "__main__":
-#     from transformers import GPT2Model
-#
-#     from oslo.pytorch.model_parallelism.network.mpu import MPU
-#
-#     model = GPT2Model.from_pretrained("gpt2")
-#     mpu = MPU(1, 2)
-#     pp = PipelineParallelEngine(model, mpu)
+if __name__ == "__main__":
+    from transformers import GPT2Model
+
+    from oslo.pytorch.model_parallelism.network.mpu import MPU
+
+    model = GPT2Model.from_pretrained("gpt2")
+    mpu = MPU(1, 2)
+    pp = PipelineParallelEngine(model, mpu)
