@@ -4,6 +4,7 @@ from typing import Tuple
 
 import psutil
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 from anytree import Node
 
@@ -168,8 +169,8 @@ class PartitioningCostEstimator(object):
             sum(p.numel() for p in module.parameters() if p.requires_grad) * elem_size
         )
         available_memory_size = psutil.virtual_memory().available
-        return available_memory_size > model_memory_size * 2
-        # multiply by 2 to consider act memory for safer tracing.
+        return available_memory_size > model_memory_size * dist.get_world_size() * 1.5
+        # multiply 1.5 for safer tracing.
 
     def _add_computation_cost_hooks(self, node):
         # TODO: The time unit is not mentioned in the paper.
