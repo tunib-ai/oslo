@@ -138,14 +138,14 @@ class PipelineParallelEngine(object):
                     sum_j_costs = sum([q.oslo_pp_cost for q in q_n[:j]])
 
                     if k == 1:
-                        return sum_j_costs
-
-                    _max = [max(c(k - 1, j), sum_j_costs)]
-
-                    if len(_max) > 0:
-                        memo[(k, i)] = min(_max)
+                        memo[(k, i)] = sum_j_costs
                     else:
-                        memo[(k, i)] = -1
+                        _max = [max(c(k - 1, j), sum_j_costs)]
+
+                        if len(_max) > 0:
+                            memo[(k, i)] = min(_max)
+                        else:
+                            memo[(k, i)] = -1
 
             return memo[(k, i)]
 
