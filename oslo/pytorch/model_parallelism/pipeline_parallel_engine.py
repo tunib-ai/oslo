@@ -56,6 +56,8 @@ class PipelineParallelEngine(object):
             parent=None,
             modules=[self.model],
             parameters=self.get_parameters(self.model),
+            oslo_execution_order=0,
+            oslo_pp_cost=1.0,
         )
         self.construct_tree(self.root_node)
 
@@ -185,7 +187,7 @@ class PartitioningCostEstimator(object):
             setattr(
                 node,
                 "oslo_pp_computation_cost",
-                time.time() - getattr(node, "execution_time_before_tracing"),
+                time.time() - node.execution_time_before_tracing,
             )
             delattr(node, "execution_time_before_tracing")
 
@@ -249,17 +251,15 @@ class PartitioningCostEstimator(object):
             self._compute_cost(child)
 
     def _normalize_cost(self, node):
-        if not hasattr(self.root_node, "oslo_pp_cost"):
-            # 1. normalize cost for root node
-            setattr(self.root_node, "oslo_pp_cost", 1.0)
-        else:
-            # 2. normalize cost for children nodes
-            root_cost = getattr(self.root_node, "oslo_pp_unnormalized_cost")
-            node_cost = getattr(node, "oslo_pp_unnormalized_cost")
-            setattr(node, "oslo_pp_cost", node_cost / root_cost)
+        # 1. normalize cost for children nodes
+        root_cost = self.root_node.oslo_pp_unnormalized_cost
+        node_cost = node.oslo_pp_unnormalized_cost
+        setattr(node, "oslo_pp_cost", node_cost / root_cost)
+
+        if node is not self.root_node:
             delattr(node, "oslo_pp_unnormalized_cost")
 
-        # 3. do recursion
+        # 2. do recursion
         for child in node.children:
             self._normalize_cost(child)
 
