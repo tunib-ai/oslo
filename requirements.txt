@@ -1,3 +1,4 @@
+anytree
 networkx
 ninja
 pybind11
