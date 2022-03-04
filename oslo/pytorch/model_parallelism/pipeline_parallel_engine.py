@@ -1,11 +1,11 @@
 import time
 from dataclasses import dataclass
+from pprint import pprint
 from typing import Tuple
 
 import psutil
 import torch
 import torch.distributed as dist
-import torch.nn as nn
 from anytree import Node
 
 from oslo.pytorch.utils.huggingface import is_huggingface_model
@@ -14,11 +14,11 @@ from oslo.pytorch.utils.huggingface import is_huggingface_model
 @dataclass
 class Segment(object):
     # ``S`` in the paper.
-    modules: Tuple[nn.Module]
+    nodes: Tuple[Node]
 
     @property
     def cost(self):
-        return sum([m.cost for m in self.modules])
+        return sum([m.oslo_pp_cost for m in self.nodes])
 
 
 @dataclass
@@ -72,8 +72,8 @@ class PipelineParallelEngine(object):
         )
         cost_estimator.compute_cost()
 
-        # 3. Do partitioning
-        self.initialize_partition()
+        # 3. Do tree partitioning
+        self.tree_partitioning()
 
     @staticmethod
     def get_parameters(module, to_list=True):
@@ -102,7 +102,7 @@ class PipelineParallelEngine(object):
                     self.visited[parameters] = child_node
             self.construct_tree(child_node)
 
-    def initialize_partition(self):
+    def tree_partitioning(self):
         # The algorithm starts with a set of virtual devices
         # P(r) = {0, 1, . . . , D − 1} for the root node r
         initial_partition = [
@@ -110,19 +110,53 @@ class PipelineParallelEngine(object):
         ]
         # P(n)
         setattr(self.root_node, "oslo_pp_device_cands", initial_partition)
-        # d(n)
-        setattr(
-            self.root_node, "oslo_pp_device", self.root_node.oslo_pp_device_cands[0]
-        )
-        self.print(self.root_node)
+        self.tree_partitioning_recursion(self.root_node)
 
-    def print(self, node):
+    def tree_partitioning_recursion(self, node):
+        # algo 1
+        p_n = node.oslo_pp_device_cands
+        d_n = p_n[0]
         for child in node.children:
-            if torch.distributed.get_rank() == 0:
-                print(
-                    f"{child.name}: order={child.oslo_execution_order}, cost={child.oslo_pp_cost}"
-                )
-            self.print(child)
+            if len(p_n) > 1:
+                child.oslo_pp_device_cands = self.partition(p_n, node.children)
+            else:
+                child.oslo_pp_device_cands = d_n
+
+        for child in node.children:
+            self.tree_partitioning_recursion(child)
+
+    def partition(self, p_n, q_n):
+        # algo 2
+        memo = {}
+
+        def c(k, i):
+            if (k, i) not in memo:
+                if i == 1:
+                    memo[(k, i)] = -1
+
+                for j in range(i + 1):
+                    sum_j_costs = sum([q.oslo_pp_cost for q in q_n[:j]])
+
+                    if k == 1:
+                        return sum_j_costs
+
+                    _max = [max(c(k - 1, j), sum_j_costs)]
+
+                    if len(_max) > 0:
+                        memo[(k, i)] = min(_max)
+                    else:
+                        memo[(k, i)] = -1
+
+            return memo[(k, i)]
+
+        c(len(p_n), len(q_n))
+
+        if dist.get_rank() == 0:
+            pprint(memo)
+
+    def dhondt(self, p_n, costs_of_segments):
+        # algo 3
+        pass
 
 
 class PartitioningCostEstimator(object):
@@ -220,14 +254,12 @@ class PartitioningCostEstimator(object):
             hooks["post_hook"].remove()
 
         # 3. turn off gradient checkpointing
-        if self.orig_gradient_checkpointing_status is False:
+        if self.orig_gradient_checkpointing_status is True:
             self.model.gradient_checkpointing_disable()
 
     def _compute_node_cost(self, node):
         # 1. compute memory cost
-        memory_cost = 0
-        for parameter in node.parameters:
-            memory_cost += sum(p.numel() for p in parameter if p.requires_grad)
+        memory_cost = sum(p.numel() for p in node.parameters if p.requires_grad)
 
         # 2. compute computation cost if available
         computation_cost = (
@@ -307,6 +339,6 @@ if __name__ == "__main__":
 
     from oslo.pytorch.model_parallelism.network.mpu import MPU
 
-    model = GPT2LMHeadModel.from_pretrained("gpt2")
-    mpu = MPU(1, 2)
+    model = GPT2Model.from_pretrained("gpt2")
+    mpu = MPU(1, 8)
     pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=0.5)
