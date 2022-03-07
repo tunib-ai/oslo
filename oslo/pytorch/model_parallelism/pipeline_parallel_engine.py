@@ -1,5 +1,10 @@
+import sys
 import time
+from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
+from itertools import chain
+from multiprocessing import Pool
 from pprint import pprint
 from typing import Tuple
 
@@ -7,28 +12,12 @@ import psutil
 import torch
 import torch.distributed as dist
 from anytree import Node
+from tqdm import tqdm
 
+from oslo.pytorch.model_parallelism.utils.extensions import get_parameter_dtype
 from oslo.pytorch.utils.huggingface import is_huggingface_model
 
-
-@dataclass
-class Segment(object):
-    # ``S`` in the paper.
-    nodes: Tuple[Node]
-
-    @property
-    def cost(self):
-        return sum([m.oslo_pp_cost for m in self.nodes])
-
-
-@dataclass
-class Partition(object):
-    # ``P`` in the paper.
-    segments: Tuple[Segment]
-
-    @property
-    def cost(self):
-        return sum([m.cost for m in self.segments])
+PARTITIONS_MEMOIZATION = {}
 
 
 class PipelineParallelEngine(object):
@@ -39,6 +28,8 @@ class PipelineParallelEngine(object):
         Amazon SageMaker Model Parallelism: A General and Flexible Framework for Large Model Training
         https://arxiv.org/abs/2111.05972
     """
+
+    __PARTITIONING_MEMO__ = {}
 
     def __init__(
         self,
@@ -51,6 +42,7 @@ class PipelineParallelEngine(object):
         self.mpu = mpu
         self.tracing_inputs = tracing_inputs
         self.visited = {}
+        self.partition_memoization = {}
 
         # 1. construct tree
         self.root_node = Node(
@@ -58,8 +50,8 @@ class PipelineParallelEngine(object):
             parent=None,
             modules=[self.model],
             parameters=self.get_parameters(self.model),
-            oslo_execution_order=0,
-            oslo_pp_cost=1.0,
+            execution_order=0,
+            cost=1.0,
         )
         self.construct_tree(self.root_node)
         del self.visited  # remove visited dict
@@ -109,46 +101,90 @@ class PipelineParallelEngine(object):
             p for p in range(self.mpu.get_pipeline_parallel_world_size())
         ]
         # P(n)
-        setattr(self.root_node, "oslo_pp_device_cands", initial_partition)
-        self.tree_partitioning_recursion(self.root_node)
+        setattr(self.root_node, "device_cands", initial_partition)
+        self._tree_partitioning(self.root_node)
 
-    def tree_partitioning_recursion(self, node):
-        # algo 1
-        p_n = node.oslo_pp_device_cands
+    def _tree_partitioning(self, node):
+        p_n = node.device_cands
         d_n = p_n[0]
         for child in node.children:
             if len(p_n) > 1:
-                child.oslo_pp_device_cands = self.partition(p_n, node.children)
+                setattr(child, "device_cands", self.partition(p_n, node.children))
             else:
-                child.oslo_pp_device_cands = d_n
+                setattr(child, "device_cands", [d_n])
 
-        for child in node.children:
-            self.tree_partitioning_recursion(child)
+    def _partition(self, c, k, nodes):
+        key = k, tuple(node.cost for node in nodes)
+        result = self.__PARTITIONING_MEMO__.get(key, None)
+        if result is not None:
+            return result
+
+        i = len(nodes)
+        if k == 1:
+            c[(k, i)] = sum(n.cost for n in nodes)
+            result = (nodes,)
+        elif k >= len(nodes):
+            c[(k, i)] = max(n.cost for n in nodes)
+            result = tuple((s,) for s in nodes)
+        else:
+            first, tail = nodes[:1], nodes[1:]
+            seg = self._partition(c, k, tail)
+            candidates = [(first, *self._partition(c, k - 1, tail))] + [
+                seg[:j] + (first + seg[j],) + seg[j + 1 :] for j in range(len(seg))
+            ]
+
+            result = tuple()
+            for partition in candidates:
+                cost = max([sum(j.cost for j in S) for S in partition])
+                if c[(k, i)] > cost:
+                    c[(k, i)] = cost
+                    result = partition
+
+        self.__PARTITIONING_MEMO__[key] = result
+        return result
 
     def partition(self, p_n, q_n):
-        # algo 2
-        memo = {}
+        # Find l segments {Si}_0≤i≤l−1 by solving (2) using the recursion (3).
+        c = {
+            (k, i): sys.maxsize
+            for k in range(len(p_n) + 1)
+            for i in range(len(q_n) + 1)
+        }
+        nodes = tuple(Node(name=n.name, cost=n.cost) for n in q_n)
+        partition = self._partition(c, len(p_n), nodes)  # choose l = |P(n)|
 
-        def c(k, i):
-            if (k, i) not in memo:
-                for j in range(i + 1):
-                    sum_j_costs = sum([q.oslo_pp_cost for q in q_n[:j]])
+        # Compute segment costs
+        segments = [
+            Node(name=i, segment=segment, segment_cost=sum(n.cost for n in segment))
+            for i, segment in enumerate(partition)
+        ]
 
-                    if k == 1:
-                        memo[(k, i)] = sum_j_costs
-                    else:
-                        memo[(k, i)] = min([max(c(k - 1, j), sum_j_costs)])
+        # Compute segment allocations
+        P_i = self._d_hondt(p_n, segments)
+        for i in p_n:
+            if len(P_i[i]):
+                for node in segments[i].segment:
+                    setattr(node, "device_cands", [p_n[0]])
+            elif len(segments[i].segment) == 1 and len(P_i[i]):
+                node = segments[i].segment[0]
+                setattr(node, "device_cands", P_i[i])
+                # TODO
 
-            return memo[(k, i)]
-
-        c(len(p_n), len(q_n))
-
-        if dist.get_rank() == 0:
-            pprint(memo)
-
-    def dhondt(self, p_n, costs_of_segments):
-        # algo 3
+    def _set_device(self):
         pass
+
+    def _d_hondt(self, p_n, segments):
+        s = 0
+        P = {i: [] for i in range(len(p_n))}
+        Q = {i: seg.segment_cost for i, seg in enumerate(segments)}
+
+        for p in p_n:
+            k = max(Q, key=Q.get)
+            P[k].append(p)
+            Q[k] /= s + 1
+            s += 1
+
+        return list(P.values())
 
 
 class PartitioningCostEstimator(object):
@@ -195,7 +231,7 @@ class PartitioningCostEstimator(object):
 
     @staticmethod
     def _is_available_tracing(module):
-        elem_size = torch.zeros(1, dtype=module.dtype).element_size()
+        elem_size = torch.zeros(1, dtype=get_parameter_dtype(module)).element_size()
         model_memory_size = (
             sum(p.numel() for p in module.parameters() if p.requires_grad) * elem_size
         )
@@ -209,13 +245,13 @@ class PartitioningCostEstimator(object):
 
         def pre_hook(*args, **kwargs):
             setattr(node, "execution_time_before_tracing", time.time())
-            setattr(node, "oslo_execution_order", self.node_order)
+            setattr(node, "execution_order", self.node_order)
             self.node_order += 1
 
         def post_hook(*args, **kwargs):
             setattr(
                 node,
-                "oslo_pp_computation_cost",
+                "computation_cost",
                 time.time() - node.execution_time_before_tracing,
             )
             delattr(node, "execution_time_before_tracing")
@@ -255,18 +291,15 @@ class PartitioningCostEstimator(object):
 
         # 2. compute computation cost if available
         computation_cost = (
-            node.oslo_pp_computation_cost
-            if hasattr(node, "oslo_pp_computation_cost")
-            else 0.0
-        )
+            node.computation_cost if hasattr(node, "computation_cost") else 0.0
+        ) * 1000  # milliseconds (It is set arbitrarily because it is not mentioned in the paper.)
 
         # 3. compute total cost
         total_cost = (self.alpha * memory_cost) + ((1 - self.alpha) * computation_cost)
-
-        setattr(node, "oslo_pp_unnormalized_cost", total_cost)
+        setattr(node, "unnormalized_cost", total_cost)
 
     def _compute_cost(self, node):
-        if not hasattr(self.root_node, "oslo_pp_unnormalized_cost"):
+        if not hasattr(self.root_node, "unnormalized_cost"):
             # 1. compute cost for root node
             self._compute_node_cost(self.root_node)
         else:
@@ -279,12 +312,12 @@ class PartitioningCostEstimator(object):
 
     def _normalize_cost(self, node):
         # 1. normalize cost for children nodes
-        root_cost = self.root_node.oslo_pp_unnormalized_cost
-        node_cost = node.oslo_pp_unnormalized_cost
-        setattr(node, "oslo_pp_cost", node_cost / root_cost)
+        root_cost = self.root_node.unnormalized_cost
+        node_cost = node.unnormalized_cost
+        setattr(node, "cost", node_cost / root_cost)
 
         if node is not self.root_node:
-            delattr(node, "oslo_pp_unnormalized_cost")
+            delattr(node, "unnormalized_cost")
 
         # 2. do recursion
         for child in node.children:
@@ -292,21 +325,19 @@ class PartitioningCostEstimator(object):
 
     def _fix_execution_order_for_module_list(self, node, prev_order, add_order):
         for child in node.children:
-            if not hasattr(child, "oslo_execution_order"):
-                setattr(child, "oslo_execution_order", prev_order + 1)
+            if not hasattr(child, "execution_order"):
+                setattr(child, "execution_order", prev_order + 1)
                 add_order += 1
             else:
-                child.oslo_execution_order += add_order
+                child.execution_order += add_order
 
-            prev_order = child.oslo_execution_order
+            prev_order = child.execution_order
 
         for child in node.children:
             self._fix_execution_order_for_module_list(child, prev_order, add_order)
 
     def _sort_children_by_execution_order(self, node):
-        node.children = sorted(
-            node.children, key=lambda child: child.oslo_execution_order
-        )
+        node.children = sorted(node.children, key=lambda child: child.execution_order)
 
         for child in node.children:
             self._sort_children_by_execution_order(child)
@@ -317,7 +348,7 @@ class PartitioningCostEstimator(object):
 
         # 2. normalize cost
         self._normalize_cost(self.root_node)
-        delattr(self.root_node, "oslo_pp_unnormalized_cost")
+        delattr(self.root_node, "unnormalized_cost")
 
         # 3. fix execution order for module list
         self._fix_execution_order_for_module_list(self.root_node, 0, 0)
@@ -331,6 +362,6 @@ if __name__ == "__main__":
 
     from oslo.pytorch.model_parallelism.network.mpu import MPU
 
+    mpu = MPU(1, 3)
     model = GPT2Model.from_pretrained("gpt2")
-    mpu = MPU(1, 8)
-    pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=0.5)
+    pp = PipelineParallelEngine(model, mpu)

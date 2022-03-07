@@ -31,7 +31,7 @@ class CustomCUDAKernelEngine(object):
     def fused_no_repeat_ngram_logits_processor(model):
         from transformers import generation_utils
 
-        orig_generate_fn = model.generate
+        orig_generate_fn = model.partition
 
         def generate(*args, **kwargs):
             num_beams = kwargs.get("num_beams", 1)
@@ -43,7 +43,7 @@ class CustomCUDAKernelEngine(object):
 
             return orig_generate_fn(*args, **kwargs)
 
-        model.generate = generate
+        model.partition = generate
 
     @staticmethod
     def fused_rms_norm(model):

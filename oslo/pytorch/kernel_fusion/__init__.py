@@ -1,6 +1,7 @@
 import torch
 
 from oslo.pytorch.kernel_fusion.utils.torch_version import higher_than
+from oslo.pytorch.utils.huggingface import is_huggingface_model
 
 
 def initialize_kernel_fusion(model, config, **kwargs):
@@ -9,6 +10,10 @@ def initialize_kernel_fusion(model, config, **kwargs):
         force_gpu = config["commons"]["force_gpu"]
 
         if "enable" in kf_config and kf_config["enable"] is True:
+            assert is_huggingface_model(
+                model
+            ), "`kerenl_fusion` is only supported for HuggingFace Transformers model."
+
             from oslo.pytorch.kernel_fusion.kernel_fusion_engine import (
                 KernelFusionEngine,
             )

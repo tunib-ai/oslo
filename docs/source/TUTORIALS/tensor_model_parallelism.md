@@ -86,10 +86,11 @@ model = oslo.initialize(model, config="oslo-config.json")
 This is an example of text generation.
 In addition to this, it can be used in various tasks such as sequence classification or masked lm.
 Likewise, you can write the code as usual.
+
 ```python
 text = "I don't want a lot for Christmas. There is just one thing"
 tokens = tokenizer(text, return_tensors="pt").to("cuda")
-print(tokenizer.decode(model.generate(**tokens, num_beams=3)[0]))
+print(tokenizer.decode(model.partition(**tokens, num_beams=3)[0]))
 ```
 ```
 I don't want a lot for Christmas. There is just one thing I want to ...

@@ -661,14 +661,7 @@ class MPU(object):
             )
             inputs = torch.cat([inputs, pad], dim=dim)
 
-        tensor_list = [
-            torch.empty(
-                *inputs.size(),
-                device=inputs.device,
-                dtype=inputs.dtype,
-            )
-            for _ in range(world_size)
-        ]
+        tensor_list = [torch.empty_like(inputs) for _ in range(world_size)]
 
         if torch.is_tensor(inputs):
             if not inputs.is_contiguous():

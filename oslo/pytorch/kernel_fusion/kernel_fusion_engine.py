@@ -27,10 +27,6 @@ class KernelFusionEngine(object):
     def fuse(self):
         if not self.is_fused:
             if len(self.custom_cuda_kernels) > 0:
-                assert is_huggingface_model(
-                    self.model
-                ), "`custom_cuda_kernels` is only supported for HuggingFace Transformers model."
-
                 from oslo.pytorch.kernel_fusion.cuda.engine import (
                     CustomCUDAKernelEngine,
                 )

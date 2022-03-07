@@ -17,20 +17,17 @@ class Binder(object):
     def __init__(self):
         self.compat = self.get_compatibility_version()
 
-    @property
-    def base_path(self):
-        from oslo.pytorch._C import csrc
+    def base_package(self):
+        raise NotImplementedError
 
-        return Path(csrc.__file__).parent.absolute()
-
-    @property
     def name(self):
-        return "oslo"
+        raise NotImplementedError
 
     def includes(self):
-        return [
-            os.path.join(self.base_path, "includes"),
-        ]
+        return []
+
+    def base_path(self):
+        return Path(self.base_package().__file__).parent.absolute()
 
     def sources(self):
         return []
@@ -93,14 +90,19 @@ class Binder(object):
             )
 
         # Ensure directory exists to prevent race condition in some cases
+        name = self.name()
         ext_path = os.environ.get("TORCH_EXTENSIONS_DIR", DEFAULT_TORCH_EXTENSION_PATH)
-        ext_path = os.path.join(ext_path, self.name)
-        os.makedirs(ext_path, exist_ok=True)
+        os.makedirs(os.path.join(ext_path, name), exist_ok=True)
+
+        extra_include_paths = [
+            os.path.join(self.base_path(), include) for include in self.includes()
+        ]
+        sources = [os.path.join(self.base_path(), path) for path in self.sources()]
 
         op_module = cpp_extension.load(
-            name=self.name,
-            sources=[os.path.join(self.base_path, path) for path in self.sources()],
-            extra_include_paths=self.includes(),
+            name=name,
+            sources=sources,
+            extra_include_paths=extra_include_paths,
             extra_cflags=self.cxx_args(),
             extra_cuda_cflags=self.nvcc_args(),
             verbose=False,
@@ -149,8 +151,20 @@ class Binder(object):
         return nvcc_flags + additional_flags
 
 
-class CompilingBinder(Binder):
-    @property
+class OSLOBinder(Binder):
+    def base_package(self):
+        from oslo.pytorch._C import csrc
+
+        return csrc
+
+    def name(self):
+        return "oslo"
+
+    def includes(self):
+        return ["includes"]
+
+
+class CompilingBinder(OSLOBinder):
     def name(self):
         return "compiling"
 
@@ -158,8 +172,7 @@ class CompilingBinder(Binder):
         return ["CompileCache.cpp"]
 
 
-class CUDABinder(Binder):
-    @property
+class CUDABinder(OSLOBinder):
     def name(self):
         return "cuda"
 
