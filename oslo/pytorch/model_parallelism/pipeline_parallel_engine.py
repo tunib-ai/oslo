@@ -82,10 +82,6 @@ class PipelineParallelEngine(object):
         # 3. partition tree
         self.tree_partitioning()
 
-        for node in dfs(self.root_node):
-            if dist.get_rank() == 0:
-                print(node.name, node.device_cands, node.device)
-
     @staticmethod
     def get_parameters(module, to_list=True):
         parameters = module.parameters()
@@ -187,8 +183,6 @@ class PipelineParallelEngine(object):
         S = [segment.segment for segment in segments]
 
         for i in range(len(P)):
-            if dist.get_rank() == 0:
-                print(f"CASE 1: {[n.name for n in S[i]]} {P[i]}")
             if len(P[i]) == 0:
                 for node in S[i]:
                     setattr(node, "device_cands", [p_n[0]])
@@ -198,8 +192,6 @@ class PipelineParallelEngine(object):
                 for node in S[i]:
                     setattr(node, "device_cands", P[i])
             else:
-                if dist.get_rank() == 0:
-                    print(f"CASE 3: {[n.name for n in S[i]]} {P[i]}")
                 self.partition(P[i], S[i])
 
         return [q.device_cands for q in q_n]
