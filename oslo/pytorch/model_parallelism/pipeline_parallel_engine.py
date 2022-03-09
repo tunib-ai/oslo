@@ -187,8 +187,6 @@ class PipelineParallelEngine(object):
                 for node in S[i]:
                     setattr(node, "device_cands", [p_n[0]])
             elif len(S[i]) == 1 or len(P[i]) == 1:
-                if dist.get_rank() == 0:
-                    print(f"CASE 2: {[n.name for n in S[i]]} {P[i]}")
                 for node in S[i]:
                     setattr(node, "device_cands", P[i])
             else:
