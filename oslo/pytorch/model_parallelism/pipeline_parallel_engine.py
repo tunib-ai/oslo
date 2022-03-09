@@ -1,23 +1,38 @@
 import sys
 import time
-from copy import deepcopy
-from dataclasses import dataclass
-from functools import partial
-from itertools import chain
-from multiprocessing import Pool
-from pprint import pprint
-from typing import Tuple
 
 import psutil
 import torch
 import torch.distributed as dist
 from anytree import Node
-from tqdm import tqdm
 
 from oslo.pytorch.model_parallelism.utils.extensions import get_parameter_dtype
 from oslo.pytorch.utils.huggingface import is_huggingface_model
 
 PARTITIONS_MEMOIZATION = {}
+
+
+def dfs(node, bfs_dict=None):
+    yield node
+    if bfs_dict is not None:
+        if node.depth in bfs_dict:
+            bfs_dict[node.depth].append(node)
+        else:
+            bfs_dict[node.depth] = [node]
+
+    for child in node.children:
+        for c in dfs(child, bfs_dict):
+            yield c
+
+
+def bfs(node, bfs_dict=None):
+    if bfs_dict is None:
+        bfs_dict = {}
+    if len(bfs_dict) == 0:
+        list(dfs(node, bfs_dict))
+    for nodes in bfs_dict.values():
+        for node in nodes:
+            yield node
 
 
 class PipelineParallelEngine(object):
@@ -42,6 +57,7 @@ class PipelineParallelEngine(object):
         self.mpu = mpu
         self.tracing_inputs = tracing_inputs
         self.visited = {}
+        self.bfs = {}
         self.partition_memoization = {}
 
         # 1. construct tree
@@ -54,7 +70,6 @@ class PipelineParallelEngine(object):
             cost=1.0,
         )
         self.construct_tree(self.root_node)
-        del self.visited  # remove visited dict
 
         # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
@@ -64,8 +79,12 @@ class PipelineParallelEngine(object):
         )
         cost_estimator.compute_cost()
 
-        # 3. Do tree partitioning
+        # 3. partition tree
         self.tree_partitioning()
+
+        for node in dfs(self.root_node):
+            if dist.get_rank() == 0:
+                print(node.name, node.device_cands, node.device)
 
     @staticmethod
     def get_parameters(module, to_list=True):
@@ -77,14 +96,11 @@ class PipelineParallelEngine(object):
         for name, child in node.modules[0].named_children():
             parameters = self.get_parameters(child, to_list=False)
             if len(parameters) != 0:
-                # drop layers that don't have any parameters like dropout
                 if parameters in self.visited:
-                    # prune tree if this module's parameters are shared.
                     child_node = self.visited[parameters]
                     child_node.modules.append(child)
                     child_node.name = ",".join([child_node.name, name])
                 else:
-                    # make new child node if needed.
                     child_node = Node(
                         name=name,
                         parent=node,
@@ -92,7 +108,7 @@ class PipelineParallelEngine(object):
                         parameters=list(parameters),
                     )
                     self.visited[parameters] = child_node
-            self.construct_tree(child_node)
+                self.construct_tree(child_node)
 
     def tree_partitioning(self):
         # The algorithm starts with a set of virtual devices
@@ -102,16 +118,24 @@ class PipelineParallelEngine(object):
         ]
         # P(n)
         setattr(self.root_node, "device_cands", initial_partition)
-        self._tree_partitioning(self.root_node)
+        # d(n)
+        setattr(self.root_node, "device", self.root_node.device_cands[0])
+        self._tree_partitioning()
 
-    def _tree_partitioning(self, node):
-        p_n = node.device_cands
-        d_n = p_n[0]
-        for child in node.children:
-            if len(p_n) > 1:
-                setattr(child, "device_cands", self.partition(p_n, node.children))
-            else:
-                setattr(child, "device_cands", [d_n])
+    def _tree_partitioning(self):
+        for node in bfs(self.root_node, self.bfs):
+            p_n = node.device_cands
+            setattr(node, "device", p_n[0])  # d(n)
+
+            q_n = node.children
+            if len(q_n) > 0:
+                if len(p_n) > 1:
+                    P = self.partition(p_n, q_n)
+                    for q, device_cands in zip(q_n, P):
+                        setattr(q, "device_cands", device_cands)
+                else:
+                    for q in q_n:
+                        setattr(q, "device_cands", [node.device_cands[0]])
 
     def _partition(self, c, k, nodes):
         key = k, tuple(node.cost for node in nodes)
@@ -136,7 +160,7 @@ class PipelineParallelEngine(object):
             result = tuple()
             for partition in candidates:
                 cost = max([sum(j.cost for j in S) for S in partition])
-                if c[(k, i)] > cost:
+                if c[(k, i)] >= cost:
                     c[(k, i)] = cost
                     result = partition
 
@@ -150,9 +174,8 @@ class PipelineParallelEngine(object):
             for k in range(len(p_n) + 1)
             for i in range(len(q_n) + 1)
         }
-        nodes = tuple(Node(name=n.name, cost=n.cost) for n in q_n)
+        nodes = tuple(q_n)
         partition = self._partition(c, len(p_n), nodes)  # choose l = |P(n)|
-
         # Compute segment costs
         segments = [
             Node(name=i, segment=segment, segment_cost=sum(n.cost for n in segment))
@@ -160,21 +183,29 @@ class PipelineParallelEngine(object):
         ]
 
         # Compute segment allocations
-        P_i = self._d_hondt(p_n, segments)
-        for i in p_n:
-            if len(P_i[i]):
-                for node in segments[i].segment:
-                    setattr(node, "device_cands", [p_n[0]])
-            elif len(segments[i].segment) == 1 and len(P_i[i]):
-                node = segments[i].segment[0]
-                setattr(node, "device_cands", P_i[i])
-                # TODO
+        P = self._d_hondt(p_n, segments)
+        S = [segment.segment for segment in segments]
 
-    def _set_device(self):
-        pass
+        for i in range(len(P)):
+            if dist.get_rank() == 0:
+                print(f"CASE 1: {[n.name for n in S[i]]} {P[i]}")
+            if len(P[i]) == 0:
+                for node in S[i]:
+                    setattr(node, "device_cands", [p_n[0]])
+            elif len(S[i]) == 1 or len(P[i]) == 1:
+                if dist.get_rank() == 0:
+                    print(f"CASE 2: {[n.name for n in S[i]]} {P[i]}")
+                for node in S[i]:
+                    setattr(node, "device_cands", P[i])
+            else:
+                if dist.get_rank() == 0:
+                    print(f"CASE 3: {[n.name for n in S[i]]} {P[i]}")
+                self.partition(P[i], S[i])
+
+        return [q.device_cands for q in q_n]
 
     def _d_hondt(self, p_n, segments):
-        s = 0
+        s = 1
         P = {i: [] for i in range(len(p_n))}
         Q = {i: seg.segment_cost for i, seg in enumerate(segments)}
 
@@ -240,31 +271,20 @@ class PartitioningCostEstimator(object):
         # multiply 1.5 for safer tracing.
 
     def _add_computation_cost_hooks(self, node):
-        # TODO: The time unit is not mentioned in the paper.
-        # I sent an email to author of paper. but he didn't reply :(
-
         def pre_hook(*args, **kwargs):
             setattr(node, "execution_time_before_tracing", time.time())
             setattr(node, "execution_order", self.node_order)
             self.node_order += 1
 
         def post_hook(*args, **kwargs):
-            setattr(
-                node,
-                "computation_cost",
-                time.time() - node.execution_time_before_tracing,
-            )
+            before = node.execution_time_before_tracing
+            setattr(node, "computation_cost", time.time() - before)
             delattr(node, "execution_time_before_tracing")
 
-        self.hooks.append(
-            {
-                "pre_hook": node.modules[0].register_forward_pre_hook(pre_hook),
-                "post_hook": node.modules[0].register_forward_hook(post_hook),
-            }
-        )
+        pre_hook = node.modules[0].register_forward_pre_hook(pre_hook)
+        post_hook = node.modules[0].register_forward_hook(post_hook)
 
-        for child in node.children:
-            self._add_computation_cost_hooks(child)
+        return {"pre_hook": pre_hook, "post_hook": post_hook}
 
     def _trace_computation_cost(self, tracing_inputs):
         # 1. tracing the model
@@ -273,7 +293,9 @@ class PartitioningCostEstimator(object):
                 tracing_inputs = self.model.dummy_inputs
                 tracing_inputs["use_cache"] = False  # for checkpointing
 
-            self._add_computation_cost_hooks(self.root_node)
+            for node in dfs(self.root_node):
+                self.hooks.append(self._add_computation_cost_hooks(node))
+
             self.model(**tracing_inputs)
 
         # 2. removing hooks
@@ -285,83 +307,68 @@ class PartitioningCostEstimator(object):
         if self.orig_gradient_checkpointing_status is True:
             self.model.gradient_checkpointing_disable()
 
-    def _compute_node_cost(self, node):
-        # 1. compute memory cost
-        memory_cost = sum(p.numel() for p in node.parameters if p.requires_grad)
+    def _compute_cost(self):
+        for node in dfs(self.root_node):
+            # 1. compute memory cost
+            memory_cost = sum(p.numel() for p in node.parameters if p.requires_grad)
 
-        # 2. compute computation cost if available
-        computation_cost = (
-            node.computation_cost if hasattr(node, "computation_cost") else 0.0
-        ) * 1000  # milliseconds (It is set arbitrarily because it is not mentioned in the paper.)
+            # 2. compute computation cost if available
+            computation_cost = (
+                node.computation_cost if hasattr(node, "computation_cost") else 0.0
+            ) * 1000  # milliseconds (It is set arbitrarily because it is not mentioned in the paper.)
 
-        # 3. compute total cost
-        total_cost = (self.alpha * memory_cost) + ((1 - self.alpha) * computation_cost)
-        setattr(node, "unnormalized_cost", total_cost)
+            # 3. compute total cost
+            total_cost = (self.alpha * memory_cost) + (
+                (1 - self.alpha) * computation_cost
+            )
+            setattr(node, "unnormalized_cost", total_cost)
 
-    def _compute_cost(self, node):
-        if not hasattr(self.root_node, "unnormalized_cost"):
-            # 1. compute cost for root node
-            self._compute_node_cost(self.root_node)
-        else:
-            # 2. compute cost for children nodes
-            self._compute_node_cost(node)
+    def _normalize_cost(self):
+        for node in dfs(self.root_node):
+            root_cost = self.root_node.unnormalized_cost
+            node_cost = node.unnormalized_cost
+            setattr(node, "cost", node_cost / root_cost)
 
-        # 3. do recursion
-        for child in node.children:
-            self._compute_cost(child)
+            if node is not self.root_node:
+                delattr(node, "unnormalized_cost")
 
-    def _normalize_cost(self, node):
-        # 1. normalize cost for children nodes
-        root_cost = self.root_node.unnormalized_cost
-        node_cost = node.unnormalized_cost
-        setattr(node, "cost", node_cost / root_cost)
-
-        if node is not self.root_node:
-            delattr(node, "unnormalized_cost")
-
-        # 2. do recursion
-        for child in node.children:
-            self._normalize_cost(child)
-
-    def _fix_execution_order_for_module_list(self, node, prev_order, add_order):
-        for child in node.children:
-            if not hasattr(child, "execution_order"):
-                setattr(child, "execution_order", prev_order + 1)
+    def _fix_execution_order_for_module_list(self):
+        prev_order, add_order = 0, 0
+        for node in dfs(self.root_node):
+            if not hasattr(node, "execution_order"):
+                setattr(node, "execution_order", prev_order + 1)
                 add_order += 1
             else:
-                child.execution_order += add_order
+                node.execution_order += add_order
 
-            prev_order = child.execution_order
+            prev_order = node.execution_order
 
-        for child in node.children:
-            self._fix_execution_order_for_module_list(child, prev_order, add_order)
-
-    def _sort_children_by_execution_order(self, node):
-        node.children = sorted(node.children, key=lambda child: child.execution_order)
-
-        for child in node.children:
-            self._sort_children_by_execution_order(child)
+    def _sort_children_by_execution_order(self):
+        for node in dfs(self.root_node):
+            node.children = sorted(
+                node.children, key=lambda child: child.execution_order
+            )
 
     def compute_cost(self):
         # 1. compute cost
-        self._compute_cost(self.root_node)
+        self._compute_cost()
 
         # 2. normalize cost
-        self._normalize_cost(self.root_node)
+        self._normalize_cost()
         delattr(self.root_node, "unnormalized_cost")
 
         # 3. fix execution order for module list
-        self._fix_execution_order_for_module_list(self.root_node, 0, 0)
+        self._fix_execution_order_for_module_list()
 
         # 4. sort children by execution order
-        self._sort_children_by_execution_order(self.root_node)
+        self._sort_children_by_execution_order()
 
 
-if __name__ == "__main__":
-    from transformers import GPT2LMHeadModel, GPT2Model
-
-    from oslo.pytorch.model_parallelism.network.mpu import MPU
-
-    mpu = MPU(1, 3)
-    model = GPT2Model.from_pretrained("gpt2")
-    pp = PipelineParallelEngine(model, mpu)
+# if __name__ == "__main__":
+#     from transformers import GPT2Model
+#
+#     from oslo.pytorch.model_parallelism.network.mpu import MPU
+#
+#     mpu = MPU(1, 4)
+#     model = GPT2Model.from_pretrained("gpt2")
+#     pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=0.2)

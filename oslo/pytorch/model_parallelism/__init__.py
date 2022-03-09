@@ -24,7 +24,6 @@ def initialize_model_parallelism(model, config, **kwargs):
 
             tp_size = mp_config.get("tensor_parallel_size", 1)
             pp_size = mp_config.get("pipeline_parallel_size", 1)
-            deployment_mode = mp_config.get("deployment_mode", False)
 
             assert tp_size >= 1, "param `tensor_parallel_size` must be positive."
             assert pp_size >= 1, "param `pipeline_parallel_size` must be positive."
@@ -55,31 +54,14 @@ def initialize_model_parallelism(model, config, **kwargs):
                 master_port = config.get("master_port", 29500)
                 tp_mapping = kwargs.pop("tp_mapping", None)
 
-                if deployment_mode is False:
-                    mpu = MPU(
-                        tensor_parallel_size=tp_size,
-                        pipeline_parallel_size=pp_size,
-                        master_addr=master_addr,
-                        master_port=master_port,
-                    )
-                    mp_engine = ModelParallelEngine(model, mpu, tp_mapping)
-                    mp_engine.parallelize()
-
-                else:
-                    from oslo.pytorch.model_parallelism.deployment_engine import (
-                        DeploymentEngine,
-                    )
-
-                    deployment_engine = DeploymentEngine(
-                        model,
-                        tp_mapping=tp_mapping,
-                        tp_size=tp_size,
-                        pp_size=pp_size,
-                        master_addr=master_addr,
-                        master_port=master_port,
-                        seed=config.get("seed", None),
-                    )
-                    deployment_engine.parallelize()
+                mpu = MPU(
+                    tensor_parallel_size=tp_size,
+                    pipeline_parallel_size=pp_size,
+                    master_addr=master_addr,
+                    master_port=master_port,
+                )
+                mp_engine = ModelParallelEngine(model, mpu, tp_mapping)
+                mp_engine.parallelize()
 
                 setattr(
                     model, "from_parallelized", partial(from_parallelized, self=model)

@@ -35,7 +35,7 @@ SUPPORTED_FEATURES = {
         "enable": _type(bool),
         "tensor_parallel_size": _type(int),
         "pipeline_parallel_size": _type(int),
-        "deployment_mode": _type(bool),
+        "memory_computation_balance_factor": _type(float),
     },
     "activation_checkpointing": {
         "enable": _type(bool),
