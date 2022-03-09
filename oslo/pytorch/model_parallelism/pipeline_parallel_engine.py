@@ -171,7 +171,9 @@ class PipelineParallelEngine(object):
             for i in range(len(q_n) + 1)
         }
         nodes = tuple(q_n)
-        partition = self._partition(c, len(p_n), nodes)  # choose l = |P(n)|
+        l = len(p_n)  # choose l = |P(n)|
+        partition = self._partition(c, l, nodes)
+
         # Compute segment costs
         segments = [
             Node(name=i, segment=segment, segment_cost=sum(n.cost for n in segment))
