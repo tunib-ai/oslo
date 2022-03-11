@@ -9,8 +9,6 @@ from anytree import Node
 from oslo.pytorch.model_parallelism.utils.extensions import get_parameter_dtype
 from oslo.pytorch.utils.huggingface import is_huggingface_model
 
-PARTITIONS_MEMOIZATION = {}
-
 
 def dfs(node, bfs_dict=None):
     yield node
@@ -69,7 +67,7 @@ class PipelineParallelEngine(object):
             execution_order=0,
             cost=1.0,
         )
-        self.construct_tree(self.root_node)
+        self.construct_tree(self.root_node, self.root_node.name)
 
         # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
@@ -88,11 +86,13 @@ class PipelineParallelEngine(object):
         parameters = list(parameters) if to_list else tuple(parameters)
         return parameters
 
-    def construct_tree(self, node):
+    def construct_tree(self, node, parent_name):
         for name, child in node.modules[0].named_children():
+            name = f"{parent_name}.{name}" if parent_name != "ROOT" else name
             parameters = self.get_parameters(child, to_list=False)
             if len(parameters) != 0:
-                if parameters in self.visited:
+                visited_node = self.visited.get(parameters, None)
+                if visited_node and parent_name not in visited_node.name:
                     child_node = self.visited[parameters]
                     child_node.modules.append(child)
                     child_node.name = ",".join([child_node.name, name])
@@ -104,7 +104,7 @@ class PipelineParallelEngine(object):
                         parameters=list(parameters),
                     )
                     self.visited[parameters] = child_node
-                self.construct_tree(child_node)
+                self.construct_tree(child_node, name)
 
     def tree_partitioning(self):
         # The algorithm starts with a set of virtual devices
@@ -133,46 +133,35 @@ class PipelineParallelEngine(object):
                     for q in q_n:
                         setattr(q, "device_cands", [node.device_cands[0]])
 
-    def _partition(self, c, k, nodes):
-        key = k, tuple(node.cost for node in nodes)
-        result = self.__PARTITIONING_MEMO__.get(key, None)
-        if result is not None:
-            return result
+    @staticmethod
+    def _partition(sequence, k):
+        n = len(sequence)
+        if k >= n:
+            return [[node] for node in sequence]
+        sum = [0] * (n + 1)
+        dp = [[0 for _ in range(n + 1)] for _ in range(2)]
+        tb = [[[] for _ in range(n + 1)] for _ in range(2)]
 
-        i = len(nodes)
-        if k == 1:
-            c[(k, i)] = sum(n.cost for n in nodes)
-            result = (nodes,)
-        elif k >= len(nodes):
-            c[(k, i)] = max(n.cost for n in nodes)
-            result = tuple((s,) for s in nodes)
-        else:
-            first, tail = nodes[:1], nodes[1:]
-            seg = self._partition(c, k, tail)
-            candidates = [(first, *self._partition(c, k - 1, tail))] + [
-                seg[:j] + (first + seg[j],) + seg[j + 1 :] for j in range(len(seg))
-            ]
+        for a in range(0, n):
+            sum[a + 1] = sequence[a].cost + sum[a]
+            dp[0][a + 1] = float("inf")
+            dp[1][a + 1] = float("inf")
 
-            result = tuple()
-            for partition in candidates:
-                cost = max([sum(j.cost for j in S) for S in partition])
-                if c[(k, i)] >= cost:
-                    c[(k, i)] = cost
-                    result = partition
+        for a in range(1, k + 1):
+            for b in range(a + 1, n + 1):
+                for c in range(a - 1, b):
+                    if max(dp[(a - 1) % 2][c], sum[b] - sum[c]) < dp[a % 2][b]:
+                        dp[a % 2][b] = max(dp[(a - 1) % 2][c], sum[b] - sum[c])
+                        tb[a % 2][b] = tb[(a - 1) % 2][c] + [c]
 
-        self.__PARTITIONING_MEMO__[key] = result
-        return result
+        starts = tb[k % 2][n]
+        ends = starts[1:] + [n]
+        return [sequence[s:e] for s, e in zip(starts, ends)]
 
     def partition(self, p_n, q_n):
         # Find l segments {Si}_0≤i≤l−1 by solving (2) using the recursion (3).
-        c = {
-            (k, i): sys.maxsize
-            for k in range(len(p_n) + 1)
-            for i in range(len(q_n) + 1)
-        }
         nodes = tuple(q_n)
-        l = len(p_n)  # choose l = |P(n)|
-        partition = self._partition(c, l, nodes)
+        partition = self._partition(nodes, len(p_n))
 
         # Compute segment costs
         segments = [
@@ -184,7 +173,7 @@ class PipelineParallelEngine(object):
         P = self._d_hondt(p_n, segments)
         S = [segment.segment for segment in segments]
 
-        for i in range(len(P)):
+        for i in range(len(S)):
             if len(P[i]) == 0:
                 for node in S[i]:
                     setattr(node, "device_cands", [p_n[0]])
@@ -198,7 +187,7 @@ class PipelineParallelEngine(object):
 
     def _d_hondt(self, p_n, segments):
         s = 1
-        P = {i: [] for i in range(len(p_n))}
+        P = {i: [] for i in range(len(segments))}
         Q = {i: seg.segment_cost for i, seg in enumerate(segments)}
 
         for p in p_n:
@@ -357,10 +346,10 @@ class PartitioningCostEstimator(object):
 
 
 # if __name__ == "__main__":
-#     from transformers import GPT2Model
+#     from transformers import GPT2Model, T5ForConditionalGeneration, BertForMaskedLM
 #
 #     from oslo.pytorch.model_parallelism.network.mpu import MPU
 #
-#     mpu = MPU(1, 4)
-#     model = GPT2Model.from_pretrained("gpt2")
-#     pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=0.2)
+#     mpu = MPU(1, 8)
+#     model = T5ForConditionalGeneration.from_pretrained("t5-3b")
+#     pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=1.0)
