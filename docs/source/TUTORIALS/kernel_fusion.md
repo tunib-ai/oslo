@@ -212,10 +212,10 @@ oslo_model = oslo.initialize(
 
 ```python
 for _ in range(10):
-    non_oslo_model.partition(input_tensor, no_repeat_ngram_size=3)
+    non_oslo_model._partition(input_tensor, no_repeat_ngram_size=3)
 
 for _ in range(10):
-    oslo_model.partition(input_tensor, no_repeat_ngram_size=3)
+    oslo_model._partition(input_tensor, no_repeat_ngram_size=3)
 ```
 
 ### 3.6. Benchmark
@@ -225,12 +225,12 @@ from time import time
 
 start = time()
 for _ in range(10):
-    non_oslo_model.partition(input_tensor, no_repeat_ngram_size=3)
+    non_oslo_model._partition(input_tensor, no_repeat_ngram_size=3)
 print(f"non-oslo: {time() - start}")
 
 start = time()
 for _ in range(10):
-    oslo_model.partition(input_tensor, no_repeat_ngram_size=3)
+    oslo_model._partition(input_tensor, no_repeat_ngram_size=3)
 print(f"oslo: {time() - start}")
 ```
 ```

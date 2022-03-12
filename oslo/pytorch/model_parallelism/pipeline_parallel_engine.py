@@ -1,11 +1,12 @@
-import sys
 import time
+from math import sqrt
 
 import psutil
 import torch
 import torch.distributed as dist
 from anytree import Node
 
+from oslo.pytorch.model_parallelism.network.broadcaster import Broadcaster
 from oslo.pytorch.model_parallelism.utils.extensions import get_parameter_dtype
 from oslo.pytorch.utils.huggingface import is_huggingface_model
 
@@ -35,14 +36,8 @@ def bfs(node, bfs_dict=None):
 
 class PipelineParallelEngine(object):
     """
-    For more information of the implementation, see the following paper.
-
-    References:
-        Amazon SageMaker Model Parallelism: A General and Flexible Framework for Large Model Training
-        https://arxiv.org/abs/2111.05972
+    Pipeline parallel engine based on Amazon Sagemaker.
     """
-
-    __PARTITIONING_MEMO__ = {}
 
     def __init__(
         self,
@@ -54,42 +49,94 @@ class PipelineParallelEngine(object):
         self.model = model
         self.mpu = mpu
         self.tracing_inputs = tracing_inputs
+        self.memory_computation_balance_factor = memory_computation_balance_factor
+
+    def parallelize(self):
+        # partition model parameters
+        partitioner = ModelPartitioner(
+            model=self.model,
+            mpu=self.mpu,
+            tracing_inputs=self.tracing_inputs,
+            memory_computation_balance_factor=self.memory_computation_balance_factor,
+        )
+        partitioner.partition()
+
+
+class PipelineDeparallelEngine(object):
+    pass
+
+
+class P2PCommunicator(object):
+    def __init__(self, model):
+        self.model = model
+        self.broadcaster = Broadcaster()
+
+
+class ModelPartitioner(object):
+    """
+    For more information of the implementation, see the following paper.
+
+    References:
+        Amazon SageMaker Model Parallelism: A General and Flexible Framework for Large Model Training
+        https://arxiv.org/abs/2111.05972
+    """
+
+    def __init__(
+        self,
+        model,
+        mpu,
+        tracing_inputs=None,
+        memory_computation_balance_factor=1.0,
+    ):
+        self.model = model
+        self.mpu = mpu
+        self.tracing_inputs = tracing_inputs
+        self.memory_computation_balance_factor = memory_computation_balance_factor
+
         self.visited = {}
         self.bfs = {}
         self.partition_memoization = {}
 
+    def partition(self):
         # 1. construct tree
         self.root_node = Node(
-            name="ROOT",
+            name=self.model.__class__.__qualname__,
             parent=None,
             modules=[self.model],
-            parameters=self.get_parameters(self.model),
+            parameters=self._get_parameters(self.model),
             execution_order=0,
             cost=1.0,
         )
-        self.construct_tree(self.root_node, self.root_node.name)
+        self._construct_tree(self.root_node, self.root_node.name)
 
         # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
             root_node=self.root_node,
-            alpha=memory_computation_balance_factor,
-            tracing_inputs=tracing_inputs,
+            alpha=self.memory_computation_balance_factor,
+            tracing_inputs=self.tracing_inputs,
         )
         cost_estimator.compute_cost()
 
         # 3. partition tree
-        self.tree_partitioning()
+        self._tree_partitioning()
+
+        # 4. set device to parameters and buffers
+        for node in dfs(self.root_node):
+            for parameter in node.modules[0].parameters():
+                setattr(parameter, "pp_rank", node.device)
+            for buffer in node.modules[0].buffers():
+                setattr(buffer, "pp_rank", node.device)
 
     @staticmethod
-    def get_parameters(module, to_list=True):
+    def _get_parameters(module, to_list=True):
         parameters = module.parameters()
         parameters = list(parameters) if to_list else tuple(parameters)
         return parameters
 
-    def construct_tree(self, node, parent_name):
+    def _construct_tree(self, node, parent_name):
         for name, child in node.modules[0].named_children():
             name = f"{parent_name}.{name}" if parent_name != "ROOT" else name
-            parameters = self.get_parameters(child, to_list=False)
+            parameters = self._get_parameters(child, to_list=False)
             if len(parameters) != 0:
                 visited_node = self.visited.get(parameters, None)
                 if visited_node and parent_name not in visited_node.name:
@@ -104,37 +151,10 @@ class PipelineParallelEngine(object):
                         parameters=list(parameters),
                     )
                     self.visited[parameters] = child_node
-                self.construct_tree(child_node, name)
-
-    def tree_partitioning(self):
-        # The algorithm starts with a set of virtual devices
-        # P(r) = {0, 1, . . . , D − 1} for the root node r
-        initial_partition = [
-            p for p in range(self.mpu.get_pipeline_parallel_world_size())
-        ]
-        # P(n)
-        setattr(self.root_node, "device_cands", initial_partition)
-        # d(n)
-        setattr(self.root_node, "device", self.root_node.device_cands[0])
-        self._tree_partitioning()
-
-    def _tree_partitioning(self):
-        for node in bfs(self.root_node, self.bfs):
-            p_n = node.device_cands
-            setattr(node, "device", p_n[0])  # d(n)
-
-            q_n = node.children
-            if len(q_n) > 0:
-                if len(p_n) > 1:
-                    P = self.partition(p_n, q_n)
-                    for q, device_cands in zip(q_n, P):
-                        setattr(q, "device_cands", device_cands)
-                else:
-                    for q in q_n:
-                        setattr(q, "device_cands", [node.device_cands[0]])
+                self._construct_tree(child_node, name)
 
     @staticmethod
-    def _partition(sequence, k):
+    def _partition_segments(sequence, k):
         n = len(sequence)
         if k >= n:
             return [[node] for node in sequence]
@@ -158,18 +178,45 @@ class PipelineParallelEngine(object):
         ends = starts[1:] + [n]
         return [sequence[s:e] for s, e in zip(starts, ends)]
 
-    def partition(self, p_n, q_n):
-        # Find l segments {Si}_0≤i≤l−1 by solving (2) using the recursion (3).
-        nodes = tuple(q_n)
-        partition = self._partition(nodes, len(p_n))
+    # Algorithm 1
+    def _tree_partitioning(self):
+        # The algorithm starts with a set of virtual devices
+        # P(r) = {0, 1, . . . , D − 1} for the root node r
+        initial_partition = [
+            p for p in range(self.mpu.get_pipeline_parallel_world_size())
+        ]
+        # P(n)
+        setattr(self.root_node, "device_cands", initial_partition)
+        # d(n)
+        setattr(self.root_node, "device", self.root_node.device_cands[0])
 
-        # Compute segment costs
+        for node in bfs(self.root_node, self.bfs):
+            p_n = node.device_cands
+            setattr(node, "device", p_n[0])  # d(n)
+
+            q_n = node.children
+            if len(q_n) > 0:
+                if len(p_n) > 1:
+                    P = self._partition(p_n, q_n)
+                    for q, device_cands in zip(q_n, P):
+                        setattr(q, "device_cands", device_cands)
+                else:
+                    for q in q_n:
+                        setattr(q, "device_cands", [node.device_cands[0]])
+
+    # Algorithm 2
+    def _partition(self, p_n, q_n):
+        # 1. Find l segments {Si}_0≤i≤l−1 by solving (2) using the recursion (3).
+        nodes = tuple(q_n)
+        partition = self._partition_segments(nodes, len(p_n))
+
+        # 2. Compute segment costs
         segments = [
             Node(name=i, segment=segment, segment_cost=sum(n.cost for n in segment))
             for i, segment in enumerate(partition)
         ]
 
-        # Compute segment allocations
+        # 3, Compute segment allocations
         P = self._d_hondt(p_n, segments)
         S = [segment.segment for segment in segments]
 
@@ -181,19 +228,35 @@ class PipelineParallelEngine(object):
                 for node in S[i]:
                     setattr(node, "device_cands", P[i])
             else:
-                self.partition(P[i], S[i])
+                self._partition(P[i], S[i])
 
         return [q.device_cands for q in q_n]
 
-    def _d_hondt(self, p_n, segments):
+    # Algorithm 3
+    @staticmethod
+    def _d_hondt(p_n, segments):
         s = 1
         P = {i: [] for i in range(len(segments))}
         Q = {i: seg.segment_cost for i, seg in enumerate(segments)}
+        n_children = {
+            i: sum([len(list(n.modules[0].modules())) for n in seg.segment])
+            for i, seg in enumerate(segments)
+        }
+        sqrt_mean_children = sqrt(sum(n_children.values()) / len(n_children.values()))
 
         for p in p_n:
             k = max(Q, key=Q.get)
             P[k].append(p)
-            Q[k] /= s + 1
+            if n_children[k] <= sqrt_mean_children:
+                # This part is different from the paper. For a small model,
+                # the embedding layer will have a significantly large size
+                # Therefore, too many devices are allocated for embedding.
+                # To solve this problem, we reduce the segment cost to zero
+                # if the number of submodules in a node is less than the square
+                # root of the mean of the total number of submodules.
+                Q[k] = 0
+            else:
+                Q[k] /= s + 1
             s += 1
 
         return list(P.values())
@@ -285,7 +348,7 @@ class PartitioningCostEstimator(object):
             hooks["post_hook"].remove()
 
         # 3. turn off gradient checkpointing
-        if self.orig_gradient_checkpointing_status is True:
+        if self.orig_gradient_checkpointing_status is False:
             self.model.gradient_checkpointing_disable()
 
     def _compute_cost(self):
@@ -350,6 +413,6 @@ class PartitioningCostEstimator(object):
 #
 #     from oslo.pytorch.model_parallelism.network.mpu import MPU
 #
-#     mpu = MPU(1, 8)
-#     model = T5ForConditionalGeneration.from_pretrained("t5-3b")
-#     pp = PipelineParallelEngine(model, mpu, memory_computation_balance_factor=1.0)
+#     mpu = MPU(1, 5)
+#     model = GPT2Model.from_pretrained("gpt2")
+#     pp = ModelPartitioner(model, mpu, memory_computation_balance_factor=1.0)

@@ -73,14 +73,18 @@ make_result = (
 # 3. Create a model and input
 model = TASKS[args.task]["class"](args.model)
 input = args.input if args.input is not None else TASKS[args.task]["example"]
-forward_fn = model.forward if generation_task else partial(model.partition, num_beams=3)
+forward_fn = (
+    model.forward if generation_task else partial(model._partition, num_beams=3)
+)
 
 # 4. Get result before parallelization
 output_before = forward_fn(**tokenizer(input, return_tensors="pt"))
 
 # 5. Parallelize the model
 model = oslo.initialize(model, config=args.config)
-forward_fn = model.forward if generation_task else partial(model.partition, num_beams=3)
+forward_fn = (
+    model.forward if generation_task else partial(model._partition, num_beams=3)
+)
 
 # 6. Get result after parallelization
 output_after = forward_fn(**tokenizer(input, return_tensors="pt").to("cuda"))
