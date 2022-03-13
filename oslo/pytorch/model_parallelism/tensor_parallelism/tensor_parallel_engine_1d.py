@@ -16,7 +16,7 @@ from oslo.pytorch.model_parallelism.utils.mappings import (
 )
 
 
-class TensorParallelEngine(object):
+class TensorParallelEngine1D(object):
     def __init__(self, model, mpu, tp_mapping):
         self.model = model
         self.mpu = mpu
@@ -193,7 +193,7 @@ class TensorParallelEngine(object):
         update_module_arguments(self.model, mpu=self.mpu)
 
 
-class TensorDeparallelEngine(object):
+class TensorDeparallelEngine1D(object):
     def __init__(self, model, mpu, tp_mapping):
         self.model = model
         self.mpu = mpu

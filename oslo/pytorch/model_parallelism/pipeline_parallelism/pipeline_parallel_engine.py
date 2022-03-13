@@ -137,12 +137,14 @@ class ModelPartitioner(object):
         for name, child in node.modules[0].named_children():
             name = f"{parent_name}.{name}" if parent_name != "ROOT" else name
             parameters = self._get_parameters(child, to_list=False)
+
             if len(parameters) != 0:
                 visited_node = self.visited.get(parameters, None)
                 if visited_node and parent_name not in visited_node.name:
                     child_node = self.visited[parameters]
                     child_node.modules.append(child)
                     child_node.name = ",".join([child_node.name, name])
+                    setattr(parameters, "tied_parameters", True)
                 else:
                     child_node = Node(
                         name=name,
@@ -408,11 +410,25 @@ class PartitioningCostEstimator(object):
         self._sort_children_by_execution_order()
 
 
-# if __name__ == "__main__":
-#     from transformers import GPT2Model, T5ForConditionalGeneration, BertForMaskedLM
-#
-#     from oslo.pytorch.model_parallelism.network.mpu import MPU
-#
-#     mpu = MPU(1, 5)
-#     model = GPT2Model.from_pretrained("gpt2")
-#     pp = ModelPartitioner(model, mpu, memory_computation_balance_factor=1.0)
+def main():
+    from transformers import GPT2Model
+
+    from oslo.pytorch.model_parallelism.model_parallel_engine import (
+        ModelParallelEngine,
+    )
+    from oslo.pytorch.model_parallelism.network.mpu import MPU
+
+    mpu = MPU(1, 4)
+    model = GPT2Model.from_pretrained("gpt2")
+    pp = ModelParallelEngine(
+        model=model,
+        mpu=mpu,
+        tp_mapping=None,
+        memory_computation_balance_factor=1.0,
+        tracing_inputs=None,
+    )
+    pp.parallelize()
+
+
+if __name__ == "__main__":
+    main()

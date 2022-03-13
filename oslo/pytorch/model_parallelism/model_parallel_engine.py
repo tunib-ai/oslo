@@ -1,9 +1,9 @@
-from oslo.pytorch.model_parallelism.pipeline_parallel_engine import (
+from oslo.pytorch.model_parallelism.pipeline_parallelism.pipeline_parallel_engine import (
     PipelineParallelEngine,
 )
-from oslo.pytorch.model_parallelism.tensor_parallel_engine import (
-    TensorDeparallelEngine,
-    TensorParallelEngine,
+from oslo.pytorch.model_parallelism.tensor_parallelism.tensor_parallel_engine_1d import (
+    TensorDeparallelEngine1D,
+    TensorParallelEngine1D,
 )
 from oslo.pytorch.model_parallelism.utils.distributed import (
     allocate,
@@ -35,18 +35,20 @@ class ModelParallelEngine(object):
             allocate(self.mpu, parameter)
 
     def parallelize(self):
-        TensorParallelEngine(
-            self.model,
-            self.mpu,
-            self.tp_mapping,
-        ).parallelize()
+        if self.mpu.get_tensor_parallel_world_size() > 1:
+            TensorParallelEngine1D(
+                self.model,
+                self.mpu,
+                self.tp_mapping,
+            ).parallelize()
 
-        PipelineParallelEngine(
-            self.model,
-            self.mpu,
-            self.tracing_inputs,
-            self.memory_computation_balance_factor,
-        ).parallelize()
+        if self.mpu.get_tensor_parallel_world_size() > 1:
+            PipelineParallelEngine(
+                self.model,
+                self.mpu,
+                self.tracing_inputs,
+                self.memory_computation_balance_factor,
+            ).parallelize()
 
         self.allocate()
 
@@ -66,5 +68,11 @@ class ModelDeparallelEngine(object):
             deallocate(parameter)
 
     def deparallelize(self):
-        TensorDeparallelEngine(self.model, self.mpu, self.tp_mapping).deparallelize()
+        if self.mpu.get_tensor_parallel_world_size() > 1:
+            TensorDeparallelEngine1D(
+                self.model,
+                self.mpu,
+                self.tp_mapping,
+            ).deparallelize()
+
         self.deallocate()
