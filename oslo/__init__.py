@@ -1,4 +1,3 @@
-# Copyright 2021 TUNiB inc.
+import torch
 
-from oslo.pytorch import initialize
-from oslo.pytorch.model_parallelism.utils.mappings import Column, Row, Update
+torch.nn.utils.clip_grad_norm_

@@ -39,32 +39,6 @@ Be careful that the 'core' is in the PyPI project name.
 pip install oslo-core
 ```
 
-## Basic Usage
-It only takes a single line of code. Now feel free to train and infer a large transformer model. 😎
-
-```python
-import oslo
-
-model = oslo.initialize(model, "oslo-config.json")
-```
-
-## Documents
-For detailed information, refer to [our official document](https://tunib-ai.github.io/oslo/).
-
-## Administrative Notes
-
-### Citing OSLO
-If you find our work useful, please consider citing:
-
-```
-@misc{oslo,
-  author       = {Ko, Hyunwoong and Kim, Soohwan and Lee, Yohan and Park, Kyubyong},
-  title        = {OSLO: Open Source framework for Large-scale transformer Optimization},
-  howpublished = {\url{https://github.com/tunib-ai/oslo}},
-  year         = {2021},
-}
-```
-
 ### Licensing
 
 The Code of the OSLO project is licensed under the terms of the [Apache License 2.0](LICENSE.apache-2.0).
