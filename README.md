@@ -16,28 +16,53 @@
 
 </div>
 
-<br><br>
-
-### What's New:
-* February 15, 2022 [Added kernel fusion](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0).
-* February 15, 2021 [Released OSLO 2.0](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0).
-* February 02, 2022 [Added activation checkpointing](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a1).
-*  January 30, 2022 [Released OSLO 2.0 alpha version](https://github.com/tunib-ai/oslo/releases/tag/v2.0.0a0).
-* December 30, 2021 [Added Deployment Launcher](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
-* December 21, 2021 [Released OSLO 1.0](https://github.com/tunib-ai/oslo/releases/tag/v1.0).
-
-## What is OSLO about?
-OSLO is a framework that provides various GPU based optimization technologies for large-scale modeling.
-3D Parallelism and Kernel Fusion which could be useful when training a large model like [EleutherAI/gpt-j-6B](https://huggingface.co/EleutherAI/gpt-j-6B) are the key features. OSLO makes these technologies easy-to-use by magical compatibility with [Hugging Face Transformers](https://github.com/huggingface/transformers) that is being considered as a <i>de facto</i> standard in 2021.
-
 ## Installation
 OSLO can be easily installed using the pip package manager.
 All the dependencies such as [torch](https://pypi.org/project/torch/) and [transformers](https://pypi.org/project/transformers/) should be installed automatically with the following command.
-Be careful that the 'core' is in the PyPI project name.
+**Be careful that the 'core' is in the PyPI project name.**
 
 ```console
 pip install oslo-core
 ```
+
+## TODO
+### 1. TP
+- 1D TP ([megatron](https://github.com/NVIDIA/Megatron-LM), but also in the [clossal](https://github.com/hpcaitech/ColossalAI) [ai](https://www.colossalai.org/docs/get_started/installation))
+- 2D TP ([clossal](https://github.com/hpcaitech/ColossalAI) [ai](https://www.colossalai.org/docs/get_started/installation))
+- 2.5D TP ([clossal](https://github.com/hpcaitech/ColossalAI) [ai](https://www.colossalai.org/docs/get_started/installation))
+- 3D TP ([clossal](https://github.com/hpcaitech/ColossalAI) [ai](https://www.colossalai.org/docs/get_started/installation))
+
+### 2. PP
+- scheduling
+  - pipedraem-flush ([deepspeed](https://github.com/microsoft/DeepSpeed))
+  - varuna ([microsoft](https://github.com/microsoft/varuna))
+- partitioning
+  - inter-layer partitioning ([gpipe](https://github.com/kakaobrain/torchgpipe) or [deepspeed](https://github.com/microsoft/DeepSpeed))
+  - inter-module partitioning ([sagemaker](https://arxiv.org/pdf/2111.05972.pdf))
+
+### 3. SP
+- Ring self attention ([clossal](https://github.com/hpcaitech/ColossalAI) [ai](https://www.colossalai.org/docs/get_started/installation))
+
+### 4. DP
+- DDP ([torch](https://pytorch.org/docs/master/notes/ddp.html))
+- ZeRO ([deepspeed](https://github.com/microsoft/DeepSpeed))
+  - ZeRO 1, 2, 3 and offloading
+
+### 5. Kernel Fusion
+- CUDA based ([apex](https://github.com/NVIDIA/apex), [deepspeed](https://github.com/microsoft/DeepSpeed), [megatron](https://github.com/NVIDIA/Megatron-LM))
+  - optimizers (adam, adafactor, ...)
+  - layers (norms, softmax, ...)
+- Compile based (torch)
+  - [torch.jit.script](https://pytorch.org/docs/stable/generated/torch.jit.script.html) based functions
+  - [AOTAutograd](https://pytorch.org/functorch/stable/notebooks/aot_autograd_optimizations.html) from functorch
+
+### 6. Transformers model implementation
+- integration with Hugging Face model hub
+
+### 7. ETC
+- [activation checkpointing](https://github.com/microsoft/DeepSpeed/tree/master/deepspeed/runtime/activation_checkpointing)
+- data loader utils
+- ...
 
 ### Licensing
 
