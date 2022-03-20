@@ -1,0 +1,2 @@
+class ParallelContext(object):
+    pass
