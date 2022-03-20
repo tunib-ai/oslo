@@ -1,7 +1,5 @@
 # THIS LIBRARY IS UNDER DEVELOPMENT
 
----
-
 <div align="center">
 
 ![](https://github.com/tunib-ai/oslo/raw/master/assets/oslo.png)
