@@ -2,6 +2,7 @@ from oslo.torch._context.initializers.initializer import ProcessGroupInitializer
 from oslo.torch._context.parallel_mode import ParallelMode
 import torch.distributed as dist
 
+
 class DataParallelGroupInitializer(ProcessGroupInitializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -32,5 +33,5 @@ class DataParallelGroupInitializer(ProcessGroupInitializer):
             "group_world_size": group_world_size,
             "process_group": process_group,
             "ranks_in_group": ranks_in_group,
-            "mode": mode
+            "mode": mode,
         }

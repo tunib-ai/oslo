@@ -1,6 +1,1 @@
-anytree
-networkx
-ninja
-pybind11
-pydot
-torch
+rich
