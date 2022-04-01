@@ -41,7 +41,3 @@ class ParallelMode(Enum):
     TENSOR_3D_INPUT = "tensor_3d_input"
     TENSOR_3D_WEIGHT = "tensor_3d_weight"
     TENSOR_3D_OUTPUT = "tensor_3d_output"
-
-    # MoE parallel groups
-    MOE_DATA = "moe_data"
-    MOE_MODEL = "moe_model"

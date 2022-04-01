@@ -1,5 +1,6 @@
 import os
 import random
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -47,17 +48,139 @@ TensorParallelGroupInitializerByMode = {
 
 
 class ParallelContext(metaclass=SingletonMeta):
+    """
+    Parallel Context object
+
+    This class provides interface functions for users to get the parallel context,
+    such as the global rank, the local rank, the world size, etc. of each devic
+
+    Args:
+        data_parallel_size (int): data parallel size
+        pipeline_parallel_size (int): pipeline parallel size
+        tensor_parallel_size (int): tensor parallel size
+        tensor_parallel_mode (str): tensor parallel mode
+        tensor_parallel_depth (int): tesseract depth for tensor 2.5 parallelism
+        backend (str): distributed backend
+        seed (int): random seed value
+
+    Notes:
+        Let's say we have a total of 16 GPUs denoted g0 ... g15 and we use 2 GPUs to parallelize the model tensor,
+        and 4 GPUs to parallelize the model pipeline. The present method will create 8 model-parallel group,
+        4 pipeline parallel groups and 8 data parallel groups as:
+
+        - width: 4 pipeline parallel group
+            [g0, g4, g8, g12], [g1, g5, g9, g13], [g2, g6, g10, g14], [g3, g7, g11, g15]
+        - height: 8 tensor parallel group
+            [g0, g1], [g2, g3], [g4, g5], [g6, g7], [g8, g9], [g10, g11], [g12, g13], [g14, g15]
+        - depth: 8 data parallel group
+            [g0, g2], [g1, g3], [g4, g6], [g5, g7], [g8, g10], [g9, g11], [g12, g14], [g13, g15]
+
+                        [g02, g06, g10, g14]
+                      /  |              /  |
+                     [g00, g04, g08, g12]  |
+                     |   |             |   |
+        3D parallel  |  [g03, g07, g11, g15]
+                     |  /              |  /
+                     [g01, g05, g09, g13]
+
+                     +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
+              model  | g00 |  |   g00    |  |   g04    |  |   g08    |  |   g12    |  | g12 |
+        data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
+              model  | g01 |  |   g01    |  |   g05    |  |   g09    |  |   g13    |  | g13 |
+                     +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
+                    embedding   pipeline      pipeline      pipeline      pipeline   embedding
+
+                     +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
+              model  | g02 |  |   g02    |  |   g06    |  |   g10    |  |   g14    |  | g14 |
+        data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
+              model  | g03 |  |   g03    |  |   g07    |  |   g11    |  |   g15    |  | g15 |
+                     +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
+                    embedding   pipeline      pipeline      pipeline      pipeline   embedding
+
+    Examples:
+        >>> from oslo.torch._context.parallel_context import ParallelContext
+
+        >>> # Initialize from torch.distributed.launch
+        >>> gpc = ParallelContext.from_torch(
+        ...     data_parallel_size=1,
+        ...     pipeline_parallel_size=1,
+        ...     tensor_parallel_size=1,
+        ... )
+
+        >>> # Initialize from SLURM launcher
+        >>> gpc = ParallelContext.from_slurm(
+        ...     host="MY_HOST",
+        ...     port=1234,
+        ...     data_parallel_size=1,
+        ...     pipeline_parallel_size=1,
+        ...     tensor_parallel_size=1,
+        ... )
+
+        >>> # Initialize from OpenMPI launcher
+        >>> gpc = ParallelContext.from_openmpi(
+        ...     host="MY_HOST",
+        ...     port=1234,
+        ...     data_parallel_size=1,
+        ...     pipeline_parallel_size=1,
+        ...     tensor_parallel_size=1,
+        ... )
+
+        >>> # get world size
+        >>> gpc.get_world_size(ParallelMode.DATA)
+
+        >>> # get local size
+        >>> gpc.get_local_rank(ParallelMode.DATA)
+
+        >>> # get group
+        >>> gpc.get_group(ParallelMode.DATA)
+
+        >>> # get cpu group (gloo backend)
+        >>> gpc.get_cpu_group(ParallelMode.DATA)
+
+        >>> # get whole ranks in group
+        >>> gpc.get_ranks_in_group(ParallelMode.DATA)
+
+        >>> # get next global rank
+        >>> gpc.get_next_global_rank(ParallelMode.DATA)
+
+        >>> # get prev global rank
+        >>> gpc.get_prev_global_rank(ParallelMode.DATA)
+    """
+
     @classmethod
     def from_torch(
         cls,
         data_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: str = None,
-        tensor_parallel_depth: int = None,
+        tensor_parallel_mode: Optional[str] = None,
+        tensor_parallel_depth: Optional[int] = None,
         backend: str = "nccl",
         seed: bool = 42,
     ):
+        """
+        Initialize parallel context from `torch.distributed.launch`.
+
+        Args:
+            data_parallel_size (int): data parallel size
+            pipeline_parallel_size (int): pipeline parallel size
+            tensor_parallel_size (int): tensor parallel size
+            tensor_parallel_mode (Optional[str]): tensor parallel mode
+            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            backend (str): distributed backend
+            seed (int): random seed value
+
+        Returns:
+            ParallelContext: parallel context object
+
+        Examples:
+            >>> # Initialize from torch.distributed.launch
+            >>> gpc = ParallelContext.from_torch(
+            ...     data_parallel_size=1,
+            ...     pipeline_parallel_size=1,
+            ...     tensor_parallel_size=1,
+            ... )
+        """
         rank = int(os.environ["RANK"])
         local_rank = int(os.environ["LOCAL_RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
@@ -87,12 +210,40 @@ class ParallelContext(metaclass=SingletonMeta):
         data_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: str = None,
-        tensor_parallel_depth: int = None,
+        tensor_parallel_mode: Optional[str] = None,
+        tensor_parallel_depth: Optional[int] = None,
         backend: str = "nccl",
         seed: bool = 42,
-        local_rank: int = None,
+        local_rank: Optional[int] = None,
     ):
+        """
+        Initialize parallel context from SLURM launcher.
+
+        Args:
+            host (str): host server
+            port (int): communication port
+            data_parallel_size (int): data parallel size
+            pipeline_parallel_size (int): pipeline parallel size
+            tensor_parallel_size (int): tensor parallel size
+            tensor_parallel_mode (Optional[str]): tensor parallel mode
+            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            backend (str): distributed backend
+            seed (int): random seed value
+            local_rank (Optional[int]): local rank
+
+        Returns:
+            ParallelContext: parallel context object
+
+        Examples:
+            >>> # Initialize from SLURM launcher
+            >>> gpc = ParallelContext.from_slurm(
+            ...     host="MY_HOST",
+            ...     port=1234,
+            ...     data_parallel_size=1,
+            ...     pipeline_parallel_size=1,
+            ...     tensor_parallel_size=1,
+            ... )
+        """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
 
@@ -119,11 +270,38 @@ class ParallelContext(metaclass=SingletonMeta):
         data_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: str = None,
-        tensor_parallel_depth: int = None,
+        tensor_parallel_mode: Optional[str] = None,
+        tensor_parallel_depth: Optional[int] = None,
         backend: str = "nccl",
         seed: bool = 42,
     ):
+        """
+        Initialize parallel context from OpenMPI launcher.
+
+        Args:
+            host (str): host server
+            port (int): communication port
+            data_parallel_size (int): data parallel size
+            pipeline_parallel_size (int): pipeline parallel size
+            tensor_parallel_size (int): tensor parallel size
+            tensor_parallel_mode (Optional[str]): tensor parallel mode
+            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            backend (str): distributed backend
+            seed (int): random seed value
+
+        Returns:
+            ParallelContext: parallel context object
+
+        Examples:
+            >>> # Initialize from OpenMPI launcher
+            >>> gpc = ParallelContext.from_openmpi(
+            ...     host="MY_HOST",
+            ...     port=1234,
+            ...     data_parallel_size=1,
+            ...     pipeline_parallel_size=1,
+            ...     tensor_parallel_size=1,
+            ... )
+        """
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
@@ -146,15 +324,15 @@ class ParallelContext(metaclass=SingletonMeta):
     def __init__(
         self,
         rank: int,
-        local_rank: int,
+        local_rank: Optional[int],
         world_size: int,
         host: str,
         port: int,
         data_parallel_size: int,
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
-        tensor_parallel_mode: str,
-        tensor_parallel_depth: int,
+        tensor_parallel_mode: Optional[str],
+        tensor_parallel_depth: Optional[int],
         backend: str,
         seed: int,
     ):
@@ -214,35 +392,116 @@ class ParallelContext(metaclass=SingletonMeta):
     # sanity check
     @staticmethod
     def _check_parallel_mode(parallel_mode: ParallelMode):
+        """
+        Check parallel_mode is ParallelMode object.
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+        """
         assert isinstance(parallel_mode, ParallelMode)
 
     # world sizes
-    def get_world_size(self, parallel_mode: ParallelMode):
+    def get_world_size(self, parallel_mode: ParallelMode) -> int:
+        """
+        Get world size by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            int: world size by given parallel mode
+
+        Examples:
+            >>> gpc.get_world_size(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
         return self._world_sizes[parallel_mode]
 
     def add_world_size(self, parallel_mode: ParallelMode, world_size: int):
+        """
+        Add world size for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+            world_size (int): world size
+
+        Examples:
+            >>> gpc.add_world_size(ParallelMode.DATA, world_size=16)
+        """
         self._check_parallel_mode(parallel_mode)
         self._world_sizes[parallel_mode] = world_size
 
     # local ranks
-    def get_local_rank(self, parallel_mode: ParallelMode):
+    def get_local_rank(self, parallel_mode: ParallelMode) -> int:
+        """
+        Get local rank by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            int: local rank by given parallel mode
+
+        Examples:
+            >>> gpc.get_local_rank(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
         return self._local_ranks[parallel_mode]
 
     def add_local_rank(self, parallel_mode: ParallelMode, rank: int):
+        """
+        Add local rank for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+            rank (int): world size
+
+        Examples:
+            >>> gpc.add_local_rank(ParallelMode.DATA, rank=4)
+        """
         self._check_parallel_mode(parallel_mode)
         self._local_ranks[parallel_mode] = rank
 
     # global ranks
-    def get_global_rank(self):
+    def get_global_rank(self) -> int:
+        """
+        Get global rank
+
+        Returns:
+            int: global rank
+
+        Examples:
+            >>> gpc.get_global_rank()
+        """
         return self._global_ranks[ParallelMode.GLOBAL]
 
     def add_global_rank(self, parallel_mode: ParallelMode, rank: int):
+        """
+        Add global rank for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+            rank (int): world size
+
+        Examples:
+            >>> gpc.add_global_rank(ParallelMode.DATA, rank=4)
+        """
         self._check_parallel_mode(parallel_mode)
         self._global_ranks[parallel_mode] = rank
 
-    def get_next_global_rank(self, parallel_mode: ParallelMode):
+    def get_next_global_rank(self, parallel_mode: ParallelMode) -> int:
+        """
+        Get next global rank by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            int: The next global rank by given parallel mode
+
+        Examples:
+            >>> gpc.get_next_global_rank(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
 
         local_rank = self.get_local_rank(parallel_mode)
@@ -251,7 +510,19 @@ class ParallelContext(metaclass=SingletonMeta):
 
         return ranks_in_group[(local_rank + 1) % world_size]
 
-    def get_prev_global_rank(self, parallel_mode: ParallelMode):
+    def get_prev_global_rank(self, parallel_mode: ParallelMode) -> int:
+        """
+        Get previous global rank by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            int: The next global rank by given parallel mode
+
+        Examples:
+            >>> gpc.get_prev_global_rank(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
 
         local_rank = self.get_local_rank(parallel_mode)
@@ -260,38 +531,133 @@ class ParallelContext(metaclass=SingletonMeta):
 
         return ranks_in_group[(local_rank - 1) % world_size]
 
-    def is_first_rank(self, parallel_mode: ParallelMode):
+    def is_first_rank(self, parallel_mode: ParallelMode) -> bool:
+        """
+        Is first rank in parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            bool: whether this rank is the first in given parallel mode
+
+        Examples:
+            >>> gpc.is_first_rank(ParallelMode.DATA)
+        """
         return self.get_local_rank(parallel_mode) == 0
 
     def is_last_rank(self, parallel_mode):
+        """
+        Is last rank in parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            bool: whether this rank is the last in given parallel mode
+
+        Examples:
+            >>> gpc.is_last_rank(ParallelMode.DATA)
+        """
         return (
             self.get_local_rank(parallel_mode) == self.get_world_size(parallel_mode) - 1
         )
 
     # groups
-    def get_group(self, parallel_mode: ParallelMode):
+    def get_group(self, parallel_mode: ParallelMode) -> dist.ProcessGroup:
+        """
+        Get process group by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            dist.ProcessGroup: process group by given parallel mode
+
+        Examples:
+            >>> gpc.get_group(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
         return self._groups[parallel_mode]
 
     def add_group(self, parallel_mode: ParallelMode, group: dist.ProcessGroup):
+        """
+        Add process group for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+            group (dist.ProcessGroup): process group
+
+        Examples:
+            >>> gpc.add_global_rank(ParallelMode.DATA, rank=4)
+        """
         self._check_parallel_mode(parallel_mode)
         self._groups[parallel_mode] = group
 
     # cpu groups
     def get_cpu_group(self, parallel_mode: ParallelMode):
+        """
+        Get CPU process group by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            dist.ProcessGroup: process group by given parallel mode
+
+        Notes:
+            this is process group using gloo backend
+
+        Examples:
+            >>> gpc.get_group(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
         return self._cpu_groups[parallel_mode]
 
     def add_cpu_group(self, parallel_mode, group: ParallelMode):
+        """
+        Add CPU process group for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Notes:
+            this is process group using gloo backend
+
+        Examples:
+            >>> gpc.add_cpu_group(ParallelMode.DATA, group=MY_GROUP)
+        """
         self._check_parallel_mode(parallel_mode)
         self._cpu_groups[parallel_mode] = group
 
     # ranks in group
-    def get_ranks_in_group(self, parallel_mode: ParallelMode):
+    def get_ranks_in_group(self, parallel_mode: ParallelMode) -> List[int]:
+        """
+        Get whole ranks in the group by given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            List[int]: Whole ranks in the group by given parallel mode
+
+        Examples:
+            >>> gpc.get_ranks_in_group(ParallelMode.DATA)
+        """
         self._check_parallel_mode(parallel_mode)
         return self._ranks_in_group[parallel_mode]
 
-    def add_ranks_in_group(self, parallel_mode: ParallelMode, ranks: list):
+    def add_ranks_in_group(self, parallel_mode: ParallelMode, ranks: List[int]):
+        """
+        Add whole ranks in the group for given parallel mode
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+            ranks (List[int]): ranks in group
+
+        Examples:
+            >>> gpc.add_ranks_in_group(ParallelMode.DATA, ranks=[0, 2, 5, 8])
+        """
         self._check_parallel_mode(parallel_mode)
         self._ranks_in_group[parallel_mode] = ranks
 
@@ -304,6 +670,16 @@ class ParallelContext(metaclass=SingletonMeta):
         host: str,
         port: int,
     ):
+        """
+        Initialize global distributed process group
+
+        Args:
+            rank (int): global rank
+            world_size (int): global world size
+            backend (int): distributed backend
+            host (str): host server
+            port (int): communication port
+        """
         init_method = f"tcp://{host}:{port}"
         dist.init_process_group(
             rank=rank, world_size=world_size, backend=backend, init_method=init_method
@@ -326,9 +702,20 @@ class ParallelContext(metaclass=SingletonMeta):
         world_size: int,
         process_group: dist.ProcessGroup,
         cpu_group: dist.ProcessGroup,
-        ranks_in_group: list,
+        ranks_in_group: List[int],
         mode: ParallelMode,
     ):
+        """
+        Register distributed setting by give parallel mode
+
+        Args:
+            local_rank (int): local rank
+            world_size (int): global world size
+            process_group (dist.ProcessGroup): process group
+            cpu_group (dist.ProcessGroup): cpu process group
+            ranks_in_group (List[int]): whole ranks in the group
+            mode (ParallelMode): ParallelMode object
+        """
         self.add_local_rank(mode, local_rank)
         self.add_world_size(mode, world_size)
         self.add_group(mode, process_group)
@@ -336,6 +723,7 @@ class ParallelContext(metaclass=SingletonMeta):
         self.add_ranks_in_group(mode, ranks_in_group)
 
     def init_parallel_groups(self):
+        """Initialize whole parallel groups"""
         rank = self.get_global_rank()
         world_size = self.get_world_size(ParallelMode.GLOBAL)
         initializer_param = {
@@ -380,9 +768,19 @@ class ParallelContext(metaclass=SingletonMeta):
                 self._register_dist(**initializer_result)
 
     def is_initialized(self, parallel_mode: ParallelMode):
+        """
+        Check whether it's initialized or not.
+
+        Args:
+            parallel_mode (ParallelMode): ParallelMode object
+
+        Returns:
+            bool: Whether it's initialized or not.
+        """
         return parallel_mode in self._groups
 
     def destroy(self):
+        """Destroy all the parallel groups"""
         for mode, group in self._groups.items():
             if mode is not ParallelMode.GLOBAL:
                 dist.destroy_process_group(group)
@@ -390,7 +788,13 @@ class ParallelContext(metaclass=SingletonMeta):
         dist.destroy_process_group()
         self._groups.clear()
 
-    def set_device(self, device_ordinal: int):
+    def set_device(self, device_ordinal: Optional[int] = None):
+        """
+        Set CUDA device
+
+        Args:
+            device_ordinal (Optional[int]): device ordinal
+        """
         global_rank = self.get_global_rank()
         if device_ordinal is None:
             devices_per_node = torch.cuda.device_count()
@@ -398,6 +802,12 @@ class ParallelContext(metaclass=SingletonMeta):
         torch.cuda.set_device(device_ordinal)
 
     def set_seed(self, seed: int):
+        """
+        Set seed value
+
+        Args:
+            seed (int): seed value
+        """
         random.seed(seed)
         np.random.seed(seed)
         torch.manual_seed(seed)
