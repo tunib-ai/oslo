@@ -158,10 +158,7 @@ class ParallelContext(metaclass=SingletonMeta):
         backend,
         seed,
     ):
-
-        assert (
-            self.tensor_parallel_mode in TensorParallelGroupInitializerByMode.keys()
-        ), (
+        assert self.tensor_parallel_mode in TensorParallelGroupInitializerByMode, (
             f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
             f"currently, we supports {TensorParallelGroupInitializerByMode.keys()}."
         )
