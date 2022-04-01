@@ -24,7 +24,7 @@ class _TensorParallel2p5DRowGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -38,6 +38,7 @@ class _TensorParallel2p5DRowGroupInitializer(ProcessGroupInitializer):
         local_rank = None
         ranks_in_group = None
         process_group = None
+        cpu_group = None
         group_world_size = None
         mode = ParallelMode.TENSOR_2P5D_ROW
 
@@ -51,17 +52,24 @@ class _TensorParallel2p5DRowGroupInitializer(ProcessGroupInitializer):
                         for i in range(self.tesseract_dim)
                     ]
                     group = dist.new_group(ranks)
+                    group_cpu = (
+                        dist.new_group(ranks, backend="gloo")
+                        if dist.get_backend() != "gloo"
+                        else group
+                    )
 
                     if self.rank in ranks:
                         local_rank = ranks.index(self.rank)
                         group_world_size = len(ranks)
                         process_group = group
+                        cpu_group = group_cpu
                         ranks_in_group = ranks
 
         return {
             "local_rank": local_rank,
             "group_world_size": group_world_size,
             "process_group": process_group,
+            "cpu_group": cpu_group,
             "ranks_in_group": ranks_in_group,
             "mode": mode,
         }
@@ -82,7 +90,7 @@ class _TensorParallel2p5DColumnGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -96,6 +104,7 @@ class _TensorParallel2p5DColumnGroupInitializer(ProcessGroupInitializer):
         local_rank = None
         ranks_in_group = None
         process_group = None
+        cpu_group = None
         group_world_size = None
         mode = ParallelMode.TENSOR_2P5D_COL
 
@@ -108,19 +117,25 @@ class _TensorParallel2p5DColumnGroupInitializer(ProcessGroupInitializer):
                         + self.tesseract_dim * (j + self.tesseract_dim * k)
                         for j in range(self.tesseract_dim)
                     ]
-
                     group = dist.new_group(ranks)
+                    group_cpu = (
+                        dist.new_group(ranks, backend="gloo")
+                        if dist.get_backend() != "gloo"
+                        else group
+                    )
 
                     if self.rank in ranks:
                         local_rank = ranks.index(self.rank)
                         group_world_size = len(ranks)
                         process_group = group
+                        cpu_group = group_cpu
                         ranks_in_group = ranks
 
         return {
             "local_rank": local_rank,
             "group_world_size": group_world_size,
             "process_group": process_group,
+            "cpu_group": cpu_group,
             "ranks_in_group": ranks_in_group,
             "mode": mode,
         }
@@ -141,7 +156,7 @@ class _TensorParallel2p5DDepthGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -154,6 +169,7 @@ class _TensorParallel2p5DDepthGroupInitializer(ProcessGroupInitializer):
         local_rank = None
         ranks_in_group = None
         process_group = None
+        cpu_group = None
         group_world_size = None
         mode = ParallelMode.TENSOR_2P5D_DEP
 
@@ -166,19 +182,25 @@ class _TensorParallel2p5DDepthGroupInitializer(ProcessGroupInitializer):
                         + self.tesseract_dim * (j + self.tesseract_dim * k)
                         for k in range(self.tesseract_dep)
                     ]
-
                     group = dist.new_group(ranks)
+                    group_cpu = (
+                        dist.new_group(ranks, backend="gloo")
+                        if dist.get_backend() != "gloo"
+                        else group
+                    )
 
                     if self.rank in ranks:
                         local_rank = ranks.index(self.rank)
                         group_world_size = len(ranks)
                         process_group = group
+                        cpu_group = group_cpu
                         ranks_in_group = ranks
 
         return {
             "local_rank": local_rank,
             "group_world_size": group_world_size,
             "process_group": process_group,
+            "cpu_group": cpu_group,
             "ranks_in_group": ranks_in_group,
             "mode": mode,
         }
@@ -200,7 +222,7 @@ class _TensorParallel2p5DXZGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dep = tesseract_dep
         self.tesseract_dim = tesseract_dim
         assert (
-            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -213,6 +235,7 @@ class _TensorParallel2p5DXZGroupInitializer(ProcessGroupInitializer):
         local_rank = None
         ranks_in_group = None
         process_group = None
+        cpu_group = None
         group_world_size = None
         mode = ParallelMode.TENSOR_2P5D_XZ
 
@@ -225,19 +248,25 @@ class _TensorParallel2p5DXZGroupInitializer(ProcessGroupInitializer):
                     for k in range(self.tesseract_dep)
                     for j in range(self.tesseract_dim)
                 ]
-
                 group = dist.new_group(ranks)
+                group_cpu = (
+                    dist.new_group(ranks, backend="gloo")
+                    if dist.get_backend() != "gloo"
+                    else group
+                )
 
                 if self.rank in ranks:
                     local_rank = ranks.index(self.rank)
                     group_world_size = len(ranks)
                     process_group = group
+                    cpu_group = group_cpu
                     ranks_in_group = ranks
 
         return {
             "local_rank": local_rank,
             "group_world_size": group_world_size,
             "process_group": process_group,
+            "cpu_group": cpu_group,
             "ranks_in_group": ranks_in_group,
             "mode": mode,
         }
@@ -253,7 +282,7 @@ class TensorParallel2p5DGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dep = depth
 
         assert (
-            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
         ), "2.5D tesseract dim should equal to (tensor parallel size / tesseract dep) ^ 0.5"
 
         self.col_initializer = _TensorParallel2p5DColumnGroupInitializer(
