@@ -14,6 +14,9 @@ from oslo.torch._context.initializers.initializer_model import (
 from oslo.torch._context.initializers.initializer_pipeline import (
     PipelineParallelGroupInitializer,
 )
+from oslo.torch._context.initializers.initializer_sequence import (
+    SequenceParallelGroupInitializer,
+)
 from oslo.torch._context.initializers.initializer_tensor import (
     TensorParallelGroupInitializer,
 )
@@ -39,6 +42,7 @@ TensorParallelGroupInitializerByMode = {
     "2d": TensorParallel2DGroupInitializer,
     "2.5d": TensorParallel2p5DGroupInitializer,
     "3d": TensorParallel3DGroupInitializer,
+    "sequence": SequenceParallelGroupInitializer,
 }
 
 
