@@ -1,8 +1,8 @@
-from oslo.torch._context.initializers.initializer import ProcessGroupInitializer
-from oslo.torch._context.initializers.initializer_tensor import (
+from oslo.torch.distributed._initializers.initializer import ProcessGroupInitializer
+from oslo.torch.distributed._initializers.initializer_tensor import (
     TensorParallelGroupInitializer,
 )
-from oslo.torch._context.parallel_mode import ParallelMode
+from oslo.torch.distributed._parallel_mode import ParallelMode
 import torch.distributed as dist
 
 
@@ -23,7 +23,11 @@ class _SequenceDataParallelGroupInitializer(ProcessGroupInitializer):
         for i in range(self.num_group):
             ranks = [i * self.dp_size + j for j in range(self.dp_size)]
             group = dist.new_group(ranks)
-            group_cpu = dist.new_group(ranks, backend='gloo') if dist.get_backend() != 'gloo' else group
+            group_cpu = (
+                dist.new_group(ranks, backend="gloo")
+                if dist.get_backend() != "gloo"
+                else group
+            )
 
             if self.rank in ranks:
                 local_rank = ranks.index(self.rank)

@@ -1,12 +1,13 @@
-from oslo.torch._context.initializers.initializer import ProcessGroupInitializer
-from oslo.torch._context.parallel_mode import ParallelMode
 import torch.distributed as dist
 
+from oslo.torch.distributed._initializers.initializer import ProcessGroupInitializer
+from oslo.torch.distributed._parallel_mode import ParallelMode
 
-class DataParallelGroupInitializer(ProcessGroupInitializer):
+
+class TensorParallelGroupInitializer(ProcessGroupInitializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.num_data_parallel_group = self.world_size // self.data_parallel_size
+        self.num_tensor_parallel_group = self.world_size // self.tensor_parallel_size
 
     def init_dist_group(self):
         local_rank = None
@@ -14,15 +15,19 @@ class DataParallelGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.DATA
+        mode = ParallelMode.TENSOR
 
-        for i in range(self.num_data_parallel_group):
+        for i in range(self.num_tensor_parallel_group):
             ranks = [
-                i + j * self.num_data_parallel_group
-                for j in range(self.data_parallel_size)
+                i * self.tensor_parallel_size + j
+                for j in range(self.tensor_parallel_size)
             ]
             group = dist.new_group(ranks)
-            group_cpu = dist.new_group(ranks, backend='gloo') if dist.get_backend() != 'gloo' else group
+            group_cpu = (
+                dist.new_group(ranks, backend="gloo")
+                if dist.get_backend() != "gloo"
+                else group
+            )
 
             if self.rank in ranks:
                 local_rank = ranks.index(self.rank)

@@ -4,9 +4,8 @@ from contextlib import contextmanager
 import torch.cuda
 from torch import Tensor
 
-from .seed_manager import SeedManager
-from ..parallel_context import ParallelContext
-from ..parallel_mode import ParallelMode
+from oslo.torch.distributed import ParallelMode
+from oslo.torch.distributed._random.seed_manager import SeedManager
 
 _SEED_MANAGER = SeedManager()
 
@@ -81,6 +80,8 @@ def with_seed(func, parallel_mode: ParallelMode):
 
 def moe_set_seed(seed):
     if torch.cuda.is_available():
+        from oslo.torch.distributed import ParallelContext
+
         global_rank = ParallelContext.get_instance().get_global_rank()
         diff_seed = seed + global_rank
         add_seed(ParallelMode.TENSOR, diff_seed, True)

@@ -2,10 +2,10 @@ import math
 
 import torch.distributed as dist
 
-from oslo.torch._context.initializers.initializer import (
+from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
-from oslo.torch._context.parallel_mode import ParallelMode
+from oslo.torch.distributed._parallel_mode import ParallelMode
 
 
 class _TensorParallel2DRowGroupInitializer(ProcessGroupInitializer):

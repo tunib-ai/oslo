@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 
-from oslo.torch._context.parallel_mode import ParallelMode
+from oslo.torch.distributed._parallel_mode import ParallelMode
 
 
 class SeedManager:

@@ -6,36 +6,36 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from oslo.torch._context.initializers.initializer_data import (
+from oslo.torch.distributed._initializers.initializer_data import (
     DataParallelGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_model import (
+from oslo.torch.distributed._initializers.initializer_model import (
     ModelParallelGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_pipeline import (
+from oslo.torch.distributed._initializers.initializer_pipeline import (
     PipelineParallelGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_sequence import (
+from oslo.torch.distributed._initializers.initializer_sequence import (
     SequenceParallelGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_tensor import (
+from oslo.torch.distributed._initializers.initializer_tensor import (
     TensorParallelGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_tensor_1d import (
+from oslo.torch.distributed._initializers.initializer_tensor_1d import (
     TensorParallel1DGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_tensor_2d import (
+from oslo.torch.distributed._initializers.initializer_tensor_2d import (
     TensorParallel2DGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_tensor_2p5d import (
+from oslo.torch.distributed._initializers.initializer_tensor_2p5d import (
     TensorParallel2p5DGroupInitializer,
 )
-from oslo.torch._context.initializers.initializer_tensor_3d import (
+from oslo.torch.distributed._initializers.initializer_tensor_3d import (
     TensorParallel3DGroupInitializer,
 )
-from oslo.torch._context.parallel_mode import ParallelMode
-from oslo.torch._context.random._helper import add_seed, set_mode
-from oslo.torch._context.singleton_meta import SingletonMeta
+from oslo.torch.distributed._parallel_mode import ParallelMode
+from oslo.torch.distributed._random.helper import add_seed, set_mode
+from oslo.torch.distributed._singleton_meta import SingletonMeta
 
 TensorParallelGroupInitializerByMode = {
     None: None,
@@ -98,7 +98,7 @@ class ParallelContext(metaclass=SingletonMeta):
                     embedding   pipeline      pipeline      pipeline      pipeline   embedding
 
     Examples:
-        >>> from oslo.torch._context.parallel_context import ParallelContext
+        >>> from oslo.torch.distributed import ParallelContext
 
         >>> # Initialize from torch.distributed.launch
         >>> gpc = ParallelContext.from_torch(
@@ -831,3 +831,11 @@ class ParallelContext(metaclass=SingletonMeta):
                 add_seed(ParallelMode.TENSOR, tp_seed)
 
             set_mode(ParallelMode.DATA)
+
+
+ParallelContext.from_torch(
+    data_parallel_size=2,
+    pipeline_parallel_size=2,
+    tensor_parallel_size=2,
+    tensor_parallel_mode="1d",
+)

@@ -2,7 +2,7 @@ import math
 
 from transformers.training_args import ParallelMode
 
-from oslo.torch._context.initializers.initializer import (
+from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
 import torch.distributed as dist
