@@ -338,7 +338,7 @@ class ParallelContext(metaclass=Singleton):
     ):
         assert tensor_parallel_mode in TensorParallelGroupInitializerByMode, (
             f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
-            f"currently, we supports {TensorParallelGroupInitializerByMode.keys()}."
+            f"currently, we supports {list(TensorParallelGroupInitializerByMode.keys())}."
         )
 
         if tensor_parallel_size > 1:
