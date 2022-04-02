@@ -52,7 +52,7 @@ class ParallelContext(metaclass=Singleton):
     Parallel Context object
 
     This class provides interface functions for users to get the parallel context,
-    such as the global rank, the local rank, the world size, etc. of each devic
+    such as the global rank, the local rank, the world size, etc. of each device.
 
     Args:
         data_parallel_size (int): data parallel size
