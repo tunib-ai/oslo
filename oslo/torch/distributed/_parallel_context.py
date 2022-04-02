@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
+from oslo._utils import Singleton
 from oslo.torch.distributed._initializers.initializer_data import (
     DataParallelGroupInitializer,
 )
@@ -34,8 +35,7 @@ from oslo.torch.distributed._initializers.initializer_tensor_3d import (
     TensorParallel3DGroupInitializer,
 )
 from oslo.torch.distributed._parallel_mode import ParallelMode
-from oslo.torch.distributed._random.helper import add_seed, set_mode
-from oslo.torch.distributed._singleton_meta import SingletonMeta
+from oslo.torch.distributed._seed.helper import add_seed, set_mode
 
 TensorParallelGroupInitializerByMode = {
     None: None,
@@ -47,7 +47,7 @@ TensorParallelGroupInitializerByMode = {
 }
 
 
-class ParallelContext(metaclass=SingletonMeta):
+class ParallelContext(metaclass=Singleton):
     """
     Parallel Context object
 
@@ -84,18 +84,18 @@ class ParallelContext(metaclass=SingletonMeta):
                      [g01, g05, g09, g13]
 
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-              model  | g00 |  |   g00    |  |   g04    |  |   g08    |  |   g12    |  | g12 |
+             tensor  | g00 |  |   g00    |  |   g04    |  |   g08    |  |   g12    |  | g12 |
         data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
-              model  | g01 |  |   g01    |  |   g05    |  |   g09    |  |   g13    |  | g13 |
+             tensor  | g01 |  |   g01    |  |   g05    |  |   g09    |  |   g13    |  | g13 |
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-                    embedding   pipeline      pipeline      pipeline      pipeline   embedding
+                    pipeline    pipeline      pipeline      pipeline      pipeline    pipeline
 
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-              model  | g02 |  |   g02    |  |   g06    |  |   g10    |  |   g14    |  | g14 |
+             tensor  | g02 |  |   g02    |  |   g06    |  |   g10    |  |   g14    |  | g14 |
         data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
-              model  | g03 |  |   g03    |  |   g07    |  |   g11    |  |   g15    |  | g15 |
+             tensor  | g03 |  |   g03    |  |   g07    |  |   g11    |  |   g15    |  | g15 |
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-                    embedding   pipeline      pipeline      pipeline      pipeline   embedding
+                    pipeline    pipeline      pipeline      pipeline      pipeline    pipeline
 
     Examples:
         >>> from oslo.torch.distributed import ParallelContext
@@ -336,19 +336,19 @@ class ParallelContext(metaclass=SingletonMeta):
         backend: str,
         seed: int,
     ):
-        assert self.tensor_parallel_mode in TensorParallelGroupInitializerByMode, (
+        assert tensor_parallel_mode in TensorParallelGroupInitializerByMode, (
             f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
             f"currently, we supports {TensorParallelGroupInitializerByMode.keys()}."
         )
 
-        if self.tensor_parallel_size > 1:
-            assert self.tensor_parallel_mode is not None, (
+        if tensor_parallel_size > 1:
+            assert tensor_parallel_mode is not None, (
                 "param `tensor_parallel_mode` must not be None "
                 "if param `tensor_parallel_size` > 1."
             )
 
-        if self.tensor_parallel_mode == "2.5d":
-            assert self.tensor_parallel_depth is not None, (
+        if tensor_parallel_mode == "2.5d":
+            assert tensor_parallel_depth is not None, (
                 "param `tensor_parallel_depth` must not be None "
                 "if param `tensor_parallel_mode` is '2.5d'."
             )
@@ -699,7 +699,7 @@ class ParallelContext(metaclass=SingletonMeta):
     def _register_dist(
         self,
         local_rank: int,
-        world_size: int,
+        group_world_size: int,
         process_group: dist.ProcessGroup,
         cpu_group: dist.ProcessGroup,
         ranks_in_group: List[int],
@@ -710,14 +710,14 @@ class ParallelContext(metaclass=SingletonMeta):
 
         Args:
             local_rank (int): local rank
-            world_size (int): global world size
+            group_world_size (int): group world size
             process_group (dist.ProcessGroup): process group
             cpu_group (dist.ProcessGroup): cpu process group
             ranks_in_group (List[int]): whole ranks in the group
             mode (ParallelMode): ParallelMode object
         """
         self.add_local_rank(mode, local_rank)
-        self.add_world_size(mode, world_size)
+        self.add_world_size(mode, group_world_size)
         self.add_group(mode, process_group)
         self.add_cpu_group(mode, cpu_group)
         self.add_ranks_in_group(mode, ranks_in_group)
@@ -726,6 +726,7 @@ class ParallelContext(metaclass=SingletonMeta):
         """Initialize whole parallel groups"""
         rank = self.get_global_rank()
         world_size = self.get_world_size(ParallelMode.GLOBAL)
+
         initializer_param = {
             "rank": rank,
             "world_size": world_size,
@@ -831,11 +832,3 @@ class ParallelContext(metaclass=SingletonMeta):
                 add_seed(ParallelMode.TENSOR, tp_seed)
 
             set_mode(ParallelMode.DATA)
-
-
-ParallelContext.from_torch(
-    data_parallel_size=2,
-    pipeline_parallel_size=2,
-    tensor_parallel_size=2,
-    tensor_parallel_mode="1d",
-)
