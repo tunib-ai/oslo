@@ -44,9 +44,10 @@ def checkpoint(function, *args, **kwargs):
             "If the param `partitioned_checkpointing` is True, `process_group` must not be None. "
             "Please input `process_group` like `checkpoint(fn, *args, process_group=YOUR_GROUP)`."
         )
-        assert (
-            params["process_group"].size() > 1
-        ), "If the param `partitioned_checkpointing` is True, the size of `process_group` must be greather than 1."
+        assert params["process_group"].size() > 1, (
+            "If the param `partitioned_checkpointing` is True, "
+            "the size of `process_group` must be greather than 1."
+        )
 
     if params["contiguous_checkpointing"]:
         assert params["partitioned_checkpointing"] is True, (
@@ -57,7 +58,7 @@ def checkpoint(function, *args, **kwargs):
         assert params["num_layers"] is not None, (
             "If the param `contiguous_checkpointing` is True, `num_layers` must not be None. "
             "Please input the number of layer "
-            "like `checkpoint(fn, *args, partitioned_checkpointing=True, contiguous_checkpointing=True, num_layers=YOUR_NUM_LAYER)."
+            "like `checkpoint(fn, *args, num_layers=YOUR_NUM_LAYER)."
         )
 
     if RNG_TRACKER is None:
