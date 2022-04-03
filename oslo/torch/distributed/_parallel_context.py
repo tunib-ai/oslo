@@ -49,7 +49,7 @@ TensorParallelGroupInitializerByMode = {
 
 class ParallelContext(metaclass=Singleton):
     """
-    Parallel Context object
+    Parallel Context class
 
     This class provides interface functions for users to get the parallel context,
     such as the global rank, the local rank, the world size, etc. of each device.
