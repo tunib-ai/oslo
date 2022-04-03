@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch.nn as nn
 import torch.distributed as dist
 
@@ -37,8 +39,8 @@ class PipelineParallel(nn.Module):
 
     def __init__(
         self,
-        module,
-        process_group: dist.ProcessGroup,
+        module: nn.Module,
+        process_group: Optional[dist.ProcessGroup] = None,
         memory_computation_balance: float = 1.0,
         scheduler: Scheduler = PipeDreamScheduler,
     ):
