@@ -4,3 +4,4 @@ from oslo.torch.nn.modules.fused_bias_dropout import (
     fused_bias_dropout,
     fused_bias_dropout_residual,
 )
+from oslo.torch.nn.modules.linear import LazyLinear
