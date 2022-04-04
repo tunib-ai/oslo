@@ -1,19 +1,9 @@
+from typing import Union, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.modules.lazy import LazyModuleMixin
-
-
-class ColumnParallelLinear(nn.Module):
-    pass
-
-
-class RowParallelLinear(nn.Module):
-    pass
-
-
-class Linear2D(nn.Module):
-    pass
 
 
 class LazyLinear(LazyModuleMixin, nn.Linear):
@@ -30,6 +20,9 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
         out_features: size of each output sample
         bias: If set to ``False``, the layer will not learn an additive bias.
             Default: ``True``
+        skip_bias_add: This was added to enable performance optimization where bias
+                       can be fused with other elementwise operations. We skip
+                       adding bias but instead return it.
 
     Notes:
         This is different from torch.nn.LazyLinear in terms of
@@ -62,15 +55,25 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
         bias: bool = True,
         device=None,
         dtype=None,
+        skip_bias_add=False,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__(0, 0, False)
         self.in_features = in_features
         self.out_features = out_features
+        self.skip_bias_add = skip_bias_add
 
         self.weight = nn.UninitializedParameter(**factory_kwargs)
         if bias:
             self.bias = nn.UninitializedParameter(**factory_kwargs)
+
+    def forward(
+        self, input: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        if not self.skip_bias_add:
+            return F.linear(input, self.weight, self.bias)
+        else:
+            return F.linear(input, self.weight), self.bias
 
     def reset_parameters(self) -> None:
         if not self.has_uninitialized_params():
@@ -84,3 +87,15 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
                 if self.bias is not None:
                     self.bias.materialize((self.out_features,))
                 self.reset_parameters()
+
+
+class ColumnParallelLinear(nn.Module):
+    pass
+
+
+class RowParallelLinear(nn.Module):
+    pass
+
+
+class Linear2D(nn.Module):
+    pass
