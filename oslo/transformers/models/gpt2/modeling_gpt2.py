@@ -380,3 +380,23 @@ class GPT2Block(ParentLazyModuleMixin, nn.Module):
             outputs = (hidden_states,) + outputs[1:]
 
         return outputs  # hidden_states, present, (attentions, cross_attentions)
+
+
+class GPT2Model:
+    pass
+
+
+class GPT2LMHeadModel:
+    pass
+
+
+class GPT2DoubleHeadModel:
+    pass
+
+
+class GPT2ForSequenceClassification:
+    pass
+
+
+class GPT2ForTokenClassification:
+    pass

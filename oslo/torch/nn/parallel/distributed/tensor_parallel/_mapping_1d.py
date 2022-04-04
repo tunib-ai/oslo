@@ -2,15 +2,9 @@ import copy
 import importlib
 
 
-def update_module_arguments(module, **kwargs):
-    for k, v in kwargs.items():
-        setattr(module, k, v)
-
-
-class TensorParallelismInfo(object):
+class TensorParallelInfo(object):
     """
     A class to describe tensor parallelization information.
-
     Args:
         name (Tuple[str]): the name of parameter
         combined_qkv (bool): combined qkv or not
@@ -30,76 +24,22 @@ class TensorParallelismInfo(object):
         return self.__str__()
 
 
-Column = type("Column", (TensorParallelismInfo,), {})
-Row = type("Row", (TensorParallelismInfo,), {})
-Update = type("Update", (TensorParallelismInfo,), {})
+Column = type("Column", (TensorParallelInfo,), {})
+Row = type("Row", (TensorParallelInfo,), {})
+Update = type("Update", (TensorParallelInfo,), {})
 
 
-class TensorParallelismMapping(object):
-    __MAPPING__ = dict(
-        Albert=[
-            Column("query", "key", "value", "ffn"),
-            Row("attention.dense", "ffn_output"),
-            Update("num_attention_heads", "all_head_size"),
-        ],
-        Bart=[
-            Column("q_proj", "k_proj", "v_proj", "fc1"),
-            Row("out_proj", "fc2"),
-            Update("embed_dim", "num_heads"),
-        ],
-        Bert=[
-            Column("query", "key", "value", "intermediate.dense"),
-            Row("output.dense"),
-            Update("num_attention_heads", "all_head_size"),
-        ],
-        Blenderbot=[
-            Column("q_proj", "k_proj", "v_proj", "fc1"),
-            Row("out_proj", "fc2"),
-            Update("embed_dim", "num_heads"),
-        ],
-        BlenderbotSmall=[
-            Column("q_proj", "k_proj", "v_proj", "fc1"),
-            Row("out_proj", "fc2"),
-            Update("embed_dim", "num_heads"),
-        ],
-        T5=[
-            Column("q", "k", "v", "DenseReluDense.wi"),
-            Row("o", "DenseReluDense.wo", "relative_attention_bias"),
-            Update("d_model", "n_heads", "inner_dim"),
-        ],
-        GPT2=[
-            Column("c_attn", reverse=True, combined_qkv=True),
-            Column("c_fc", "q_attn", reverse=True),
-            Row("c_proj", reverse=True),
-            Update("embed_dim", "split_size", "num_heads"),
-        ],
-        GPTNeo=[
-            Column("q_proj", "k_proj", "v_proj", "c_fc"),
-            Row("out_proj", "c_proj"),
-            Update("embed_dim", "num_heads"),
-        ],
-        GPTJ=[
-            Column("q_proj", "k_proj", "v_proj", "fc_in"),
-            Row("out_proj", "fc_out"),
-            Update("embed_dim", "num_attention_heads"),
-        ],
-        Electra=[
-            Column("query", "key", "value", "intermediate.dense"),
-            Row("output.dense"),
-            Update("num_attention_heads", "all_head_size"),
-        ],
-        Roberta=[
-            Column("query", "key", "value", "intermediate.dense"),
-            Row("output.dense"),
-            Update("num_attention_heads", "all_head_size"),
-        ],
-    )
+class TensorParallelMapping(object):
+    __MAPPING__ = {}
 
-    def __init__(self):
+    def __init__(self, tp_mapping=None):
+        if isinstance(tp_mapping, dict):
+            self.__MAPPING__.update(tp_mapping)
+        elif tp_mapping is not None:
+            raise ValueError("The argument `tp_mapping` must be None or dict.")
+
         cache_mapping = {}
-
-        for cls_name, mapping in self.__MAPPING__.items():
-            cls = self._load_class_by_model_name(cls_name)
+        for cls, mapping in self.__MAPPING__.items():
             cache_mapping[cls] = []
 
             for elem in mapping:
@@ -118,32 +58,11 @@ class TensorParallelismMapping(object):
                 else:
                     self.__MAPPING__[cls][elem.__class__.__qualname__] = [elem]
 
-    @staticmethod
-    def _load_class_by_model_name(model_name):
-        """
-        Load base class obj by class name
-
-        Args:
-            model_name (str): model name (e.g. Bert, GPT2, T5, ...)
-
-        Returns:
-            class: XXXPreTrainedModel
-        """
-        transformers = importlib.import_module("transformers")
-        cls = getattr(transformers, f"{model_name}PreTrainedModel", None)
-        if cls is None:
-            cls = getattr(transformers, f"{model_name}PretrainedModel", None)
-        if cls is None:
-            raise ValueError(f"Can not import the model named {cls}.")
-        return cls
-
     def get_mapping(self, model):
         """
         Get mapping by model obj
-
         Args:
             model (PreTrainedModel): model object (e.g. BertForSequenceClassification)
-
         Returns:
             dict: mapping by model
         """
@@ -161,10 +80,8 @@ class TensorParallelismMapping(object):
     def column_parallel_params(self, model):
         """
         Get list of column parallel param elements
-
         Args:
             model (PreTrainedModel): model obj
-
         Returns:
             List[Column]: list of column parallel param elements
         """
@@ -175,10 +92,8 @@ class TensorParallelismMapping(object):
     def row_parallel_params(self, model):
         """
         Get list of row parallel param elements
-
         Args:
             model (PreTrainedModel): model obj
-
         Returns:
             List[Row]: list of row parallel param elements
         """
@@ -189,10 +104,8 @@ class TensorParallelismMapping(object):
     def update_attrs(self, model):
         """
         Get list of update attribute elements
-
         Args:
             model (PreTrainedModel): model obj
-
         Returns:
             List[Update]: list of update attribute elements
         """
@@ -203,12 +116,10 @@ class TensorParallelismMapping(object):
     def search(self, model, param_name):
         """
         Get element by parameter name
-
         Args:
             model (PreTrainedModel): model obj
-
         Returns:
-            TensorParallelismInfo: element by parameter name
+            TensorParallelInfo: element by parameter name
         """
         mapping = self.get_mapping(model)
         count_contain_elem_in_param = 0
@@ -233,11 +144,9 @@ class TensorParallelismMapping(object):
     def is_combined_qkv_param(self, model, param_name):
         """
         Check whether the param is combined qkv or not
-
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
-
         Returns:
             bool: whether the param is combined qkv or not
         """
@@ -248,12 +157,10 @@ class TensorParallelismMapping(object):
     def get_combined_qkv_degree(self, model, param_name, module):
         """
         Get combined qkv degree
-
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
             module (nn.Module): module that has `weight` parameter
-
         Returns:
             int: combined qkv degree
         """
@@ -266,11 +173,9 @@ class TensorParallelismMapping(object):
     def is_reversed_param(self, model, param_name):
         """
         Check whether the parameter is reversed or not
-
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
-
         Returns:
             bool: whether the param is reversed or not
         """
@@ -281,11 +186,9 @@ class TensorParallelismMapping(object):
     def is_column_parallel(self, model, param_name):
         """
         Check whether the parameter is column parallelizable or not
-
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
-
         Returns:
             bool: whether the param is column parallelizable or not
         """
@@ -296,11 +199,9 @@ class TensorParallelismMapping(object):
     def is_row_parallel(self, model, param_name):
         """
         Check whether the parameter is row parallelizable or not
-
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
-
         Returns:
             bool: whether the param is row parallelizable or not
         """
