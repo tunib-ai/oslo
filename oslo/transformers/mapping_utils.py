@@ -87,8 +87,10 @@ class _TensorParallelMappingForHuggingFace(object):
     def _load_hf_class_by_name(model_name):
         """
         Load base class obj by class name
+
         Args:
             model_name (str): model name (e.g. Bert, GPT2, T5, ...)
+
         Returns:
             class: XXXPreTrainedModel
         """
