@@ -1,10 +1,10 @@
 import copy
-import importlib
 
 
 class TensorParallelInfo(object):
     """
     A class to describe tensor parallelization information.
+
     Args:
         name (Tuple[str]): the name of parameter
         combined_qkv (bool): combined qkv or not
@@ -61,8 +61,10 @@ class TensorParallelMapping(object):
     def get_mapping(self, model):
         """
         Get mapping by model obj
+
         Args:
             model (PreTrainedModel): model object (e.g. BertForSequenceClassification)
+
         Returns:
             dict: mapping by model
         """
@@ -80,8 +82,10 @@ class TensorParallelMapping(object):
     def column_parallel_params(self, model):
         """
         Get list of column parallel param elements
+
         Args:
             model (PreTrainedModel): model obj
+
         Returns:
             List[Column]: list of column parallel param elements
         """
@@ -92,8 +96,10 @@ class TensorParallelMapping(object):
     def row_parallel_params(self, model):
         """
         Get list of row parallel param elements
+
         Args:
             model (PreTrainedModel): model obj
+
         Returns:
             List[Row]: list of row parallel param elements
         """
@@ -104,8 +110,10 @@ class TensorParallelMapping(object):
     def update_attrs(self, model):
         """
         Get list of update attribute elements
+
         Args:
             model (PreTrainedModel): model obj
+
         Returns:
             List[Update]: list of update attribute elements
         """
@@ -116,8 +124,10 @@ class TensorParallelMapping(object):
     def search(self, model, param_name):
         """
         Get element by parameter name
+
         Args:
             model (PreTrainedModel): model obj
+
         Returns:
             TensorParallelInfo: element by parameter name
         """
@@ -144,9 +154,11 @@ class TensorParallelMapping(object):
     def is_combined_qkv_param(self, model, param_name):
         """
         Check whether the param is combined qkv or not
+
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
+
         Returns:
             bool: whether the param is combined qkv or not
         """
@@ -157,10 +169,12 @@ class TensorParallelMapping(object):
     def get_combined_qkv_degree(self, model, param_name, module):
         """
         Get combined qkv degree
+
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
             module (nn.Module): module that has `weight` parameter
+
         Returns:
             int: combined qkv degree
         """
@@ -173,9 +187,11 @@ class TensorParallelMapping(object):
     def is_reversed_param(self, model, param_name):
         """
         Check whether the parameter is reversed or not
+
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
+
         Returns:
             bool: whether the param is reversed or not
         """
@@ -186,9 +202,11 @@ class TensorParallelMapping(object):
     def is_column_parallel(self, model, param_name):
         """
         Check whether the parameter is column parallelizable or not
+
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
+
         Returns:
             bool: whether the param is column parallelizable or not
         """
@@ -199,9 +217,11 @@ class TensorParallelMapping(object):
     def is_row_parallel(self, model, param_name):
         """
         Check whether the parameter is row parallelizable or not
+
         Args:
             model (PreTrainedModel): model obj
             param_name (str): name of parameter
+
         Returns:
             bool: whether the param is row parallelizable or not
         """
