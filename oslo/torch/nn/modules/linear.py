@@ -73,7 +73,7 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
             self.bias = nn.UninitializedParameter(**factory_kwargs)
 
     def reset_parameters(self) -> None:
-        if not self.has_uninitialized_params() and self.in_features != 0:
+        if not self.has_uninitialized_params():
             super().reset_parameters()
 
     def initialize_parameters(self) -> None:
