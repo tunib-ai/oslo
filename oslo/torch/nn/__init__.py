@@ -1,8 +1,12 @@
-from oslo.torch.nn.modules.fused_gelu import fused_gelu
-from oslo.torch.nn.modules.fused_bias_gelu import fused_bias_gelu
-from oslo.torch.nn.modules.fused_bias_dropout import (
+from oslo.torch.nn.modules.functional import (
+    fused_gelu,
+    fused_bias_gelu,
     fused_bias_dropout,
     fused_bias_dropout_residual,
 )
+from oslo.torch.nn.modules.dropout import (
+    FusedBiasDropout,
+    FusedBiasDropoutResidual,
+)
 from oslo.torch.nn.modules.linear import LazyLinear
-from oslo.torch.nn.modules.conv_1d import Conv1D, LazyConv1D
+from oslo.torch.nn.modules.conv import Conv1D, LazyConv1D

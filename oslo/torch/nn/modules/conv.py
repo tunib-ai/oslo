@@ -13,14 +13,18 @@ class Conv1D(nn.Module):
     Args:
         nf (`int`): The number of output features.
         nx (`int`): The number of input features.
-
+        skip_bias_add (`bool`): This was added to enable performance optimization where bias
+                       can be fused with other elementwise operations. We skip
+                       adding bias but instead return it.
     References:
         https://github.com/huggingface/transformers/blob/main/src/transformers/modeling_utils.py
     """
 
-    def __init__(self, nf, nx):
+    def __init__(self, nf, nx, skip_bias_add=False):
         super().__init__()
         self.nf = nf
+        self.skip_bias_add = skip_bias_add
+
         w = torch.empty(nx, nf)
         nn.init.normal_(w, std=0.02)
         self.weight = nn.Parameter(w)
@@ -28,9 +32,15 @@ class Conv1D(nn.Module):
 
     def forward(self, x):
         size_out = x.size()[:-1] + (self.nf,)
-        x = torch.addmm(self.bias, x.view(-1, x.size(-1)), self.weight)
-        x = x.view(size_out)
-        return x
+        if not self.skip_bias_add:
+            return torch.addmm(self.bias, x.view(-1, x.size(-1)), self.weight).view(
+                size_out
+            )
+        else:
+            return (
+                torch.mm(x.view(-1, x.size(-1)), self.weight).view(size_out),
+                self.bias,
+            )
 
 
 class LazyConv1D(LazyModuleMixin, Conv1D):
@@ -45,6 +55,9 @@ class LazyConv1D(LazyModuleMixin, Conv1D):
     Args:
         nf (`int`): The number of output features.
         nx (`int`): The number of input features.
+        skip_bias_add (`bool`): This was added to enable performance optimization where bias
+                       can be fused with other elementwise operations. We skip
+                       adding bias but instead return it.
 
     Examples:
         >>> from oslo.torch.nn import LazyConv1D
@@ -67,8 +80,8 @@ class LazyConv1D(LazyModuleMixin, Conv1D):
     weight: nn.UninitializedParameter
     bias: nn.UninitializedParameter
 
-    def __init__(self, nx: int, nf: int) -> None:
-        super().__init__(0, 0)
+    def __init__(self, nx: int, nf: int, skip_bias_add: bool = False) -> None:
+        super().__init__(0, 0, skip_bias_add=skip_bias_add)
         self.nx = nx
         self.nf = nf
         self.weight = nn.UninitializedParameter(device=None, dtype=None)
