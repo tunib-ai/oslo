@@ -19,7 +19,7 @@ class Binder(object):
 
     @property
     def base_path(self):
-        from oslo.pytorch._C import csrc
+        from oslo.torch._C import csrc
 
         return Path(csrc.__file__).parent.absolute()
 
