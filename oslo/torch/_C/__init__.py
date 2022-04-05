@@ -154,4 +154,4 @@ class CUDABinder(Binder):
         return "cuda"
     
     def sources(self):
-        return ["fused_softmax.cu", "CUDABinder.cpp"]
+        return ["fused_softmax.cu", "fused_softmax.cu", "fused_triang_softmax.cu", "CUDABinder.cpp"]
