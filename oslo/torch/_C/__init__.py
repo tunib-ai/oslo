@@ -147,3 +147,11 @@ class Binder(object):
             additional_flags.append(f"-maxrregcount={maxrregcount}")
 
         return nvcc_flags + additional_flags
+
+class CUDABinder(Binder):
+    @property
+    def name(self):
+        return "cuda"
+    
+    def sources(self):
+        return ["fused_softmax.cu", "CUDABinder.cpp"]
