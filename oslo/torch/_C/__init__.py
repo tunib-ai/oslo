@@ -148,10 +148,10 @@ class Binder(object):
 
         return nvcc_flags + additional_flags
 
-class CUDABinder(Binder):
+class SoftmaxBinder(Binder):
     @property
     def name(self):
-        return "cuda"
+        return "oslo-softmax"
     
     def sources(self):
-        return ["fused_softmax.cu", "fused_softmax.cu", "fused_triang_softmax.cu", "CUDABinder.cpp"]
+        return ["scaled_masked_softmax.cu", "scaled_upper_triang_masked_softmax.cu", "fused_ngram_repeat_block.cu", "SoftmaxBinder.cpp"]
