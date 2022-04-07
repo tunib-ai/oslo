@@ -97,6 +97,6 @@ def fused_bias_dropout_residual(x, bias, residual, p, training, inplace):
 
 @torch.jit.script
 def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tensor
+    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tuple[Tensor, Tensor, Tensor]
     # References: `AIB` in https://arxiv.org/abs/2007.00072
     return q_out + q_bias, k_out + k_bias, v_out + v_bias
