@@ -159,7 +159,7 @@ class SoftmaxBinder(Binder):
 class FusedNgramRepeatBlockBinder(Binder):
     @property
     def name(self):
-        return "oslo-softmax"
+        return "oslo-fused-ngram-repeat-block"
     
     def sources(self):
         return ["fused_ngram_repeat_block.cu", "FusedNgramRepeatBlockBinder.cpp"]
