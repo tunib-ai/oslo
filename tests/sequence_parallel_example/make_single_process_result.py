@@ -235,11 +235,16 @@ def main():
 
     engine.zero_grad()
     (lm_loss, sop_output), output = engine(tokens, padding_mask, types, lm_labels, ks_filepath)
+    output.append(lm_loss.detach())
+
+    # train_loss = engine.criterion(lm_loss, sop_output, loss_mask, sentence_order)
+    train_loss = engine.criterion(lm_loss, None, loss_mask, sentence_order)
+
+    output.append(train_loss.detach())
+
+    engine.backward(train_loss)
 
     torch.save(output, output_filepath)
-
-    train_loss = engine.criterion(lm_loss, sop_output, loss_mask, sentence_order)
-    engine.backward(train_loss)
 
     grads = {}
     for name, m in engine.model.named_parameters():

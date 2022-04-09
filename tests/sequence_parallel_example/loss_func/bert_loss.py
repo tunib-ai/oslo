@@ -15,18 +15,27 @@ class BertLoss(nn.Module):
                 sop_logits,
                 loss_mask,
                 sentence_order):
-        lm_loss_ = lm_loss.float()
-        loss_mask = loss_mask.float()
+        # lm_loss_ = lm_loss.float()
+        # loss_mask = loss_mask.float()
+        lm_loss_ = lm_loss.type(torch.float64)
+        loss_mask = loss_mask.type(torch.float64)
         loss_mask_sum = loss_mask.sum()
-        lm_loss = torch.sum(
-            lm_loss_.view(-1) * loss_mask.reshape(-1))
+        lm_loss = torch.sum(lm_loss_.view(-1) * loss_mask.reshape(-1))
 
-        lm_loss /= loss_mask_sum
+        # Example is wrong!
+        # lm_loss /= loss_mask_sum
+        #
+        # torch.distributed.all_reduce(
+        #     lm_loss,
+        #     # group=gpc.get_group(ParallelMode.SEQUENCE)
+        # )
 
-        torch.distributed.all_reduce(
-            lm_loss,
-            # group=gpc.get_group(ParallelMode.SEQUENCE)
-        )
+        # this is correct
+        torch.distributed.all_reduce(lm_loss)
+        torch.distributed.barrier()
+        torch.distributed.all_reduce(loss_mask_sum)
+        torch.distributed.barrier()
+        lm_loss = lm_loss / loss_mask_sum
 
         if sop_logits is not None:
             sop_loss = F.cross_entropy(sop_logits.view(-1, 2).float(),

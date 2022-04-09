@@ -51,6 +51,7 @@ def check_outputs():
     single_output = torch.load(single_output_path, map_location='cpu')
     multi_outputs = [torch.load(p, map_location='cpu') for p in multi_output_paths]
 
+    # need torch.float64 to compare
     # 0: pos_ids
     # 1: attention_masks
     # 2: embedding
@@ -59,21 +60,25 @@ def check_outputs():
     # 4: query
     # 5: key
     # 6: value
-    # 7: attention scores (D)
-    # 8: attention_probs (D)
-    # 9: context_layer (D)
-    # 10: attention output (D)
+    # 7: attention scores
+    # 8: attention_probs
+    # 9: context_layer
+    # 10: attention output
     # 11: attention bias
     # 12: residual
-    # 13: layer_norm input (D) <- == attention output???
-    # 14: layer_norm output (D)
-    # 15: mlp_output (D)
+    # 13: layer_norm input <- == attention output???
+    # 14: layer_norm output
+    # 15: mlp_output
     # 16: mlp_bias
-    # 17: residual (D) <- == layer_norm input (7)
+    # 17: residual <- == layer_norm input (7)
     # --- end ---
-    # 18: BertLayer output (D)
-    # 19: final layer_norm (D)
+    # 18: BertLayer output
+    # 19: final layer_norm
+    # 20: lm_loss
+    # 21: train_loss
     # layer_norm makes small difference to big difference
+
+    print(f'train_loss: {single_output[21]}, {multi_outputs[0][21]}, {multi_outputs[1][21]}')
 
     for i in range(len(single_output)):
         subsequences = [mo[i] for mo in multi_outputs]
@@ -98,9 +103,9 @@ def check_outputs():
             single = single.long()
             multi = multi.long()
 
-        print((i, torch.max(torch.abs(single-multi))))
+        print((i, torch.max(torch.abs(single-multi)), single.shape, subseq_shape))
 
-        # assert torch.allclose(single, multi), (i, torch.max(torch.abs(single-multi)))
+        assert torch.allclose(single, multi), (i, torch.max(torch.abs(single-multi)), single, multi)
 
 
 def check_grads_colossalai():
@@ -131,9 +136,9 @@ def check_grads():
     single_grad = torch.load(single_grad_path, map_location='cpu')
     multi_grads = [torch.load(p, map_location='cpu') for p in multi_grad_paths]
 
-    for k, v in multi_grads[0].items():
-        if v is not None:
-            print(k, torch.allclose(v, multi_grads[1][k]))
+    # for k, v in multi_grads[0].items():
+    #     if v is not None:
+    #         print(k, torch.allclose(v, multi_grads[1][k]))
 
     for k, v in single_grad.items():
         g = torch.zeros_like(v)
@@ -148,6 +153,8 @@ def check_grads():
         else:
             gap = torch.max(torch.abs(v-g))
             print(f'{k} FAILED!!!!!!!!!!!!!', gap)
+            print(v)
+            print(g)
 
 
 def check_attention():
