@@ -84,7 +84,10 @@ class RingQK(torch.autograd.Function):
 
         dist.all_reduce(grad_k, group=gpc.get_group(ParallelMode.SEQUENCE))
         grad_k = grad_k[:, local_rank * ctx.sub_seq_length: (local_rank + 1) * ctx.sub_seq_length]
-        grad_k /= local_world_size
+
+        # example is wrong
+        # this need to be reduce_sum
+        # grad_k /= local_world_size
 
         # calculate gradient for sub_q
         grad_q = torch.zeros_like(sub_q,
@@ -101,7 +104,9 @@ class RingQK(torch.autograd.Function):
             start_idx, end_idx = _calc_incoming_device_range(i, local_rank, local_world_size, ctx.sub_seq_length)
             grad_q += torch.matmul(grad_output[:, :, start_idx: end_idx], sub_k)
 
-        grad_q /= local_world_size
+        # example is wrong
+        # this need to be reduce_sum
+        # grad_q /= local_world_size
 
         return grad_q, grad_k, None, None, None, None   # one more None for ks_save_path
 
@@ -164,7 +169,10 @@ class RingAV(torch.autograd.Function):
         )
         dist.all_reduce(grad_v, group=gpc.get_group(ParallelMode.SEQUENCE))
         grad_v = grad_v[:, local_start_idx:local_end_idx]
-        grad_v /= local_world_size
+
+        # example is wrong
+        # this need to be reduce_sum
+        # grad_v /= local_world_size
 
         # calculate gradient for attention score
         grad_attention_score = torch.zeros_like(attention_scores,
