@@ -23,6 +23,7 @@ from make_check_dataset import build_train_valid_test_data_iterators_for_check
 from model.bert import BertForPretrain, build_pipeline_bert
 
 from initialize import initialize
+from gradient_handler import SequenceParallelGradientHandlerTest
 
 # precision matters
 torch.set_default_dtype(torch.float64)
@@ -87,7 +88,7 @@ def split_example_for_sequence_parallel(example):
 def main():
     # initialize
     colossalai.launch_from_torch(
-        config='./config_multi.py',
+        config='./config_multi_gradient_handler_fix.py',
         seed=1234,
         backend='nccl')
 

@@ -78,7 +78,7 @@ def check_outputs():
     # 21: train_loss
     # layer_norm makes small difference to big difference
 
-    print(f'train_loss: {single_output[21]}, {multi_outputs[0][21]}, {multi_outputs[1][21]}')
+    # print(f'train_loss: {single_output[21]}, {multi_outputs[0][21]}, {multi_outputs[1][21]}')
 
     for i in range(len(single_output)):
         subsequences = [mo[i] for mo in multi_outputs]
@@ -103,7 +103,7 @@ def check_outputs():
             single = single.long()
             multi = multi.long()
 
-        print((i, torch.max(torch.abs(single-multi)), single.shape, subseq_shape))
+        # print((i, torch.max(torch.abs(single-multi)), single.shape, subseq_shape))
 
         assert torch.allclose(single, multi), (i, torch.max(torch.abs(single-multi)), single, multi)
 
@@ -195,10 +195,10 @@ def check_attention():
     multi_attention[:, half:, half:] = torch.matmul(sub_q_2, sub_k_2.transpose(2, 1)) / norm_factor
     multi_attention = multi_attention.view(*output_size)
 
-    for i in range(32):
-        print(single_attention[0][0][i])
-        print(multi_attention[0][0][i])
-        print('-' * 30)
+    # for i in range(32):
+    #     print(single_attention[0][0][i])
+    #     print(multi_attention[0][0][i])
+    #     print('-' * 30)
 
     multi_attention_saved = [mo[7].cuda() for mo in multi_outputs]
     multi_attention_saved = torch.cat(multi_attention_saved, -2).cuda().type(torch.float64)
@@ -232,5 +232,5 @@ if __name__ == "__main__":
     check_weights()
     check_outputs()
     check_grads()
-    # check_attention()
-    # check_ks()
+    check_attention()
+    check_ks()
