@@ -76,7 +76,7 @@ def broadcast_data(keys, data, datatype):
     # Broadcast
     torch.distributed.broadcast(flatten_data,
                                 gpc.get_ranks_in_group(ParallelMode.TENSOR)[0],
-                                # group=gpc.get_group(ParallelMode.TENSOR)
+                                group=gpc.get_group(ParallelMode.TENSOR)
                                 )
 
     # Unpack

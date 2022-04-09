@@ -31,9 +31,9 @@ class BertLoss(nn.Module):
         # )
 
         # this is correct
-        torch.distributed.all_reduce(lm_loss)
+        torch.distributed.all_reduce(lm_loss, group=gpc.get_group(ParallelMode.SEQUENCE))
         torch.distributed.barrier()
-        torch.distributed.all_reduce(loss_mask_sum)
+        torch.distributed.all_reduce(loss_mask_sum, group=gpc.get_group(ParallelMode.SEQUENCE))
         torch.distributed.barrier()
         lm_loss = lm_loss / loss_mask_sum
 
