@@ -107,13 +107,13 @@ class GPT2WithSPModel(GPT2Model):
         start_idx = local_rank * sub_seq_length
         end_idx = min((local_rank+1) * sub_seq_length, seq_length)
         if input_ids is not None:
-            input_ids = input_ids[:, start_idx:end_idx, :].contiguous().to(torch.cuda.current_device())
+            input_ids = input_ids[:, start_idx:end_idx].contiguous().to(torch.cuda.current_device())
             print(input_ids.size())
         if token_type_ids is not None:
-            token_type_ids = token_type_ids[:, start_idx: end_idx, :].contiguous().to(torch.cuda.current_device())
+            token_type_ids = token_type_ids[:, start_idx: end_idx].contiguous().to(torch.cuda.current_device())
             print(token_type_ids.size())
         if position_ids is not None:
-            position_ids = position_ids[:, start_idx: end_idx, :].contiguous().to(torch.cuda.current_device())
+            position_ids = position_ids[:, start_idx: end_idx].contiguous().to(torch.cuda.current_device())
             print(position_ids.size())
         else:
             position_ids = torch.arange(start_idx, end_idx, dtype=torch.long, device=torch.cuda.current_device())
