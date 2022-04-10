@@ -5,6 +5,28 @@ from colossalai.context.parallel_mode import ParallelMode
 from colossalai.nn.layer.parallel_sequence import RingQK, RingAV
 
 
+config = {
+    'parallel' : dict(
+        pipeline=1,
+        tensor=dict(size=4, mode='sequence')
+    )
+}
+rank = int(os.environ['RANK'])
+local_rank = int(os.environ['LOCAL_RANK'])
+world_size = int(os.environ['WORLD_SIZE'])
+host = os.environ['MASTER_ADDR']
+port = int(os.environ['MASTER_PORT'])
+backend = 'nccl'
+gpc.load_config(config)
+gpc.init_global_dist(rank, world_size, backend, host, port)
+gpc.init_parallel_groups()
+
+# set cuda device
+if torch.cuda.is_available():
+    # if local rank is not given, calculate automatically
+    gpc.set_device(local_rank)
+
+
 class GPT2WithSPLMHeadModel(GPT2LMHeadModel):
     def __init__(self, config):
         super().__init__(config)
