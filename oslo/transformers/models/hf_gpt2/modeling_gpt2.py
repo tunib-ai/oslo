@@ -7,6 +7,7 @@ from colossalai.nn.layer.parallel_sequence import RingQK, RingAV
 
 class GPT2WithSPLMHeadModel(GPT2LMHeadModel):
     def __init__(self, config):
+        super().__init__(config)
         self.transformer = GPT2WithSPModel(config)
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
@@ -20,6 +21,7 @@ class GPT2WithSPLMHeadModel(GPT2LMHeadModel):
 
 class GPT2WithSPModel(GPT2Model):
     def __init__(self, config):
+        super().__init__(config)
         self.embed_dim = config.hidden_size
 
         self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
@@ -99,6 +101,7 @@ class GPT2WithSPModel(GPT2Model):
 
 class GPT2WithSPBlock(GPT2Block):
     def __init__(self, config, layer_idx=None):
+        super().__init__(config, layer_idx)
         hidden_size = config.hidden_size
         inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
 
