@@ -66,11 +66,16 @@ class ModelPartitioner(object):
         self._tree_partitioning()
 
         # 4. set device to parameters and buffers
+        prev_node = None
         for node in dfs(self.root_node):
             for parameter in node.modules[0].parameters():
                 setattr(parameter, "pp_rank", node.device)
             for buffer in node.modules[0].buffers():
                 setattr(buffer, "pp_rank", node.device)
+                if (prev_node is not None) & (node is in prev_node.children):
+                    # then prev_node is our parent node
+                    setattr(buffer, "pp_rank_parent", prev_node.device)
+            prev_node = node # previous node to check for parent node
 
     @staticmethod
     def _get_parameters(module, to_list=True):
