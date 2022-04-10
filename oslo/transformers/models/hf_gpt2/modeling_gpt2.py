@@ -1,30 +1,8 @@
-from abc import ABCMeta
-from torch.cuda.amp import custom_bwd, custom_fwd
 from transformers.models.gpt2.modeling_gpt2 import *
 
-
-class RingQK(metaclass=ABCMeta):
-    @staticmethod
-    @custom_fwd
-    def forward():
-        pass
-
-    @staticmethod
-    @custom_bwd
-    def backward():
-        pass
-
-
-class RingAV(metaclass=ABCMeta):
-    @staticmethod
-    @custom_fwd
-    def forward():
-        pass
-
-    @staticmethod
-    @custom_bwd
-    def backward():
-        pass
+from colossalai.core import global_context as gpc
+from colossalai.context.parallel_mode import ParallelMode
+from colossalai.nn.layer.parallel_sequence import RingQK, RingAV
 
 
 class GPT2WithSPLMHeadModel(GPT2LMHeadModel):
@@ -59,6 +37,65 @@ class GPT2WithSPModel(GPT2Model):
         # Initialize weights and apply final processing
         self.post_init()
 
+    def forward(
+        self,
+        input_ids=None,
+        past_key_values=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        self._split_inputs(input_ids, token_type_ids, position_ids)
+        # super().forward(
+        #     input_ids,
+        #     past_key_values,
+        #     attention_mask,
+        #     token_type_ids,
+        #     position_ids,
+        #     head_mask,
+        #     inputs_embeds,
+        #     encoder_hidden_states,
+        #     encoder_attention_mask,
+        #     use_cache,
+        #     output_attentions,
+        #     output_hidden_states,
+        #     return_dict,
+        # )
+
+    def _split_inputs(
+            self,
+            input_ids=None,
+            token_type_ids=None,
+            position_ids=None
+    ):
+        seq_length = input_ids.size(1)
+        local_rank = gpc.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = gpc.get_world_size(ParallelMode.SEQUENCE)
+        sub_seq_length = seq_length // local_world_size
+        start_idx = local_rank * sub_seq_length
+        end_idx = min((local_rank+1) * sub_seq_length, seq_length)
+        if input_ids is not None:
+            input_ids = input_ids[:, start_idx:end_idx, :].contiguous().to(torch.cuda.current_device())
+            print(input_ids.size())
+        if token_type_ids is not None:
+            token_type_ids = token_type_ids[:, start_idx: end_idx, :].contiguous().to(torch.cuda.current_device())
+            print(token_type_ids.size())
+        if position_ids is not None:
+            position_ids = position_ids[:, start_idx: end_idx, :].contiguous().to(torch.cuda.current_device())
+            print(position_ids.size())
+        else:
+            position_ids = torch.arange(start_idx, end_idx, dtype=torch.long, device=torch.cuda.current_device())
+            position_ids = position_ids.unsqueeze(0).view(-1, end_idx - start_idx)
+
+        return input_ids, token_type_ids, position_ids
 
 class GPT2WithSPBlock(GPT2Block):
     def __init__(self, config, layer_idx=None):
@@ -133,3 +170,12 @@ class GPT2RingAttention(GPT2Attention):
         )
 
         return attn_output, attn_weights
+
+
+if __name__ == '__main__':
+    text = ['This is sample text']
+    from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
+    tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+    inputs = tokenizer(text, return_tensors='pt')
+    model = GPT2WithSPModel.from_pretrained('gpt2')
+    outputs = model(**inputs)
