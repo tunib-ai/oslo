@@ -64,9 +64,7 @@ class Binder(object):
                 universal_newlines=True,
             )
             cuda_version = output.split()
-            cuda_bare_metal_version = cuda_version[
-                cuda_version.index("release") + 1
-            ].split(".")[0]
+            cuda_bare_metal_version = cuda_version[cuda_version.index("release") + 1].split(".")[0]
 
             if int(cuda_bare_metal_version) >= 11:
                 return 80  # A100
@@ -148,18 +146,29 @@ class Binder(object):
 
         return nvcc_flags + additional_flags
 
+
 class SoftmaxBinder(Binder):
     @property
     def name(self):
         return "oslo-softmax"
-    
+
     def sources(self):
         return ["scaled_masked_softmax.cu", "scaled_upper_triang_masked_softmax.cu", "SoftmaxBinder.cpp"]
+
 
 class FusedNgramRepeatBlockBinder(Binder):
     @property
     def name(self):
         return "oslo-fused-ngram-repeat-block"
-    
+
     def sources(self):
         return ["fused_ngram_repeat_block.cu", "FusedNgramRepeatBlockBinder.cpp"]
+
+
+class FusedLayerNormBinder(Binder):
+    @property
+    def name(self):
+        return "oslo-fused-layer-norm"
+
+    def sources(self):
+        return ["fused_layer_norm.cu", "FusedLayerNormBinder.cpp"]
