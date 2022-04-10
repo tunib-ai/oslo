@@ -78,21 +78,21 @@ class GPT2WithSPModel(GPT2Model):
         return_dict=None,
     ):
         self._split_inputs(input_ids, token_type_ids, position_ids)
-        # super().forward(
-        #     input_ids,
-        #     past_key_values,
-        #     attention_mask,
-        #     token_type_ids,
-        #     position_ids,
-        #     head_mask,
-        #     inputs_embeds,
-        #     encoder_hidden_states,
-        #     encoder_attention_mask,
-        #     use_cache,
-        #     output_attentions,
-        #     output_hidden_states,
-        #     return_dict,
-        # )
+        super().forward(
+            input_ids,
+            past_key_values,
+            attention_mask,
+            token_type_ids,
+            position_ids,
+            head_mask,
+            inputs_embeds,
+            encoder_hidden_states,
+            encoder_attention_mask,
+            use_cache,
+            output_attentions,
+            output_hidden_states,
+            return_dict,
+        )
 
     def _split_inputs(
             self,
@@ -198,7 +198,7 @@ class GPT2RingAttention(GPT2Attention):
 
 
 if __name__ == '__main__':
-    text = ['This is sample text'] * 64
+    text = ['This is sample text'*110] * 64
     from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
     from transformers.models.gpt2.configuration_gpt2 import GPT2Config
     tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
