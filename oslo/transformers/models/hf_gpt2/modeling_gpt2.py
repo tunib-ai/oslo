@@ -105,7 +105,7 @@ class GPT2WithSPModel(GPT2Model):
         local_world_size = gpc.get_world_size(ParallelMode.SEQUENCE)
         sub_seq_length = seq_length // local_world_size
         start_idx = local_rank * sub_seq_length
-        end_idx = min((local_rank+1) * sub_seq_length, seq_length)
+        end_idx = (local_rank+1) * sub_seq_length if local_rank < local_world_size - 1 else seq_length
         if input_ids is not None:
             input_ids = input_ids[:, start_idx:end_idx].contiguous().to(torch.cuda.current_device())
             print(input_ids.size())
@@ -198,7 +198,7 @@ class GPT2RingAttention(GPT2Attention):
 
 
 if __name__ == '__main__':
-    text = ['This is sample text']
+    text = ['This is sample text'] * 64
     from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
     from transformers.models.gpt2.configuration_gpt2 import GPT2Config
     tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
