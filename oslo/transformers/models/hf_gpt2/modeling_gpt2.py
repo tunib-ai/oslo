@@ -175,7 +175,9 @@ class GPT2RingAttention(GPT2Attention):
 if __name__ == '__main__':
     text = ['This is sample text']
     from transformers.models.gpt2.tokenization_gpt2 import GPT2Tokenizer
+    from transformers.models.gpt2.configuration_gpt2 import GPT2Config
     tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     inputs = tokenizer(text, return_tensors='pt')
-    model = GPT2WithSPModel.from_pretrained('gpt2')
+    config = GPT2Config.from_pretrained('gpt2')
+    model = GPT2WithSPModel(config)
     outputs = model(**inputs)
