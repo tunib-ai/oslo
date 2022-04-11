@@ -103,7 +103,8 @@ class Binder(object):
             extra_include_paths=self.includes(),
             extra_cflags=self.cxx_args(),
             extra_cuda_cflags=self.nvcc_args(),
-            verbose=False,
+            # verbose=False,
+            verbose=True,
         )
 
         return op_module
