@@ -64,7 +64,9 @@ class Binder(object):
                 universal_newlines=True,
             )
             cuda_version = output.split()
-            cuda_bare_metal_version = cuda_version[cuda_version.index("release") + 1].split(".")[0]
+            cuda_bare_metal_version = cuda_version[
+                cuda_version.index("release") + 1
+            ].split(".")[0]
 
             if int(cuda_bare_metal_version) >= 11:
                 return 80  # A100
