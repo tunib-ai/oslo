@@ -1,8 +1,7 @@
 from typing import List, Dict, Optional
 
-from utils import BaseProcessor
+from data_utils import BaseProcessor
 from transformers.data.data_collator import _torch_collate_batch
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -54,10 +53,10 @@ class DataCollatorForCausalLM:
 
     def __init__(
         self,
-        tokenizer: PreTrainedTokenizerBase,
+        tokenizer: ProcessorForCausalLM,
         pad_to_multiple_of: Optional[int] = None,
     ):
-        self.tokenizer = tokenizer
+        self.tokenizer = tokenizer._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
 
     def __call__(self, examples):
