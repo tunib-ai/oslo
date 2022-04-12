@@ -153,7 +153,7 @@ class Binder(object):
 class SoftmaxBinder(Binder):
     @property
     def name(self):
-        return "oslo-softmax"
+        return "oslo_softmax"
 
     def sources(self):
         return ["scaled_masked_softmax.cu", "scaled_upper_triang_masked_softmax.cu", "SoftmaxBinder.cpp"]
