@@ -1,24 +1,8 @@
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import List, Dict, Optional
 
-from transformers import AutoTokenizer
+from utils import BaseProcessor
 from transformers.data.data_collator import _torch_collate_batch
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-
-
-class BaseProcessor(ABC):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
-        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self._max_length = max_length
-        self._chunk_size = max_length
-        self._buffer = []
-
-    def save_tokenizer(self, path: str) -> None:
-        self._tokenizer.save_pretrained(path)
-
-    @abstractmethod
-    def __call__(self, list_of_str: List[str]) -> Dict[str, List[int]]:
-        pass
 
 
 class ProcessorForCausalLM(BaseProcessor):
