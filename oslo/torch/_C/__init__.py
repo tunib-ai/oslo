@@ -1,7 +1,7 @@
 import os
-import subprocess
 import sys
 from pathlib import Path
+import torch
 
 from torch.utils import cpp_extension
 
@@ -35,51 +35,9 @@ class Binder(object):
     def sources(self):
         return []
 
-    @staticmethod
-    def _search_compatibility_version():
-        device_query = os.path.join(
-            cpp_extension.CUDA_HOME,
-            "extras",
-            "demo_suite",
-            "deviceQuery",
-        )
-
-        output = subprocess.check_output(
-            [device_query],
-            universal_newlines=True,
-        ).split("\n")
-
-        versions = []
-        for line in output:
-            if "CUDA Capability" in line:
-                versions.append(line)
-
-        return versions[0].replace(".", "")[-2:].strip()
-
-    @staticmethod
-    def _constant_compatibility_version():
-        try:
-            output = subprocess.check_output(
-                [os.path.join(cpp_extension.CUDA_HOME, "bin", "nvcc"), "-V"],
-                universal_newlines=True,
-            )
-            cuda_version = output.split()
-            cuda_bare_metal_version = cuda_version[
-                cuda_version.index("release") + 1
-            ].split(".")[0]
-
-            if int(cuda_bare_metal_version) >= 11:
-                return 80  # A100
-            else:
-                return 70  # V100
-        except:
-            return 0
-
     def get_compatibility_version(self):
-        try:
-            return self._search_compatibility_version()
-        except Exception:
-            return self._constant_compatibility_version()
+        a, b = torch.cuda.get_device_capability(torch.cuda.current_device())
+        return int(str(a) + str(b))
 
     def bind(self):
         try:
@@ -148,18 +106,29 @@ class Binder(object):
 
         return nvcc_flags + additional_flags
 
+
 class SoftmaxBinder(Binder):
     @property
     def name(self):
-        return "oslo-softmax"
+        return "oslo_softmax"
     
     def sources(self):
         return ["scaled_masked_softmax.cu", "scaled_upper_triang_masked_softmax.cu", "SoftmaxBinder.cpp"]
+
 
 class FusedNgramRepeatBlockBinder(Binder):
     @property
     def name(self):
         return "oslo-fused-ngram-repeat-block"
-    
+
     def sources(self):
         return ["fused_ngram_repeat_block.cu", "FusedNgramRepeatBlockBinder.cpp"]
+
+
+class FusedLayerNormBinder(Binder):
+    @property
+    def name(self):
+        return "oslo-fused-layer-norm"
+
+    def sources(self):
+        return ["fused_layer_norm.cu", "FusedLayerNormBinder.cpp"]
