@@ -5,7 +5,7 @@ from transformers.file_utils import PaddingStrategy
 from data_utils import BaseProcessor
 
 
-class ProcessorForSequenceClassfication(BaseProcessor):
+class ProcessorForSequenceClassification(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: Optional[int] = None) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
     
@@ -25,7 +25,7 @@ class DataCollatorForSequenceClassification:
 
     def __init__(
         self,
-        tokenizer: ProcessorForSequenceClassfication,
+        tokenizer: ProcessorForSequenceClassification,
         pad_to_multiple_of: Optional[int] = None,
         padding: PaddingStrategy = "longest",
         # model: GPT2ForSequenceClassification = None,
