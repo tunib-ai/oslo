@@ -128,7 +128,7 @@ class FusedNgramRepeatBlockBinder(Binder):
 class FusedLayerNormBinder(Binder):
     @property
     def name(self):
-        return "oslo-fused-layer-norm"
+        return "oslo_fused_layer_norm"
 
     def sources(self):
         return ["fused_layer_norm.cu", "FusedLayerNormBinder.cpp"]
