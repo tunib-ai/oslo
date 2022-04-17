@@ -1,1 +1,1 @@
-from oss import OSS
+from .oss import OSS
