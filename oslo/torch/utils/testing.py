@@ -198,6 +198,18 @@ def spawn_for_all_world_sizes(
             rmf(filename_rpc)
 
 
+def teardown() -> None:
+    # destroy_model_parallel()
+
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+    try:
+        # torch 1.5 hangs on shutdown if waiting for all processes
+        torch.distributed.rpc.shutdown(graceful=False)
+    except Exception:
+        pass
+
+
 def rmf(filename: str) -> None:
     """Remove a file like rm -f."""
     try:
@@ -258,3 +270,16 @@ def objects_are_equal(a: Any, b: Any, raise_exception: bool = False, dict_key: O
                 return False
     else:
         return a == b
+
+
+@contextlib.contextmanager
+def temp_files_ctx(num: int) -> Generator:
+    """A context to get tempfiles and ensure they are cleaned up."""
+    files = [tempfile.mkstemp()[1] for _ in range(num)]
+
+    try:
+        yield tuple(files)
+    finally:
+        # temp files could have been removed, so we use rmf.
+        for name in files:
+            rmf(name)
