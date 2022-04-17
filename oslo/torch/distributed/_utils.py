@@ -17,18 +17,18 @@ def vocab_range_from_global_vocab_size(global_vocab_size, rank, world_size):
     return vocab_range_from_per_partition_vocab_size(per_partition_vocab_size, rank)
 
 
-def _reduce(input_, parallel_mode, gpc):
+def _reduce(input_, parallel_mode, parallel_context):
     # skip if only one rank involved
-    if gpc.get_world_size(parallel_mode) == 1:
+    if parallel_context.get_world_size(parallel_mode) == 1:
         return input_
-    dist.all_reduce(input_, group=gpc.get_group(parallel_mode))
+    dist.all_reduce(input_, group=parallel_context.get_group(parallel_mode))
 
     return input_
 
 
-def _split(input_, parallel_mode, dim, gpc):
+def _split(input_, parallel_mode, dim, parallel_context):
     # skip if only one rank involved
-    world_size = gpc.get_world_size(parallel_mode)
+    world_size = parallel_context.get_world_size(parallel_mode)
     if world_size == 1:
         return input_
 
@@ -39,23 +39,23 @@ def _split(input_, parallel_mode, dim, gpc):
         f'cannot split tensor evenly'
 
     tensor_list = torch.split(input_, dim_size // world_size, dim=dim)
-    rank = gpc.get_local_rank(parallel_mode)
+    rank = parallel_context.get_local_rank(parallel_mode)
     output = tensor_list[rank].contiguous()
 
     return output
 
 
-def _gather(input_, parallel_mode, dim, gpc):
+def _gather(input_, parallel_mode, dim, parallel_context):
     # skip if only one rank involved
-    world_size = gpc.get_world_size(parallel_mode)
+    world_size = parallel_context.get_world_size(parallel_mode)
     if world_size == 1:
         return input_
 
     # all gather
-    rank = gpc.get_local_rank(parallel_mode)
+    rank = parallel_context.get_local_rank(parallel_mode)
     tensor_list = [torch.empty_like(input_) for _ in range(world_size)]
     tensor_list[rank] = input_
-    torch.distributed.all_gather(tensor_list, input_, group=gpc.get_group(parallel_mode))
+    torch.distributed.all_gather(tensor_list, input_, group=parallel_context.get_group(parallel_mode))
 
     # concat
     output = torch.cat(tensor_list, dim=dim).contiguous()
@@ -77,13 +77,14 @@ class _ReduceGrad(torch.autograd.Function):
         return input_
 
     @staticmethod
-    def forward(ctx, input_, parallel_mode):
+    def forward(ctx, input_, parallel_mode, parallel_context):
         ctx.mode = parallel_mode
+        ctx.parallel_context = parallel_context
         return input_
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _reduce(grad_output, ctx.mode), None
+        return _reduce(grad_output, ctx.mode, ctx.parallel_context), None
 
 
 class _ReduceInput(torch.autograd.Function):
@@ -100,8 +101,8 @@ class _ReduceInput(torch.autograd.Function):
         return _reduce(input_)
 
     @staticmethod
-    def forward(ctx, input_, parallel_mode):
-        return _reduce(input_, parallel_mode)
+    def forward(ctx, input_, parallel_mode, parallel_context):
+        return _reduce(input_, parallel_mode, parallel_context)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -123,14 +124,15 @@ class _SplitForwardGatherBackward(torch.autograd.Function):
         return _split(input_)
 
     @staticmethod
-    def forward(ctx, input_, parallel_mode, dim):
+    def forward(ctx, input_, parallel_mode, dim, parallel_context):
         ctx.mode = parallel_mode
         ctx.dim = dim
-        return _split(input_, parallel_mode, dim)
+        ctx.parallel_context = parallel_context
+        return _split(input_, parallel_mode, dim, parallel_context)
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _gather(grad_output, ctx.mode, ctx.dim), None, None
+        return _gather(grad_output, ctx.mode, ctx.dim, ctx.parallel_context), None, None
 
 
 class _GatherForwardSplitBackward(torch.autograd.Function):
@@ -147,27 +149,28 @@ class _GatherForwardSplitBackward(torch.autograd.Function):
         return _gather(input_)
 
     @staticmethod
-    def forward(ctx, input_, parallel_mode, dim):
+    def forward(ctx, input_, parallel_mode, dim, parallel_context):
         ctx.mode = parallel_mode
         ctx.dim = dim
-        return _gather(input_, parallel_mode, dim)
+        ctx.parallel_context = parallel_context
+        return _gather(input_, parallel_mode, dim, parallel_context)
 
     @staticmethod
     def backward(ctx, grad_output):
-        return _split(grad_output, ctx.mode, ctx.dim), None, None
+        return _split(grad_output, ctx.mode, ctx.dim, ctx.parallel_context), None, None
 
 
-def reduce_grad(input_, parallel_mode):
-    return _ReduceGrad.apply(input_, parallel_mode)
+def reduce_grad(input_, parallel_mode, parallel_context):
+    return _ReduceGrad.apply(input_, parallel_mode, parallel_context)
 
 
-def reduce_input(input_, parallel_mode):
-    return _ReduceInput.apply(input_, parallel_mode)
+def reduce_input(input_, parallel_mode, parallel_context):
+    return _ReduceInput.apply(input_, parallel_mode, parallel_context)
 
 
-def split_forward_gather_backward(input_, parallel_mode, dim):
-    return _SplitForwardGatherBackward.apply(input_, parallel_mode, dim)
+def split_forward_gather_backward(input_, parallel_mode, dim, parallel_context):
+    return _SplitForwardGatherBackward.apply(input_, parallel_mode, dim, parallel_context)
 
 
-def gather_forward_split_backward(input_, parallel_mode, dim):
-    return _GatherForwardSplitBackward.apply(input_, parallel_mode, dim)
+def gather_forward_split_backward(input_, parallel_mode, dim, parallel_context):
+    return _GatherForwardSplitBackward.apply(input_, parallel_mode, dim, parallel_context)

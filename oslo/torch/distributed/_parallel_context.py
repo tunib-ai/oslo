@@ -101,14 +101,14 @@ class ParallelContext(metaclass=Singleton):
         >>> from oslo.torch.distributed import ParallelContext
 
         >>> # Initialize from torch.distributed.launch
-        >>> gpc = ParallelContext.from_torch(
+        >>> parallel_context = ParallelContext.from_torch(
         ...     data_parallel_size=1,
         ...     pipeline_parallel_size=1,
         ...     tensor_parallel_size=1,
         ... )
 
         >>> # Initialize from SLURM launcher
-        >>> gpc = ParallelContext.from_slurm(
+        >>> parallel_context = ParallelContext.from_slurm(
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
@@ -117,7 +117,7 @@ class ParallelContext(metaclass=Singleton):
         ... )
 
         >>> # Initialize from OpenMPI launcher
-        >>> gpc = ParallelContext.from_openmpi(
+        >>> parallel_context = ParallelContext.from_openmpi(
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
@@ -125,26 +125,26 @@ class ParallelContext(metaclass=Singleton):
         ...     tensor_parallel_size=1,
         ... )
 
-        >>> # get world size
-        >>> gpc.get_world_size(ParallelMode.DATA)
+        >>> # parallel_context world size
+        >>> parallel_context.get_world_size(ParallelMode.DATA)
 
         >>> # get local size
-        >>> gpc.get_local_rank(ParallelMode.DATA)
+        >>> parallel_context.get_local_rank(ParallelMode.DATA)
 
         >>> # get group
-        >>> gpc.get_group(ParallelMode.DATA)
+        >>> parallel_context.get_group(ParallelMode.DATA)
 
         >>> # get cpu group (gloo backend)
-        >>> gpc.get_cpu_group(ParallelMode.DATA)
+        >>> parallel_context.get_cpu_group(ParallelMode.DATA)
 
         >>> # get whole ranks in group
-        >>> gpc.get_ranks_in_group(ParallelMode.DATA)
+        >>> parallel_context.get_ranks_in_group(ParallelMode.DATA)
 
         >>> # get next global rank
-        >>> gpc.get_next_global_rank(ParallelMode.DATA)
+        >>> parallel_context.get_next_global_rank(ParallelMode.DATA)
 
         >>> # get prev global rank
-        >>> gpc.get_prev_global_rank(ParallelMode.DATA)
+        >>> parallel_context.get_prev_global_rank(ParallelMode.DATA)
     """
 
     @classmethod

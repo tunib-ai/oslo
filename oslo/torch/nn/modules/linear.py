@@ -10,6 +10,12 @@ import torch.nn.functional as F
 
 from .lazy import LazyModuleMixin
 from oslo.torch.utils import divide
+from oslo.torch.distributed import (
+    reduce_grad, 
+    reduce_input,
+    split_forward_gather_backward,
+    gather_forward_split_backward,
+)
 
 
 class Linear(nn.Module):
@@ -132,3 +138,100 @@ class LazyLinear(LazyModuleMixin, Linear):
                 self.reset_parameters()
         if self.cls_to_become is not None:
             self.__class__ = self.cls_to_become
+
+
+class ColumnParallelLinear(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+        gather_output: bool = False,
+        skip_bias_add: bool = False,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.gather_output = gather_output
+        self.skip_bias_add = skip_bias_add
+
+        self.weight = Parameter(torch.empty((out_features, in_features), **factory_kwargs))
+        if bias:
+            self.bias = Parameter(torch.empty(out_features, **factory_kwargs))
+        else:
+            self.register_parameter('bias', None)
+        self._set_tensor_parallel_attributes()
+
+    def _set_tensor_parallel_attributes(self):
+        num_partition = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        set_tensor_parallel_attribute_by_partition(self.weight, num_partition)
+        if self.bias is not None:
+            set_tensor_parallel_attribute_by_partition(self.bias, num_partition)
+        
+    def forward(self, input_: Tensor) -> Tuple[Tensor, Tensor]:
+        # Set up backprop all-reduce.
+        input_parallel = reduce_grad(input_, ParallelMode.TENSOR_1D, self.parallel_context)
+        # Matrix multiply.
+
+        bias = self.bias if not self.skip_bias_add else None
+        output_parallel = F.linear(input_parallel, self.weight, bias)
+        if self.gather_output:
+            # All-gather across the partitions.
+            output = gather_forward_split_backward(output_parallel, ParallelMode.TENSOR_1D, dim=-1, parallel_context=self.parallel_context)
+        else:
+            output = output_parallel
+        if self.skip_bias_add:
+            return output, self.bias
+        else:
+            return output
+        
+
+class RowParallelLinear(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+        gather_output: bool = False,
+        skip_bias_add: bool = False,
+    ):
+        self.in_features = in_features
+        self.out_features = out_features
+        self.gather_output = gather_output
+        self.skip_bias_add = skip_bias_add
+
+        self.weight = Parameter(torch.empty((out_features, in_features), **factory_kwargs))
+        if bias:
+            self.bias = Parameter(torch.empty(out_features, **factory_kwargs))
+        else:
+            self.register_parameter('bias', None)
+        self._set_tensor_parallel_attributes()
+
+    def _set_tensor_parallel_attributes(self):
+        num_partition = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        set_tensor_parallel_attribute_by_partition(self.weight, num_partition)
+        if self.bias is not None:
+            set_tensor_parallel_attribute_by_partition(self.bias, num_partition)
+        
+    def forward(self, input_: Tensor) -> Tuple[Tensor, Tensor]:
+        # Set up backprop all-reduce.
+        if self.parallel_input:
+            input_ = input_
+        else:
+            input_ = split_forward_gather_backward(input_, ParallelMode.PARALLEL_1D, dim=-1, parallel_context=self.parallel_context)
+        output_parallel = F.linear(input_, self.weight)
+        output = reduce_input(output_parallel, ParallelMode.TENSOR_1D, self.parallel_context)
+
+        if not self.skip_bias_add:
+            if self.bias is not None:
+                output = output + self.bias
+            return output
+        else:
+            return output, self.bias
+
+
+class Linear2D(nn.Module):
+    pass

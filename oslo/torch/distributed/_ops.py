@@ -9,7 +9,7 @@ def broadcast(tensor: Tensor,
               src: int, 
               parallel_mode: ParallelMode, 
               async_op: bool = False,
-              gpc: ParallelContext) -> Tensor:
+              parallel_context: ParallelContext) -> Tensor:
     r"""
     broadcast method
     
@@ -30,12 +30,12 @@ def broadcast(tensor: Tensor,
         Union[tuple(:class:`torch.Tensor`, work handle), :class:`torch.Tensor`]: The tensor need to be broadcast only,
         if async_op is set to False. A tuple of output of all-gather and Async work handle, if async_op is set to True.
     """
-    if gpc.get_world_size(parallel_mode) == 1:
+    if parallel_context.get_world_size(parallel_mode) == 1:
         out = tensor
         work = None
     else:
         out = tensor.contiguous()
-        work = dist.broadcast(out, src=src, group=gpc.get_group(parallel_mode), async_op=async_op)
+        work = dist.broadcast(out, src=src, group=parallel_context.get_group(parallel_mode), async_op=async_op)
     if async_op:
         return out, work
     else:
@@ -47,7 +47,7 @@ def all_reduce(tensor: Tensor,
                parallel_mode: ParallelMode,
                op: ReduceOp = ReduceOp.SUM,
                async_op: bool = False,
-               gpc: ParallelContext) -> Tensor:
+               parallel_context: ParallelContext) -> Tensor:
     r"""
     all reduce method
 
@@ -70,12 +70,12 @@ def all_reduce(tensor: Tensor,
         Union[tuple(:class:`torch.Tensor`, work handle), :class:`torch.Tensor`]: The result of all-gather only,
         if async_op is set to False. A tuple of output of all-gather and Async work handle, if async_op is set to True.
     """
-    if gpc.get_world_size(parallel_mode) == 1:
+    if parallel_context.get_world_size(parallel_mode) == 1:
         out = tensor
         work = None
     else:
         out = tensor.contiguous()
-        work = dist.all_reduce(out, op=op, group=gpc.get_group(parallel_mode), async_op=async_op)
+        work = dist.all_reduce(out, op=op, group=parallel_context.get_group(parallel_mode), async_op=async_op)
     if async_op:
         return out, work
     else:
@@ -86,7 +86,7 @@ def reduce_scatter(tensor: Tensor,
                    dim: int, 
                    parallel_mode: ParallelMode, 
                    async_op: bool = False,
-                   gpc: ParallelContext) -> Tensor:
+                   parallel_context: ParallelContext) -> Tensor:
     r"""
     reduce scatter method
 
@@ -111,7 +111,7 @@ def reduce_scatter(tensor: Tensor,
         Union[tuple(:class:`torch.Tensor`, work handle), :class:`torch.Tensor`]: The result of reduce_scatter only,
         if async_op is set to False. A tuple of output of all-gather and Async work handle, if async_op is set to True.
     """
-    if gpc.get_world_size(parallel_mode) == 1:
+    if parallel_context.get_world_size(parallel_mode) == 1:
         out = tensor
         work = None
     else:
@@ -120,7 +120,7 @@ def reduce_scatter(tensor: Tensor,
         work = dist.reduce_scatter(output=out,
                                    input_list=temp,
                                    op=op,
-                                   group=gpc.get_group(parallel_mode),
+                                   group=parallel_context.get_group(parallel_mode),
                                    async_op=async_op)
     if async_op:
         return out, work
@@ -132,7 +132,7 @@ def all_gather(tensor: Tensor,
                dim: int, 
                parallel_mode: ParallelMode, 
                async_op: bool = False,
-               gpc: ParallelContext) -> Tensor:
+               parallel_context: ParallelContext) -> Tensor:
     r"""
     all gather method
 
@@ -153,7 +153,7 @@ def all_gather(tensor: Tensor,
         Union[tuple(:class:`torch.Tensor`, work handle), :class:`torch.Tensor`]: The result of all-together only,
         if async_op is set to False. A tuple of output of all-gather and Async work handle, if async_op is set to True.
     """
-    if gpc.get_world_size(parallel_mode) == 1:
+    if parallel_context.get_world_size(parallel_mode) == 1:
         out = tensor
         work = None
     else:
@@ -164,7 +164,7 @@ def all_gather(tensor: Tensor,
         temp = list(torch.chunk(out, depth, dim=0))
         work = dist.all_gather(tensor_list=temp,
                                tensor=tensor.transpose(0, dim).contiguous(),
-                               group=gpc.get_group(parallel_mode),
+                               group=parallel_context.get_group(parallel_mode),
                                async_op=async_op)
         out = torch.transpose(out, 0, dim)
     if async_op:
