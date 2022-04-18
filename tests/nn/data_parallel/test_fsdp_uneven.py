@@ -9,6 +9,7 @@
 
 """ Test FSDP with uneven parameter shards. """
 
+import os
 import tempfile
 
 import pytest
@@ -18,6 +19,7 @@ from torch import Tensor
 from torch.nn import Linear, Sequential
 from torch.optim import SGD
 
+from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.distributed.data_parallel import \
     FullyShardedDataParallel as FSDP
 from oslo.torch.nn.parallel.distributed.data_parallel import TrainingState
@@ -26,8 +28,18 @@ from oslo.torch.utils.testing import dist_init, skip_if_single_gpu, teardown
 
 
 def _test_func(rank, world_size, model, fsdp_config, tempfile_name, unused, test_case):
-    result = dist_init(rank, world_size, tempfile_name, unused)
-    assert result, "Dist init failed"
+    os.environ["RANK"] = str(rank)
+    os.environ["LOCAL_RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = str(29500)
+
+    parallel_context = ParallelContext.from_torch(
+        data_parallel_size=world_size,
+        pipeline_parallel_size=1,
+        tensor_parallel_size=1
+    )
+    assert parallel_context, "Dist init failed"
 
     my_lr = 0.1
 
@@ -52,7 +64,7 @@ def _test_func(rank, world_size, model, fsdp_config, tempfile_name, unused, test
             assert ref_weight_out.dtype == torch.float32
     model.to(device)  # not dtype, since FSDP will manage mixed precision internally
     assert isinstance(fsdp_config, dict), str(fsdp_config)
-    model = FSDP(model, **fsdp_config)
+    model = FSDP(model, parallel_context, **fsdp_config)
     optim = SGD(model.parameters(), lr=my_lr)
     inputs = test_case["inputs"]
     assert len(inputs) == 1 or not test_case["assert_ref_out"]

@@ -189,7 +189,7 @@ class FullyShardedDataParallel(nn.Module):
     Args:
         module (nn.Module):
             module to be wrapped with FSDP.
-        parallel_context (ParallelContext, Optional):
+        parallel_context (ParallelContext):
             process group for sharding
         process_group_reduce_scatter (Optional):
             process group for reduce scatter
@@ -309,9 +309,7 @@ class FullyShardedDataParallel(nn.Module):
     def __init__(
         self,
         module: nn.Module,
-        # TODO: change process_group to parallel_context
-        process_group: Optional[ProcessGroup] = None,
-        # parallel_context: Optional[ParallelContext] = None,
+        parallel_context: ParallelContext,
         # The type for the process_group_reduce_scatter only can be either ProcessGroup or ProcessGroupName
         process_group_reduce_scatter: Any = ProcessGroupName.reduce_scatter,
         reshard_after_forward: bool = True,
@@ -344,9 +342,7 @@ class FullyShardedDataParallel(nn.Module):
 
         init_start = time.time()
         super().__init__()
-        # TODO: change process_group to parallel_context
-        self.process_group = process_group or get_process_group_cached()
-        # self.process_group = parallel_context.get_group(ParallelMode.DATA)
+        self.process_group = parallel_context.get_group(ParallelMode.DATA)
         # If ProcessGroupName.default is passed in, the reduce_scatter will use the same process group with
         # the rest of operations. The overlap feature in the backward propagation is disabled.
         if process_group_reduce_scatter == ProcessGroupName.default:

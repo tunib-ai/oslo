@@ -1,1 +1,1 @@
-from distributed import *
+from .distributed import *

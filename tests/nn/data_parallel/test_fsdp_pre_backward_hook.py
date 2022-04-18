@@ -9,12 +9,14 @@
 
 """ Test FSDP with pre-backward hook bug. """
 
+import os
+
 import pytest
 import torch
 from torch.nn import Linear, Module
 
-from oslo.torch.nn.parallel.distributed.data_parallel import \
-    FullyShardedDataParallel as FSDP
+from oslo.torch.distributed import ParallelContext
+from oslo.torch.nn.parallel.distributed import FullyShardedDataParallel as FSDP
 from oslo.torch.utils.testing import (
     dist_init,
     skip_if_no_cuda,
@@ -35,14 +37,24 @@ def temp_files():
 def test_pre_backward_hook(temp_files):
     """Test FSDP with a model that triggers a pre_backward hook bug."""
 
-    result = dist_init(rank=0, world_size=1, filename=temp_files[0], filename_rpc=temp_files[1])
-    assert result, "Dist init failed"
+    os.environ["RANK"] = str(0)
+    os.environ["LOCAL_RANK"] = str(0)
+    os.environ["WORLD_SIZE"] = str(1)
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = str(29500)
+
+    parallel_context = ParallelContext.from_torch(
+        data_parallel_size=1,
+        pipeline_parallel_size=1,
+        tensor_parallel_size=1
+    )
+    assert parallel_context, "Dist init failed"
 
     class Model(Module):
         def __init__(self):
             super().__init__()
             self.l1 = Linear(4, 4).cuda()
-            self.l2 = FSDP(Linear(4, 4).cuda())
+            self.l2 = FSDP(Linear(4, 4).cuda(), parallel_context)
             self.l3 = Linear(4, 4).cuda()
 
         def forward(self, x):
@@ -58,7 +70,7 @@ def test_pre_backward_hook(temp_files):
                 assert p.grad is not None
                 p.grad = None
 
-    model = FSDP(Model(), flatten_parameters=False).cuda()
+    model = FSDP(Model(), parallel_context, flatten_parameters=False).cuda()
     in_data = torch.rand(1, 4).cuda()
     for _ in range(3):
         out, _ = model(in_data)

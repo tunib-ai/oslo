@@ -9,6 +9,7 @@
 
 """ Test FSDP with different input types. """
 
+import os
 import tempfile
 
 import pytest
@@ -16,9 +17,9 @@ import torch
 from torch.nn import Linear, Module
 from torch.optim import SGD
 
-from oslo.torch.nn.parallel.distributed.data_parallel import \
-    FullyShardedDataParallel as FSDP
-from oslo.torch.nn.parallel.distributed.data_parallel import TrainingState
+from oslo.torch.distributed import ParallelContext
+from oslo.torch.nn.parallel.distributed import FullyShardedDataParallel as FSDP
+from oslo.torch.nn.parallel.distributed import TrainingState
 from oslo.torch.utils import torch_version
 from oslo.torch.utils.testing import dist_init, rmf, skip_if_no_cuda, teardown
 
@@ -52,8 +53,18 @@ def test_input_type(temp_files, fsdp_config, input_cls):
         #     RuntimeError: Container is already initialized! Cannot initialize it twice!
         pytest.skip("older pytorch doesn't work well with single process dist_init multiple times")
 
-    result = dist_init(rank=0, world_size=1, filename=temp_files[0], filename_rpc=temp_files[1])
-    assert result, "Dist init failed"
+    os.environ["RANK"] = str(0)
+    os.environ["LOCAL_RANK"] = str(0)
+    os.environ["WORLD_SIZE"] = str(1)
+    os.environ["MASTER_ADDR"] = "localhost"
+    os.environ["MASTER_PORT"] = str(29500)
+
+    parallel_context = ParallelContext.from_torch(
+        data_parallel_size=1,
+        pipeline_parallel_size=1,
+        tensor_parallel_size=1
+    )
+    assert parallel_context, "Dist init failed"
 
     assert isinstance(fsdp_config, dict), str(fsdp_config)
 
@@ -70,7 +81,7 @@ def test_input_type(temp_files, fsdp_config, input_cls):
                 input = input["in"]
             return self.layer(input)
 
-    model = FSDP(Model(), **fsdp_config).cuda()
+    model = FSDP(Model(), parallel_context, **fsdp_config).cuda()
     optim = SGD(model.parameters(), lr=0.1)
 
     for _ in range(5):
