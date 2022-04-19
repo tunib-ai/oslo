@@ -5,6 +5,7 @@ import itertools
 
 import oslo.torch.nn as onn
 
+
 class TestFusedLayerNorm(unittest.TestCase):
     dtype = torch.float
     elementwise_affine = False
@@ -18,35 +19,51 @@ class TestFusedLayerNorm(unittest.TestCase):
         # bias and weight are set to 0 and 1 respectively, so no need to copy parameters from cpu module to the gpu one
         if not self.mixed_fused:
             self.module_cpu_ = onn.FusedLayerNorm(
-                normalized_shape=self.normalized_shape, elementwise_affine=self.elementwise_affine).cpu()
+                normalized_shape=self.normalized_shape,
+                elementwise_affine=self.elementwise_affine,
+            ).cpu()
             self.module_cuda_ = onn.FusedLayerNorm(
-                normalized_shape=self.normalized_shape, elementwise_affine=self.elementwise_affine).to(device="cuda", dtype=self.dtype)
+                normalized_shape=self.normalized_shape,
+                elementwise_affine=self.elementwise_affine,
+            ).to(device="cuda", dtype=self.dtype)
         else:
             assert self.elementwise_affine
             self.module_cpu_ = onn.MixedFusedLayerNorm(
-                normalized_shape=self.normalized_shape).cpu()
+                normalized_shape=self.normalized_shape
+            ).cpu()
             self.module_cuda_ = onn.MixedFusedLayerNorm(
-                normalized_shape=self.normalized_shape).to(device="cuda", dtype=self.dtype)
+                normalized_shape=self.normalized_shape
+            ).to(device="cuda", dtype=self.dtype)
 
         if not self.mixed_fused:
             self.module_cuda_ = onn.FusedLayerNorm(
-                normalized_shape=self.normalized_shape, elementwise_affine=self.elementwise_affine).to(device="cuda", dtype=self.dtype
-            )
+                normalized_shape=self.normalized_shape,
+                elementwise_affine=self.elementwise_affine,
+            ).to(device="cuda", dtype=self.dtype)
 
     def _check_same_output(self, batch_size, contiguous):
         torch.cuda.manual_seed(42)
         if contiguous:
             input_shape = [batch_size] + self.normalized_shape
             input_ = torch.randn(input_shape, device="cpu").requires_grad_(True)
-            input_cuda_ = input_.to(device="cuda", dtype=self.dtype).detach().requires_grad_(True)
+            input_cuda_ = (
+                input_.to(device="cuda", dtype=self.dtype).detach().requires_grad_(True)
+            )
             self.assertTrue(input_.is_contiguous())
             self.assertTrue(input_cuda_.is_contiguous())
         else:
             input_shape = [batch_size] + self.normalized_shape
-            input_shape = [batch_size * 3] + [self.normalized_shape[0] * 5, self.normalized_shape[1] * 3]
+            input_shape = [batch_size * 3] + [
+                self.normalized_shape[0] * 5,
+                self.normalized_shape[1] * 3,
+            ]
             input_src_ = torch.randn(input_shape, device="cpu")
             input_ = input_src_[::3, ::5, ::3].detach().requires_grad_(True)
-            input_cuda_ = input_src_.to(device="cuda", dtype=self.dtype)[::3, ::5, ::3].detach().requires_grad_(True)
+            input_cuda_ = (
+                input_src_.to(device="cuda", dtype=self.dtype)[::3, ::5, ::3]
+                .detach()
+                .requires_grad_(True)
+            )
             # make sure that tensors are NOT contiguous.
             self.assertFalse(input_.is_contiguous())
             self.assertFalse(input_cuda_.is_contiguous())
@@ -58,16 +75,25 @@ class TestFusedLayerNorm(unittest.TestCase):
         # Use `torch.testing.assert_close`.
         # See https://github.com/pytorch/pytorch/issues/61844
         torch.testing.assert_allclose(
-            out_cpu_.to(device="cuda", dtype=self.dtype), out_cuda_.clone().detach(), **self.fwd_thresholds)
+            out_cpu_.to(device="cuda", dtype=self.dtype),
+            out_cuda_.clone().detach(),
+            **self.fwd_thresholds,
+        )
         gO = gO.to(device="cuda", dtype=self.dtype)
         out_cuda_.backward(gO)
         self.assertFalse(out_cpu_.is_cuda)
         self.assertTrue(out_cuda_.is_cuda)
         torch.testing.assert_allclose(
-            input_.grad.to(device="cuda", dtype=self.dtype), input_cuda_.grad, **self.bwd_thresholds)
+            input_.grad.to(device="cuda", dtype=self.dtype),
+            input_cuda_.grad,
+            **self.bwd_thresholds,
+        )
         if self.elementwise_affine:
-            torch.testing.assert_allclose(self.module_cpu_.weight.grad.to(device="cuda", dtype=self.dtype),
-                                          self.module_cuda_.weight.grad, **self.bwd_thresholds)
+            torch.testing.assert_allclose(
+                self.module_cpu_.weight.grad.to(device="cuda", dtype=self.dtype),
+                self.module_cuda_.weight.grad,
+                **self.bwd_thresholds,
+            )
 
     def _test_same_output(self, batch_size):
         for contiguous in (True, False):
@@ -94,30 +120,45 @@ class TestFusedRMSNorm(unittest.TestCase):
         # bias and weight are set to 0 and 1 respectively, so no need to copy parameters from cpu module to the gpu one
         if not self.mixed_fused:
             self.module_cpu_ = onn.FusedRMSNorm(
-                normalized_shape=self.normalized_shape, elementwise_affine=self.elementwise_affine).cpu()
+                normalized_shape=self.normalized_shape,
+                elementwise_affine=self.elementwise_affine,
+            ).cpu()
             self.module_cuda_ = onn.FusedRMSNorm(
-                normalized_shape=self.normalized_shape, elementwise_affine=self.elementwise_affine).to(device="cuda", dtype=self.dtype)
+                normalized_shape=self.normalized_shape,
+                elementwise_affine=self.elementwise_affine,
+            ).to(device="cuda", dtype=self.dtype)
         else:
             assert self.elementwise_affine
             self.module_cpu_ = onn.MixedFusedRMSNorm(
-                normalized_shape=self.normalized_shape).cpu()
+                normalized_shape=self.normalized_shape
+            ).cpu()
             self.module_cuda_ = onn.MixedFusedRMSNorm(
-                normalized_shape=self.normalized_shape).to(device="cuda", dtype=self.dtype)
+                normalized_shape=self.normalized_shape
+            ).to(device="cuda", dtype=self.dtype)
 
     def _check_same_output(self, batch_size, contiguous):
         torch.cuda.manual_seed(42)
         if contiguous:
             input_shape = [batch_size] + self.normalized_shape
             input_ = torch.randn(input_shape, device="cpu").requires_grad_(True)
-            input_cuda_ = input_.to(device="cuda", dtype=self.dtype).detach().requires_grad_(True)
+            input_cuda_ = (
+                input_.to(device="cuda", dtype=self.dtype).detach().requires_grad_(True)
+            )
             self.assertTrue(input_.is_contiguous())
             self.assertTrue(input_cuda_.is_contiguous())
         else:
             input_shape = [batch_size] + self.normalized_shape
-            input_shape = [batch_size * 3] + [self.normalized_shape[0] * 5, self.normalized_shape[1] * 3]
+            input_shape = [batch_size * 3] + [
+                self.normalized_shape[0] * 5,
+                self.normalized_shape[1] * 3,
+            ]
             input_src_ = torch.randn(input_shape, device="cpu")
             input_ = input_src_[::3, ::5, ::3].detach().requires_grad_(True)
-            input_cuda_ = input_src_.to(device="cuda", dtype=self.dtype)[::3, ::5, ::3].detach().requires_grad_(True)
+            input_cuda_ = (
+                input_src_.to(device="cuda", dtype=self.dtype)[::3, ::5, ::3]
+                .detach()
+                .requires_grad_(True)
+            )
             # make sure that tensors are NOT contiguous.
             self.assertFalse(input_.is_contiguous())
             self.assertFalse(input_cuda_.is_contiguous())
@@ -129,16 +170,25 @@ class TestFusedRMSNorm(unittest.TestCase):
         # Use `torch.testing.assert_close`.
         # See https://github.com/pytorch/pytorch/issues/61844
         torch.testing.assert_allclose(
-            out_cpu_.to(device="cuda", dtype=self.dtype), out_cuda_.clone().detach(), **self.fwd_thresholds)
+            out_cpu_.to(device="cuda", dtype=self.dtype),
+            out_cuda_.clone().detach(),
+            **self.fwd_thresholds,
+        )
         gO = gO.to(device="cuda", dtype=self.dtype)
         out_cuda_.backward(gO)
         self.assertFalse(out_cpu_.is_cuda)
         self.assertTrue(out_cuda_.is_cuda)
         torch.testing.assert_allclose(
-            input_.grad.to(device="cuda", dtype=self.dtype), input_cuda_.grad, **self.bwd_thresholds)
+            input_.grad.to(device="cuda", dtype=self.dtype),
+            input_cuda_.grad,
+            **self.bwd_thresholds,
+        )
         if self.elementwise_affine:
-            torch.testing.assert_allclose(self.module_cpu_.weight.grad.to(device="cuda", dtype=self.dtype),
-                                          self.module_cuda_.weight.grad, **self.bwd_thresholds)
+            torch.testing.assert_allclose(
+                self.module_cpu_.weight.grad.to(device="cuda", dtype=self.dtype),
+                self.module_cuda_.weight.grad,
+                **self.bwd_thresholds,
+            )
 
     def _test_same_output(self, batch_size):
         for contiguous in (True, False):
@@ -155,15 +205,18 @@ class TestFusedRMSNorm(unittest.TestCase):
 class TestFusedLayerNormElemWise(TestFusedLayerNorm):
     elementwise_affine = True
 
+
 class TestMixedFusedLayerNormElemWise(TestFusedLayerNorm):
     elementwise_affine = True
     mixed_fused = True
+
 
 class TestFusedLayerNormElemWiseHalf(TestFusedLayerNormElemWise):
     dtype = torch.half
 
     def test_large_batch(self):
         self.skipTest("Skip to save time")
+
 
 class TestFusedLayerNormElemWiseBFloat16(TestFusedLayerNormElemWise):
     dtype = torch.bfloat16
@@ -181,10 +234,12 @@ class TestFusedRMSNormElemWise(TestFusedRMSNorm):
     bwd_thresholds = dict(rtol=2e-3, atol=2e-4)
     elementwise_affine = True
 
+
 class TestMixedFusedRMSNormElemWise(TestFusedRMSNorm):
     bwd_thresholds = dict(rtol=2e-3, atol=2e-4)
     elementwise_affine = True
     mixed_fused = True
+
 
 class TestFusedRMSNormElemWiseHalf(TestFusedRMSNormElemWise):
     dtype = torch.half
@@ -234,7 +289,10 @@ def _prep_inputs(batch_size, normalized_shape, dtype):
     return native, fused
 
 
-autocast_dtypes = (torch.half, torch.bfloat16) if torch.cuda.is_bf16_supported() else (torch.half,)
+autocast_dtypes = (
+    (torch.half, torch.bfloat16) if torch.cuda.is_bf16_supported() else (torch.half,)
+)
+
 
 class TestAutocastFusedLayerNorm(unittest.TestCase):
     bf16_fwd_thresholds = dict(rtol=1.6e-2, atol=3e-4)
@@ -251,7 +309,11 @@ class TestAutocastFusedLayerNorm(unittest.TestCase):
         expected = native(native_x)
         with torch.cuda.amp.autocast(dtype=dtype):
             actual = fused(fused_x)
-        tols = {'rtol': None, 'atol': None} if dtype == torch.half else TestAutocastFusedLayerNorm.bf16_fwd_thresholds
+        tols = (
+            {"rtol": None, "atol": None}
+            if dtype == torch.half
+            else TestAutocastFusedLayerNorm.bf16_fwd_thresholds
+        )
         torch.testing.assert_allclose(actual, expected, **tols)
 
         g_native = torch.rand_like(expected)
@@ -260,13 +322,20 @@ class TestAutocastFusedLayerNorm(unittest.TestCase):
         expected.backward(g_native)
         actual.backward(g_fused)
 
-        tols = {'rtol': None, 'atol': None} if dtype == torch.half else TestAutocastFusedLayerNorm.bf16_bwd_thresholds
+        tols = (
+            {"rtol": None, "atol": None}
+            if dtype == torch.half
+            else TestAutocastFusedLayerNorm.bf16_bwd_thresholds
+        )
         torch.testing.assert_allclose(native_x.grad, fused_x.grad, **tols)
 
     def test_autocast(self):
-        for (dtype, elementwise_affine) in itertools.product(autocast_dtypes, (True, False)):
+        for (dtype, elementwise_affine) in itertools.product(
+            autocast_dtypes, (True, False)
+        ):
             with self.subTest(f"{dtype}-{elementwise_affine}"):
                 self._run_test(dtype, elementwise_affine)
+
 
 class TestAutocastFusedRMSNorm(unittest.TestCase):
     bf16_fwd_thresholds = dict(rtol=1.6e-2, atol=3e-4)
@@ -277,13 +346,19 @@ class TestAutocastFusedRMSNorm(unittest.TestCase):
         self.normalized_shape = [32, 16]
 
     def _run_test(self, dtype, elementwise_affine):
-        native, fused = _prep_rms_layers(self.normalized_shape, elementwise_affine, dtype)
+        native, fused = _prep_rms_layers(
+            self.normalized_shape, elementwise_affine, dtype
+        )
         native_x, fused_x = _prep_inputs(self.batch_size, self.normalized_shape, dtype)
 
         expected = native(native_x.cpu())
         with torch.cuda.amp.autocast(dtype=dtype):
             actual = fused(fused_x)
-        tols = {'rtol': None, 'atol': None} if dtype == torch.half else TestAutocastFusedRMSNorm.bf16_fwd_thresholds
+        tols = (
+            {"rtol": None, "atol": None}
+            if dtype == torch.half
+            else TestAutocastFusedRMSNorm.bf16_fwd_thresholds
+        )
         torch.testing.assert_allclose(actual, expected.detach().clone().cuda(), **tols)
 
         g_native = torch.rand_like(expected)
@@ -292,14 +367,20 @@ class TestAutocastFusedRMSNorm(unittest.TestCase):
         expected.backward(g_native)
         actual.backward(g_fused)
 
-        tols = {'rtol': None, 'atol': None} if dtype == torch.half else TestAutocastFusedRMSNorm.bf16_bwd_thresholds
+        tols = (
+            {"rtol": None, "atol": None}
+            if dtype == torch.half
+            else TestAutocastFusedRMSNorm.bf16_bwd_thresholds
+        )
         torch.testing.assert_allclose(native_x.grad.cuda(), fused_x.grad, **tols)
 
     def test_autocast(self):
-        for (dtype, elementwise_affine) in itertools.product(autocast_dtypes, (True, False)):
+        for (dtype, elementwise_affine) in itertools.product(
+            autocast_dtypes, (True, False)
+        ):
             with self.subTest(f"{dtype}-{elementwise_affine}"):
                 self._run_test(dtype, elementwise_affine)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
