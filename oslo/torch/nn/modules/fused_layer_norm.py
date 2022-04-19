@@ -67,7 +67,7 @@ class FusedRMSNormAffineFunction(torch.autograd.Function):
         ctx.eps = eps
         input_ = input.contiguous()
         weight_ = weight.contiguous()
-        output, invvar = fused_layer_norm_cuda.rms_forward_affine(
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward_affine(
             input_, ctx.normalized_shape, weight_, ctx.eps)
         ctx.save_for_backward(input_, weight_, invvar)
         return output
@@ -76,7 +76,7 @@ class FusedRMSNormAffineFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         input_, weight_, invvar = ctx.saved_tensors
         grad_input = grad_weight = None
-        grad_input, grad_weight = fused_layer_norm_cuda.rms_backward_affine(
+        grad_input, grad_weight = fused_layer_norm_cuda.rms_norm_backward_affine(
            grad_output.contiguous(), invvar, input_, ctx.normalized_shape, weight_, ctx.eps
         )
         return grad_input, grad_weight, None, None
@@ -92,7 +92,7 @@ class FusedLayerNormAffineMixedDtypesFunction(FusedLayerNormAffineFunction):
         input_ = input.contiguous()
         weight_ = weight.contiguous()
         bias_ = bias.contiguous()
-        output, mean, invvar = fused_layer_norm_cuda.forward_affine_mixed_dtypes(
+        output, mean, invvar = fused_layer_norm_cuda.layer_norm_forward_affine_mixed_dtypes(
             input_, ctx.normalized_shape, weight_, bias_, ctx.eps
         )
         ctx.save_for_backward(input_, weight_, bias_, mean, invvar)
@@ -107,7 +107,7 @@ class FusedRMSNormAffineMixedDtypesFunction(FusedRMSNormAffineFunction):
         ctx.eps = eps
         input_ = input.contiguous()
         weight_ = weight.contiguous()
-        output, invvar = fused_layer_norm_cuda.rms_forward_affine_mixed_dtypes(
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward_affine_mixed_dtypes(
             input_, ctx.normalized_shape, weight_, ctx.eps
         )
 
@@ -141,7 +141,7 @@ class FusedRMSNormFunction(torch.autograd.Function):
         ctx.normalized_shape = normalized_shape
         ctx.eps = eps
         input_ = input.contiguous()
-        output, invvar = fused_layer_norm_cuda.rms_forward(input_, ctx.normalized_shape, ctx.eps)
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward(input_, ctx.normalized_shape, ctx.eps)
         ctx.save_for_backward(input_, invvar)
         return output
 
@@ -149,7 +149,7 @@ class FusedRMSNormFunction(torch.autograd.Function):
     def backward(ctx, grad_output):
         input_, invvar = ctx.saved_tensors
         grad_input = None
-        grad_input = fused_layer_norm_cuda.rms_backward(
+        grad_input = fused_layer_norm_cuda.rms_norm_backward(
             grad_output.contiguous(), invvar, input_, ctx.normalized_shape, ctx.eps
         )
         return grad_input, None, None
