@@ -10,6 +10,7 @@
 """ Test FSDP with pre-backward hook bug. """
 
 import os
+import random
 
 import pytest
 import torch
@@ -41,7 +42,7 @@ def test_pre_backward_hook(temp_files):
     os.environ["LOCAL_RANK"] = str(0)
     os.environ["WORLD_SIZE"] = str(1)
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = str(29500)
+    os.environ["MASTER_PORT"] = str(random.randint(2000, 3000))
 
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,

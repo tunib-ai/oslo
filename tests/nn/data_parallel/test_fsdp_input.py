@@ -10,6 +10,7 @@
 """ Test FSDP with different input types. """
 
 import os
+import random
 import tempfile
 
 import pytest
@@ -57,7 +58,7 @@ def test_input_type(temp_files, fsdp_config, input_cls):
     os.environ["LOCAL_RANK"] = str(0)
     os.environ["WORLD_SIZE"] = str(1)
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = str(29500)
+    os.environ["MASTER_PORT"] = str(random.randint(2000, 3000))
 
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,

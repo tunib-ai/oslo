@@ -10,6 +10,7 @@
 """ Test FSDP with uneven parameter shards. """
 
 import os
+import random
 import tempfile
 
 import pytest
@@ -32,7 +33,7 @@ def _test_func(rank, world_size, model, fsdp_config, tempfile_name, unused, test
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = str(29500)
+    os.environ["MASTER_PORT"] = str(random.randint(2000, 3000))
 
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=world_size,
