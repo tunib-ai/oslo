@@ -33,8 +33,9 @@ class DataCollatorForSequenceClassification:
         self.tokenizer = tokenizer._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.padding = padding
-        self.tokenizer._pad_token = self.tokenizer._eos_token
-        self.tokenizer.padding_side = "left"
+        if self.tokenizer._pad_token is None:
+            self.tokenizer._pad_token = self.tokenizer._eos_token
+        # self.tokenizer.padding_side = "left"
         # model.config.pad_token_id = self.tokenizer.eos_token_id
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
