@@ -6,11 +6,8 @@ import inspect
 import logging
 import warnings
 from typing import NamedTuple
-
 import torch
-
 from torch.nn.parallel import comm
-#from . import comm
 import torch.distributed as dist
 
 RPC_AVAILABLE = False
@@ -22,21 +19,11 @@ if torch.distributed.rpc.is_available():
     from torch.distributed.rpc import RRef
 
 from torch.nn.modules import Module
-#from ..modules import Module
-
 from torch.nn.parallel.replicate import replicate
-#from .replicate import replicate
-
 from torch.nn.parallel.scatter_gather import scatter_kwargs, gather, is_namedtuple
-#from .scatter_gather import scatter_kwargs, gather, is_namedtuple
-
 from torch.nn.parallel.parallel_apply import parallel_apply
-#from .parallel_apply import parallel_apply
-
 from torch._utils import _get_device_index, _get_all_device_indices
-
 from torch.nn.parallel._functions import _get_stream
-#from ._functions import _get_stream
 
 
 def _find_tensors(obj):
