@@ -4,7 +4,7 @@ from torch.cuda.amp import custom_fwd, custom_bwd
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
-def send_forward_recv_forward(tensor_send_next: torch.Tensor, gpc: ParallelContext, parallel_mode: ParallelMode):
+def send_forward_recv_forward(tensor_send_next: torch.Tensor, parallel_context: ParallelContext, parallel_mode: ParallelMode):
     """
         Sends a tensor to the next member and receives a tensor from the previous member.
         This function returns the received tensor from the previous member.
@@ -13,7 +13,7 @@ def send_forward_recv_forward(tensor_send_next: torch.Tensor, gpc: ParallelConte
         This function is based on the `send_forward_recv_forward` implementation of Megatron-LM.
         Args:
             tensor_send_next: Tensor sent to next member
-            gpc: ParallelContext holding process group information
+            parallel_context: ParallelContext holding process group information
             parallel_mode: Parallel group mode used in this communication
         Returns:
             :class:`torch.Tensor`: The tensor received from the previous.
@@ -32,7 +32,7 @@ def send_forward_recv_forward(tensor_send_next: torch.Tensor, gpc: ParallelConte
     send_next_op = torch.distributed.P2POp(
         torch.distributed.isend,
         tensor_send_next,
-        gpc.get_next_global_rank(parallel_mode),
+        parallel_context.get_next_global_rank(parallel_mode),
     )
     ops.append(send_next_op)
 
@@ -40,7 +40,7 @@ def send_forward_recv_forward(tensor_send_next: torch.Tensor, gpc: ParallelConte
     recv_prev_op = torch.distributed.P2POp(
         torch.distributed.irecv,
         tensor_recv_prev,
-        gpc.get_prev_global_rank(parallel_mode),
+        parallel_context.get_prev_global_rank(parallel_mode),
     )
     ops.append(recv_prev_op)
 
@@ -66,12 +66,12 @@ class _RingQK(torch.autograd.Function):
 
     @staticmethod
     @custom_fwd
-    def forward(ctx, sub_q: torch.Tensor, sub_k: torch.Tensor, gpc: ParallelContext):
+    def forward(ctx, sub_q: torch.Tensor, sub_k: torch.Tensor, parallel_context: ParallelContext):
         # save tensor for backward
         ctx.save_for_backward(sub_q, sub_k)
         # save process group information
         # need to save for send_forward_recv_forward in backward pass
-        ctx.gpc = gpc
+        ctx.parallel_context = parallel_context
 
         bsz, len_sub_q, d = sub_q.shape
         assert bsz == sub_k.size(0), "Q and K must have same embedding size."
@@ -79,8 +79,8 @@ class _RingQK(torch.autograd.Function):
         len_sub_k = sub_k.size(1)
 
         # get process group information and calculate total length of key
-        local_rank = gpc.get_local_rank(ParallelMode.SEQUENCE)
-        local_world_size = gpc.get_world_size(ParallelMode.SEQUENCE)
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
         len_k = len_sub_k * local_world_size
 
         # create local segment of attention score
@@ -98,7 +98,7 @@ class _RingQK(torch.autograd.Function):
 
         # compute QK^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(sub_k, gpc, ParallelMode.SEQUENCE)
+            sub_k = send_forward_recv_forward(sub_k, parallel_context, ParallelMode.SEQUENCE)
             sub_attn_part = torch.einsum("b q d, b k d -> b q k", sub_q, sub_k)
 
             sender_local_rank = (local_rank - 1 - i) % local_world_size
@@ -112,16 +112,16 @@ class _RingQK(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, grad_output):
         sub_q, sub_k, = ctx.saved_tensors
-        gpc = ctx.gpc
+        parallel_context = ctx.parallel_context
 
-        local_rank = gpc.local_rank
-        local_world_size = gpc.local_world_size
+        local_rank = parallel_context.local_rank
+        local_world_size = parallel_context.local_world_size
         len_sub_k = sub_k.size(1)
 
         # calculate local gradient of sub_k
         grad_k = torch.einsum("b q k, b q d -> b k d", grad_output, sub_q)
         # accumulate gradients
-        dist.all_reduce(grad_k, group=gpc.get_group(ParallelMode.SEQUENCE))
+        dist.all_reduce(grad_k, group=parallel_context.get_group(ParallelMode.SEQUENCE))
         # slice for sub-sequence
         start_idx = local_rank * len_sub_k
         end_idx = (local_rank + 1) * len_sub_k
@@ -141,7 +141,7 @@ class _RingQK(torch.autograd.Function):
 
         # compute (dL/dZ)K in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(sub_k, gpc, ParallelMode.SEQUENCE)
+            sub_k = send_forward_recv_forward(sub_k, parallel_context, ParallelMode.SEQUENCE)
             sender_local_rank = (local_rank - 1 - i) % local_world_size
             start_idx = sender_local_rank * len_sub_k
             end_idx = (sender_local_rank + 1) * len_sub_k
@@ -157,19 +157,19 @@ class _RingAV(torch.autograd.Function):
 
     @staticmethod
     @custom_fwd
-    def forward(ctx, sub_attn, sub_v, gpc: ParallelContext):
+    def forward(ctx, sub_attn, sub_v, parallel_context: ParallelContext):
         # save tensor for backward
         ctx.save_for_backward(sub_attn, sub_v)
         # save process group information
         # need to save for send_forward_recv_forward in backward pass
-        ctx.gpc = gpc
+        ctx.parallel_context = parallel_context
 
         bsz, len_sub_v, d = sub_v.shape
         len_sub_attn = sub_attn.size(1)
 
         # get process group information
-        local_rank = gpc.get_local_rank(ParallelMode.SEQUENCE)
-        local_world_size = gpc.get_world_size(ParallelMode.SEQUENCE)
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
 
         # create local segment of output
         sub_output = torch.zeros(
@@ -185,7 +185,7 @@ class _RingAV(torch.autograd.Function):
 
         # compute AV in ring - all - reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(sub_v, gpc, ParallelMode.SEQUENCE)
+            sub_v = send_forward_recv_forward(sub_v, parallel_context, ParallelMode.SEQUENCE)
             sender_local_rank = (local_rank - 1 - i) % local_world_size
             start_idx = sender_local_rank * len_sub_k
             end_idx = (sender_local_rank + 1) * len_sub_k
@@ -197,16 +197,16 @@ class _RingAV(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, grad_output):
         sub_attn, sub_v = ctx.saved_tensors
-        gpc = ctx.gpc
+        parallel_context = ctx.parallel_context
 
-        local_rank = gpc.local_rank
-        local_world_size = gpc.local_world_size
+        local_rank = parallel_context.local_rank
+        local_world_size = parallel_context.local_world_size
         len_sub_v = sub_v.size(1)
 
         # calculate local gradient of v
         grad_v = torch.einsum("b q k, b q d -> b k d", sub_attn, grad_output)
         # accumulate gradients
-        dist.all_reduce(grad_v, group=gpc.get_group(ParallelMode.SEQUENCE))
+        dist.all_reduce(grad_v, group=parallel_context.get_group(ParallelMode.SEQUENCE))
         # slice for sub-sequence
         start_idx = local_rank * len_sub_v
         end_idx = (local_rank + 1) * len_sub_v
@@ -224,7 +224,7 @@ class _RingAV(torch.autograd.Function):
 
         # compute (dL/dZ)V^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(sub_v, gpc, ParallelMode.SEQUENCE)
+            sub_v = send_forward_recv_forward(sub_v, parallel_context, ParallelMode.SEQUENCE)
             sender_local_rank = (local_rank - 1 - i) % local_world_size
             start_idx = sender_local_rank * len_sub_v
             end_idx = (sender_local_rank + 1) * len_sub_v
