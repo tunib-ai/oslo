@@ -70,11 +70,17 @@ class ModelPartitioner(object):
         for node in dfs(self.root_node):
             for parameter in node.modules[0].parameters():
                 setattr(parameter, "pp_rank", node.device)
+                if node.parent is not None:
+                    setattr(parameter, "pp_rank_parent", node.parent.device)
             for buffer in node.modules[0].buffers():
                 setattr(buffer, "pp_rank", node.device)
                 if node.parent is not None:
                     setattr(buffer, "pp_rank_parent", node.parent.device)
-            node.modules = PPModuleWrapper(node.modules)
+            for module in node.modules:
+                setattr(module, "pp_rank", node.device)
+                if node.parent is not None:
+                        setattr(module, "pp_rank_parent", node.parent.device)
+                module = PPModuleWrapper(module)
 
     @staticmethod
     def _get_parameters(module, to_list=True):

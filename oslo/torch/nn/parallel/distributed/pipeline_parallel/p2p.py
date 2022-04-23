@@ -107,7 +107,10 @@ class PPModuleWrapper(nn.Module):
         super().__init__()
         self.module = module
         self.rank = module.rank
-        self.rank_parent = module.rank_parent
+        if hasattr(module, "pp_rank_parent"):
+            self.rank_parent = module.pp_rank_parent
+        else:
+            self.rank_parent = None
         self.pre_com = PPPreFwdP2PCom(self.rank, self.rank_parent).apply
         self.post_com = PPPostFwdP2PCom(self.rank, self.rank_parent).apply
         
