@@ -53,6 +53,7 @@ class ModelPartitioner(object):
             cost=1.0,
         )
         self._construct_tree(self.root_node, self.root_node.name)
+        print(self.root_node)
 
         # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
@@ -73,6 +74,7 @@ class ModelPartitioner(object):
                 setattr(buffer, "pp_rank", node.device)
                 if node.parent is not None:
                     setattr(buffer, "pp_rank_parent", node.parent.device)
+            node.modules = PPModuleWrapper(node.modules)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
