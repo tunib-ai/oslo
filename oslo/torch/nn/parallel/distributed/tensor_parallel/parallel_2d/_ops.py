@@ -1,4 +1,4 @@
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 import torch
 import torch.distributed as dist
@@ -7,6 +7,187 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
 from oslo.torch.distributed._ops import all_reduce, reduce_scatter, all_gather
+
+
+def matmul_2d(
+    a,
+    b,
+    summa_dim,
+    out_shape,
+    parallel_context: ParallelContext,
+    row_rank=None,
+    col_rank=None,
+    row_parallel_mode=ParallelMode.PARALLEL_2D_ROW,
+    col_parallel_mode=ParallelMode.PARALLEL_2D_COL,
+):
+    if row_rank is None:
+        row_rank = parallel_context.get_local_rank(col_parallel_mode)
+    if col_rank is None:
+        col_rank = parallel_context.get_local_rank(row_parallel_mode)
+
+    data_parallel_rank = (
+        0
+        if not parallel_context.is_initialized(ParallelMode.DATA)
+        else parallel_context.get_local_rank(ParallelMode.DATA)
+    )
+    pipeline_parallel_rank = (
+        0
+        if not parallel_context.is_initialized(ParallelMode.PIPELINE)
+        else parallel_context.get_local_rank(ParallelMode.PIPELINE)
+    )
+    pipeline_parallel_size = (
+        1
+        if not parallel_context.is_initialized(ParallelMode.PIPELINE)
+        else parallel_context.get_world_size(ParallelMode.PIPELINE)
+    )
+    tensor_parallel_size = summa_dim ** 2
+
+    return Matmul_AB_2D(
+        a,
+        b,
+        summa_dim,
+        parallel_context,
+        out_shape,
+        row_rank,
+        col_rank,
+        row_parallel_mode,
+        col_parallel_mode,
+        data_parallel_rank,
+        pipeline_parallel_rank,
+        pipeline_parallel_size,
+        tensor_parallel_size,
+    )
+
+
+def add_bias_2d(
+    input_: Tensor,
+    bias: Tensor,
+    output_size_per_partition: int,
+    row_rank: int,
+    col_rank: int,
+    parallel_context: ParallelContext,
+    row_parallel_mode: ParallelMode,
+    col_parallel_mode: ParallelMode,
+    skip_bias_add: bool,
+    data_parallel_rank: int,
+    pipeline_parallel_rank: int,
+    pipeline_parallel_size: int,
+    tensor_parallel_size: int,
+) -> Tensor:
+    return _Add_Bias_2D.apply(
+        input_,
+        bias,
+        output_size_per_partition,
+        row_rank,
+        col_rank,
+        parallel_context,
+        row_parallel_mode,
+        col_parallel_mode,
+        skip_bias_add,
+        data_parallel_rank,
+        pipeline_parallel_rank,
+        pipeline_parallel_size,
+        tensor_parallel_size,
+    )
+
+
+def layernorm_2d(
+    input_: Tensor,
+    E_x: Tensor,
+    Var_x: Tensor,
+    hidden_size: int,
+    parallel_context: ParallelContext,
+    row_parallel_mode: ParallelMode,
+    col_parallel_mode: ParallelMode,
+) -> Tensor:
+
+    return _Layernorm_2D.apply(
+        input_,
+        E_x,
+        Var_x,
+        hidden_size,
+        parallel_context,
+        row_parallel_mode,
+        col_parallel_mode,
+    )
+
+
+def all_gather_tensor_2d(
+    tensor: Tensor,
+    dim: int,
+    parallel_mode: ParallelMode,
+    parallel_context: ParallelContext,
+) -> Tensor:
+    return _AllGatherTensor2D.apply(
+        tensor,
+        dim,
+        parallel_mode,
+        parallel_context,
+    )
+
+
+def split_batch_2d(
+    input_: Tensor,
+    parallel_context: ParallelContext,
+    dim: int = 0,
+) -> Tensor:
+    dim_size = input_.size(dim)
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
+    if world_size <= 1:
+        return input_
+
+    assert (
+        dim_size % world_size == 0
+    ), f"The batch size ({dim_size}) is not a multiple of 2D size ({world_size})."
+
+    return torch.chunk(
+        input_, parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL), dim=dim
+    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)].contiguous()
+
+
+def reduce_tensor_2d(
+    input_: Tensor,
+    parallel_mode: ParallelMode,
+    parallel_context: ParallelContext,
+) -> Tensor:
+    return _ReduceTensor2D.apply(
+        input_,
+        parallel_mode,
+        parallel_context,
+    )
+
+
+def reduce_scatter_tensor_2d(
+    tensor: Tensor,
+    dim: int,
+    parallel_mode: ParallelMode,
+    parallel_context: ParallelContext,
+) -> Tensor:
+    dim_size = tensor.size(dim)
+    world_size = parallel_context.get_world_size(parallel_mode)
+    assert (
+        dim_size % world_size == 0
+    ), f"The batch size ({dim_size}) is not a multiple of 2D size ({world_size})."
+
+    return _ReduceScatterTensor2D.apply(
+        tensor,
+        dim,
+        parallel_mode,
+        parallel_context,
+    )
+
+
+def reduce_by_batch_2d(
+    input_,
+    parallel_context: ParallelContext,
+    reduce_mean: bool = False,
+) -> Tensor:
+    return _ReduceByBatch2D.apply(
+        input_,
+        parallel_context,
+        reduce_mean,
+    )
 
 
 class Matmul_AB_2D(torch.autograd.Function):
