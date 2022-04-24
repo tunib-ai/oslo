@@ -148,11 +148,11 @@ class ColumnParallelLinear(Linear):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # to avoid circular import
         from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
-            broadcast,
-            all_gather,
+            broadcast_1d,
+            all_gather_1d,
         )
 
-        input = broadcast(input, self.parallel_context)
+        input = broadcast_1d(input, self.parallel_context)
 
         if self.reversed:
             outputs = torch.matmul(input, self.weight)
@@ -160,7 +160,7 @@ class ColumnParallelLinear(Linear):
             outputs = torch.matmul(input, self.weight.t())
 
         if self.gather_output:
-            outputs = all_gather(outputs, self.parallel_context).clone()
+            outputs = all_gather_1d(outputs, self.parallel_context).clone()
 
         if self.bias is not None:
             if self.skip_bias_add:
@@ -203,7 +203,7 @@ class RowParallelLinear(Linear):
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # to avoid circular import
         from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
-            all_reduce,
+            all_reduce_1d,
         )
 
         if self.reversed:
@@ -211,7 +211,7 @@ class RowParallelLinear(Linear):
         else:
             outputs = torch.matmul(input, self.weight.t())
 
-        outputs = all_reduce(outputs, self.parallel_context)
+        outputs = all_reduce_1d(outputs, self.parallel_context)
 
         if self.bias is not None:
             if self.skip_bias_add:

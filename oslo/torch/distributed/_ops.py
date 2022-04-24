@@ -32,7 +32,7 @@ def all_gather(
         group = (
             parallel_context.get_cpu_group(parallel_mode)
             if on_cpu
-            else gpc.get_group(parallel_mode)
+            else parallel_context.get_group(parallel_mode)
         )
         work = dist.all_gather(
             tensor_list=temp,
@@ -156,6 +156,25 @@ def reduce(
         return out, work
     else:
         return out
+
+
+def scatter(inputs, parallel_context, dim=-1):
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+    rank = parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
+
+    if world_size == 1:
+        return inputs
+
+    tensor_size = inputs.size(dim)
+    assert (
+        tensor_size % world_size == 0
+    ), "tensor_size must be divisible by world size for tensor parallelism"
+    split_size_or_sections = tensor_size // world_size
+
+    inputs_list = torch.split(
+        inputs, split_size_or_sections=split_size_or_sections, dim=dim
+    )
+    return inputs_list[rank].contiguous()
 
 
 def scatter_object_list(
