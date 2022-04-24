@@ -1,12 +1,18 @@
+import math
 from typing import Union, Tuple, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 from torch.nn.parameter import UninitializedParameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.lazy import LazyModuleMixin
+from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+    Matmul_ABT_2D,
+    add_bias_2d,
+)
 
 
 class Linear(nn.Linear):
@@ -220,3 +226,35 @@ class RowParallelLinear(Linear):
                 return outputs + self.bias
 
         return outputs
+
+
+class Linear2D(Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        parallel_context: ParallelContext,
+        bias: bool = True,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
+    ):
+        self.parallel_context = parallel_context
+        self.summa_dim = math.sqrt(parallel_context.get_world_size(ParallelMode.TENSOR))
+        assert (
+            in_features % self.summa_dim == 0
+        ), "in_features must be divisible by summa dim."
+        assert (
+            out_features % self.summa_dim == 0
+        ), "out_features must be divisible by summa dim."
+
+        self.row_rank = parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+        self.col_rank = parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+
+        super().__init__(
+            in_features=int(in_features // self.summa_dim),
+            out_features=int(out_features // self.summa_dim),
+            bias=bias,
+            device=torch.device(torch.cuda.current_device()),
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
