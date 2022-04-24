@@ -9,6 +9,7 @@ from oslo.torch.nn.parallel.distributed.pipeline_parallel._cost_estimator import
     PartitioningCostEstimator,
 )
 from oslo.torch.nn.parallel.distributed.pipeline_parallel._utils import dfs, bfs
+from oslo.torch.nn.parallel.distributed.pipeline_parallel.p2p import PPModuleWrapper
 
 
 class ModelPartitioner(object):
