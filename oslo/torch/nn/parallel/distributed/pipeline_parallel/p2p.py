@@ -123,3 +123,11 @@ class PPModuleWrapper(nn.Module):
         x = self.module(x)
         x = self.post_com(x)
         return x
+
+
+def wrap_nn_modules(m):
+    for child_name, child in m.named_children():
+        if isinstance(child, nn.Module) and not(isinstance(child, PPModuleWrapper)):
+            print(child_name)
+            setattr(m, child_name, PPModuleWrapper(child))
+        wrap_nn_modules(child)
