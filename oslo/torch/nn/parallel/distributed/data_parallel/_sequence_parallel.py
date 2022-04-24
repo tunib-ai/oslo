@@ -3,6 +3,7 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.utils import ParallelWrapper
 
 
 class _SequenceParallelState(object):
@@ -23,7 +24,7 @@ def _sequence_parallel_hook(state: _SequenceParallelState, bucket: dist._GradBuc
     return fut
 
 
-class SequenceParallel(DistributedDataParallel):
+class SequenceParallel(DistributedDataParallel, ParallelWrapper):
     def __init__(
         self,
         module, parallel_context: ParallelContext,
