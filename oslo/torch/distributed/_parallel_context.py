@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
-from oslo._utils import Singleton
 from oslo.torch.distributed._initializers.initializer_data import (
     DataParallelGroupInitializer,
 )
@@ -47,7 +46,7 @@ TensorParallelGroupInitializerByMode = {
 }
 
 
-class ParallelContext(metaclass=Singleton):
+class ParallelContext(object):
     """
     Parallel Context class
 
@@ -101,14 +100,14 @@ class ParallelContext(metaclass=Singleton):
         >>> from oslo.torch.distributed import ParallelContext
 
         >>> # Initialize from torch.distributed.launch
-        >>> gpc = ParallelContext.from_torch(
+        >>> parallel_context = ParallelContext.from_torch(
         ...     data_parallel_size=1,
         ...     pipeline_parallel_size=1,
         ...     tensor_parallel_size=1,
         ... )
 
         >>> # Initialize from SLURM launcher
-        >>> gpc = ParallelContext.from_slurm(
+        >>> parallel_context = ParallelContext.from_slurm(
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
@@ -117,7 +116,7 @@ class ParallelContext(metaclass=Singleton):
         ... )
 
         >>> # Initialize from OpenMPI launcher
-        >>> gpc = ParallelContext.from_openmpi(
+        >>> parallel_context = ParallelContext.from_openmpi(
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
@@ -125,26 +124,26 @@ class ParallelContext(metaclass=Singleton):
         ...     tensor_parallel_size=1,
         ... )
 
-        >>> # get world size
-        >>> gpc.get_world_size(ParallelMode.DATA)
+        >>> # parallel_context world size
+        >>> parallel_context.get_world_size(ParallelMode.DATA)
 
         >>> # get local size
-        >>> gpc.get_local_rank(ParallelMode.DATA)
+        >>> parallel_context.get_local_rank(ParallelMode.DATA)
 
         >>> # get group
-        >>> gpc.get_group(ParallelMode.DATA)
+        >>> parallel_context.get_group(ParallelMode.DATA)
 
         >>> # get cpu group (gloo backend)
-        >>> gpc.get_cpu_group(ParallelMode.DATA)
+        >>> parallel_context.get_cpu_group(ParallelMode.DATA)
 
         >>> # get whole ranks in group
-        >>> gpc.get_ranks_in_group(ParallelMode.DATA)
+        >>> parallel_context.get_ranks_in_group(ParallelMode.DATA)
 
         >>> # get next global rank
-        >>> gpc.get_next_global_rank(ParallelMode.DATA)
+        >>> parallel_context.get_next_global_rank(ParallelMode.DATA)
 
         >>> # get prev global rank
-        >>> gpc.get_prev_global_rank(ParallelMode.DATA)
+        >>> parallel_context.get_prev_global_rank(ParallelMode.DATA)
     """
 
     @classmethod
@@ -153,7 +152,7 @@ class ParallelContext(metaclass=Singleton):
         data_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: Optional[str] = None,
+        tensor_parallel_mode: Optional[str] = "1d",
         tensor_parallel_depth: Optional[int] = None,
         backend: str = "nccl",
         seed: bool = 42,
@@ -175,7 +174,7 @@ class ParallelContext(metaclass=Singleton):
 
         Examples:
             >>> # Initialize from torch.distributed.launch
-            >>> gpc = ParallelContext.from_torch(
+            >>> parallel_context = ParallelContext.from_torch(
             ...     data_parallel_size=1,
             ...     pipeline_parallel_size=1,
             ...     tensor_parallel_size=1,
@@ -236,7 +235,7 @@ class ParallelContext(metaclass=Singleton):
 
         Examples:
             >>> # Initialize from SLURM launcher
-            >>> gpc = ParallelContext.from_slurm(
+            >>> parallel_context = ParallelContext.from_slurm(
             ...     host="MY_HOST",
             ...     port=1234,
             ...     data_parallel_size=1,
@@ -294,7 +293,7 @@ class ParallelContext(metaclass=Singleton):
 
         Examples:
             >>> # Initialize from OpenMPI launcher
-            >>> gpc = ParallelContext.from_openmpi(
+            >>> parallel_context = ParallelContext.from_openmpi(
             ...     host="MY_HOST",
             ...     port=1234,
             ...     data_parallel_size=1,
@@ -368,6 +367,7 @@ class ParallelContext(metaclass=Singleton):
         self._groups = {}
         self._cpu_groups = {}
         self._ranks_in_group = {}
+        self._ranks_to_device = {}
 
         self.data_parallel_size = data_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
@@ -388,6 +388,7 @@ class ParallelContext(metaclass=Singleton):
             self.set_device(local_rank)
 
         self.set_seed(seed)
+        self._make_ranks_to_devices()
 
     # sanity check
     @staticmethod
@@ -412,7 +413,7 @@ class ParallelContext(metaclass=Singleton):
             int: world size by given parallel mode
 
         Examples:
-            >>> gpc.get_world_size(ParallelMode.DATA)
+            >>> parallel_context.get_world_size(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
         return self._world_sizes[parallel_mode]
@@ -426,7 +427,7 @@ class ParallelContext(metaclass=Singleton):
             world_size (int): world size
 
         Examples:
-            >>> gpc.add_world_size(ParallelMode.DATA, world_size=16)
+            >>> parallel_context.add_world_size(ParallelMode.DATA, world_size=16)
         """
         self._check_parallel_mode(parallel_mode)
         self._world_sizes[parallel_mode] = world_size
@@ -443,7 +444,7 @@ class ParallelContext(metaclass=Singleton):
             int: local rank by given parallel mode
 
         Examples:
-            >>> gpc.get_local_rank(ParallelMode.DATA)
+            >>> parallel_context.get_local_rank(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
         return self._local_ranks[parallel_mode]
@@ -457,7 +458,7 @@ class ParallelContext(metaclass=Singleton):
             rank (int): world size
 
         Examples:
-            >>> gpc.add_local_rank(ParallelMode.DATA, rank=4)
+            >>> parallel_context.add_local_rank(ParallelMode.DATA, rank=4)
         """
         self._check_parallel_mode(parallel_mode)
         self._local_ranks[parallel_mode] = rank
@@ -471,7 +472,7 @@ class ParallelContext(metaclass=Singleton):
             int: global rank
 
         Examples:
-            >>> gpc.get_global_rank()
+            >>> parallel_context.get_global_rank()
         """
         return self._global_ranks[ParallelMode.GLOBAL]
 
@@ -484,7 +485,7 @@ class ParallelContext(metaclass=Singleton):
             rank (int): world size
 
         Examples:
-            >>> gpc.add_global_rank(ParallelMode.DATA, rank=4)
+            >>> parallel_context.add_global_rank(ParallelMode.DATA, rank=4)
         """
         self._check_parallel_mode(parallel_mode)
         self._global_ranks[parallel_mode] = rank
@@ -500,7 +501,7 @@ class ParallelContext(metaclass=Singleton):
             int: The next global rank by given parallel mode
 
         Examples:
-            >>> gpc.get_next_global_rank(ParallelMode.DATA)
+            >>> parallel_context.get_next_global_rank(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
 
@@ -521,7 +522,7 @@ class ParallelContext(metaclass=Singleton):
             int: The next global rank by given parallel mode
 
         Examples:
-            >>> gpc.get_prev_global_rank(ParallelMode.DATA)
+            >>> parallel_context.get_prev_global_rank(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
 
@@ -542,7 +543,7 @@ class ParallelContext(metaclass=Singleton):
             bool: whether this rank is the first in given parallel mode
 
         Examples:
-            >>> gpc.is_first_rank(ParallelMode.DATA)
+            >>> parallel_context.is_first_rank(ParallelMode.DATA)
         """
         return self.get_local_rank(parallel_mode) == 0
 
@@ -557,7 +558,7 @@ class ParallelContext(metaclass=Singleton):
             bool: whether this rank is the last in given parallel mode
 
         Examples:
-            >>> gpc.is_last_rank(ParallelMode.DATA)
+            >>> parallel_context.is_last_rank(ParallelMode.DATA)
         """
         return (
             self.get_local_rank(parallel_mode) == self.get_world_size(parallel_mode) - 1
@@ -575,7 +576,7 @@ class ParallelContext(metaclass=Singleton):
             dist.ProcessGroup: process group by given parallel mode
 
         Examples:
-            >>> gpc.get_group(ParallelMode.DATA)
+            >>> parallel_context.get_group(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
         return self._groups[parallel_mode]
@@ -589,7 +590,7 @@ class ParallelContext(metaclass=Singleton):
             group (dist.ProcessGroup): process group
 
         Examples:
-            >>> gpc.add_global_rank(ParallelMode.DATA, rank=4)
+            >>> parallel_context.add_global_rank(ParallelMode.DATA, rank=4)
         """
         self._check_parallel_mode(parallel_mode)
         self._groups[parallel_mode] = group
@@ -609,7 +610,7 @@ class ParallelContext(metaclass=Singleton):
             this is process group using gloo backend
 
         Examples:
-            >>> gpc.get_group(ParallelMode.DATA)
+            >>> parallel_context.get_group(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
         return self._cpu_groups[parallel_mode]
@@ -625,7 +626,7 @@ class ParallelContext(metaclass=Singleton):
             this is process group using gloo backend
 
         Examples:
-            >>> gpc.add_cpu_group(ParallelMode.DATA, group=MY_GROUP)
+            >>> parallel_context.add_cpu_group(ParallelMode.DATA, group=MY_GROUP)
         """
         self._check_parallel_mode(parallel_mode)
         self._cpu_groups[parallel_mode] = group
@@ -642,7 +643,7 @@ class ParallelContext(metaclass=Singleton):
             List[int]: Whole ranks in the group by given parallel mode
 
         Examples:
-            >>> gpc.get_ranks_in_group(ParallelMode.DATA)
+            >>> parallel_context.get_ranks_in_group(ParallelMode.DATA)
         """
         self._check_parallel_mode(parallel_mode)
         return self._ranks_in_group[parallel_mode]
@@ -656,7 +657,7 @@ class ParallelContext(metaclass=Singleton):
             ranks (List[int]): ranks in group
 
         Examples:
-            >>> gpc.add_ranks_in_group(ParallelMode.DATA, ranks=[0, 2, 5, 8])
+            >>> parallel_context.add_ranks_in_group(ParallelMode.DATA, ranks=[0, 2, 5, 8])
         """
         self._check_parallel_mode(parallel_mode)
         self._ranks_in_group[parallel_mode] = ranks
@@ -767,6 +768,66 @@ class ParallelContext(metaclass=Singleton):
                     self._register_dist(**res)
             else:
                 self._register_dist(**initializer_result)
+
+    def _make_ranks_to_devices(self):
+        rank_tensor = torch.zeros(len(self._local_ranks), dtype=torch.long).cuda()
+
+        for idx, local_rank in enumerate(self._local_ranks.values()):
+            rank_tensor[idx] = local_rank
+
+        rank_tensor_list = [
+            torch.zeros(rank_tensor.size(), dtype=torch.long).cuda()
+            for _ in range(self.get_world_size(ParallelMode.GLOBAL))
+        ]
+
+        dist.all_gather(tensor_list=rank_tensor_list, tensor=rank_tensor)
+
+        for _rank, _rank_tensor in enumerate(rank_tensor_list):
+            modes_and_ranks = {
+                mode: rank
+                for mode, rank in zip(self._local_ranks.keys(), _rank_tensor.tolist())
+            }
+            self._ranks_to_device[tuple(modes_and_ranks.items())] = _rank
+
+    def ranks2device(self, ranks):
+        """
+        Examples:
+            ranks:
+                {
+                    <ParallelMode.TENSOR_1D: 'tensor_1d'>: 1
+                    <ParallelMode.DATA: 'data'>: 0
+                }
+
+            self._ranks_to_device:
+            {
+                (
+                    (<ParallelMode.GLOBAL: 'global'>, 0),
+                    (<ParallelMode.DATA: 'data'>, 0),
+                    (<ParallelMode.MODEL: 'model'>, 0),
+                    (<ParallelMode.TENSOR: 'tensor'>, 0),
+                    (<ParallelMode.TENSOR_1D: 'tensor_1d'>, 0)
+                ): 0,
+                (
+                    (<ParallelMode.GLOBAL: 'global'>, 1),
+                    (<ParallelMode.DATA: 'data'>, 0),
+                    (<ParallelMode.MODEL: 'model'>, 1),
+                    (<ParallelMode.TENSOR: 'tensor'>, 1),
+                    (<ParallelMode.TENSOR_1D: 'tensor_1d'>, 1)
+                ): 1,
+                ...
+            }
+
+            return device: 1
+        """
+        ranks_key = {mode: None for mode in self._local_ranks.keys()}
+
+        for mode in self._local_ranks.keys():
+            if mode in ranks:
+                ranks_key[mode] = ranks[mode]
+            else:
+                ranks_key[mode] = self.get_local_rank(mode)
+
+        return self._ranks_to_device[tuple(ranks_key.items())]
 
     def is_initialized(self, parallel_mode: ParallelMode):
         """

@@ -1,7 +1,7 @@
-from .data_parallel import *
-from .pipeline_parallel import *
-from .tensor_parallel import *
-from .wrap import (
+from oslo.torch.nn.parallel.distributed.tensor_parallel import *
+from oslo.torch.nn.parallel.distributed.tensor_parallel import *
+from oslo.torch.nn.parallel.distributed.pipeline_parallel import *
+from oslo.torch.nn.parallel.distributed.wrap import (
     auto_wrap,
     config_auto_wrap_policy,
     default_auto_wrap_policy,
