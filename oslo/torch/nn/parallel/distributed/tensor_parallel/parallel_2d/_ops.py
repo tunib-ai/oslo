@@ -6,6 +6,7 @@ from torch import Tensor
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
+from oslo.torch.distributed._ops import all_reduce, reduce_scatter, all_gather
 
 
 class Matmul_AB_2D(torch.autograd.Function):
@@ -15,8 +16,8 @@ class Matmul_AB_2D(torch.autograd.Function):
         ctx: Any,
         A: Tensor,
         B: Tensor,
-        parallel_context: ParallelContext,
         summa_dim: int,
+        parallel_context: ParallelContext,
         out_shape: Tuple[int, ...],
         row_rank: int,
         col_rank: int,
@@ -159,6 +160,7 @@ class Matmul_AB_2D(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -169,8 +171,8 @@ class Matmul_ABT_2D(torch.autograd.Function):
         ctx: Any,
         A: Tensor,
         B: Tensor,
-        parallel_context: ParallelContext,
         summa_dim: int,
+        parallel_context: ParallelContext,
         out_shape: Tuple[int, ...],
         row_rank: int,
         col_rank: int,
@@ -319,6 +321,7 @@ class Matmul_ABT_2D(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -329,8 +332,8 @@ class Matmul_ATB_2D(torch.autograd.Function):
         ctx: Any,
         A: Tensor,
         B: Tensor,
-        parallel_context: ParallelContext,
         summa_dim: int,
+        parallel_context: ParallelContext,
         out_shape: Tuple[int, ...],
         row_rank: int,
         col_rank: int,
@@ -476,6 +479,7 @@ class Matmul_ATB_2D(torch.autograd.Function):
             None,
             None,
             None,
+            None,
         )
 
 
@@ -489,6 +493,7 @@ class _Add_Bias_2D(torch.autograd.Function):
         output_size_per_partition: int,
         row_rank: int,
         col_rank: int,
+        parallel_context: ParallelContext,
         row_parallel_mode: ParallelMode,
         col_parallel_mode: ParallelMode,
         skip_bias_add: bool,
@@ -497,10 +502,16 @@ class _Add_Bias_2D(torch.autograd.Function):
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
     ) -> Tensor:
-        bias_temp = all_gather(bias, -1, col_parallel_mode)
+        bias_temp = all_gather(
+            bias,
+            -1,
+            parallel_mode=col_parallel_mode,
+            parallel_context=parallel_context,
+        )
 
         ctx.row_rank = row_rank
         ctx.col_rank = col_rank
+        ctx.parallel_context = parallel_context
         ctx.row_parallel_mode = row_parallel_mode
         ctx.col_parallel_mode = col_parallel_mode
         ctx.bias = skip_bias_add
@@ -519,12 +530,19 @@ class _Add_Bias_2D(torch.autograd.Function):
     @custom_bwd
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
         col_parallel_mode = ctx.col_parallel_mode
+        parallel_context = ctx.parallel_context
 
         if ctx.bias:
-            grad = reduce_scatter(output_grad, -1, col_parallel_mode)
+            grad = reduce_scatter(
+                output_grad,
+                -1,
+                parallel_mode=col_parallel_mode,
+                parallel_context=parallel_context,
+            )
             return (
                 None,
                 grad,
+                None,
                 None,
                 None,
                 None,
@@ -539,10 +557,16 @@ class _Add_Bias_2D(torch.autograd.Function):
         else:
             reduce_dim = tuple(range(output_grad.ndim - 1))
             reduce = torch.sum(output_grad, dim=reduce_dim)
-            grad = reduce_scatter(reduce, -1, col_parallel_mode)
+            grad = reduce_scatter(
+                reduce,
+                -1,
+                parallel_mode=col_parallel_mode,
+                parallel_context=parallel_context,
+            )
             return (
                 output_grad,
                 grad,
+                None,
                 None,
                 None,
                 None,
@@ -604,48 +628,83 @@ class _Layernorm_2D(torch.autograd.Function):
         input_grad -= output_grad_sum
         input_grad *= Var_x
 
-        return input_grad, None, None, None, None, None
+        return input_grad, None, None, None, None, None, None
 
 
 class _AllGatherTensor2D(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
     def forward(
-        ctx: Any, inputs: Tensor, dim: int, parallel_mode: ParallelMode
+        ctx: Any,
+        inputs: Tensor,
+        dim: int,
+        parallel_mode: ParallelMode,
+        parallel_context: ParallelContext,
     ) -> Tensor:
         ctx.dim = dim
         ctx.parallel_mode = parallel_mode
+        ctx.parallel_context = parallel_context
 
-        outputs = all_gather(inputs, dim, parallel_mode)
+        outputs = all_gather(
+            inputs,
+            dim,
+            parallel_mode=parallel_mode,
+            parallel_context=parallel_context,
+        )
         return outputs
 
     @staticmethod
     @custom_bwd
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
-        grad = reduce_scatter(output_grad, ctx.dim, ctx.parallel_mode)
-        return grad.contiguous(), None, None
+        grad = reduce_scatter(
+            output_grad,
+            ctx.dim,
+            parallel_mode=ctx.parallel_mode,
+            parallel_context=ctx.parallel_context,
+        )
+        return grad.contiguous(), None, None, None
 
 
 class _ReduceTensor2D(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input_, parallel_mode):
-        return all_reduce(input_, parallel_mode)
+    def forward(ctx, input_, parallel_mode, parallel_context):
+        return all_reduce(
+            input_,
+            parallel_mode=parallel_mode,
+            parallel_context=parallel_context,
+        )
 
     @staticmethod
     def backward(ctx, output_grad):
-        return output_grad, None
+        return output_grad, None, None
 
 
 class _ReduceScatterTensor2D(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, input_, dim, parallel_mode):
+    def forward(ctx, input_, dim, parallel_mode, parallel_context):
         ctx.dim = dim
         ctx.parallel_mode = parallel_mode
-        return reduce_scatter(input_, dim, parallel_mode)
+        ctx.parallel_context = parallel_context
+        return reduce_scatter(
+            input_,
+            dim,
+            parallel_mode=parallel_mode,
+            parallel_context=parallel_context,
+        )
 
     @staticmethod
     def backward(ctx, output_grad):
-        return all_gather(output_grad, ctx.dim, ctx.parallel_mode), None, None
+        return (
+            all_gather(
+                output_grad,
+                ctx.dim,
+                parallel_mode=ctx.parallel_mode,
+                parallel_context=ctx.parallel_context,
+            ),
+            None,
+            None,
+            None,
+        )
 
 
 class _ReduceByBatch2D(torch.autograd.Function):
@@ -653,9 +712,13 @@ class _ReduceByBatch2D(torch.autograd.Function):
     def symbolic(
         graph, input_, parallel_context: ParallelContext, reduce_mean: bool = False
     ):
-        output = all_reduce(input_, ParallelMode.PARALLEL_2D_COL)
+        output = all_reduce(
+            input_,
+            parallel_mode=ParallelMode.TENSOR_2D_COL,
+            parallel_context=parallel_context,
+        )
         if reduce_mean:
-            reduce_size = parallel_context.get_world_size(ParallelMode.PARALLEL_2D_COL)
+            reduce_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
             return output / reduce_size
         return output
 
@@ -664,10 +727,14 @@ class _ReduceByBatch2D(torch.autograd.Function):
     def forward(
         ctx, input_, parallel_context: ParallelContext, reduce_mean: bool = False
     ):
-        output = all_reduce(input_, ParallelMode.PARALLEL_2D_COL)
+        output = all_reduce(
+            input_,
+            parallel_mode=ParallelMode.TENSOR_2D_COL,
+            parallel_context=parallel_context,
+        )
         ctx.reduce_mean = reduce_mean
         if reduce_mean:
-            reduce_size = parallel_context.get_world_size(ParallelMode.PARALLEL_2D_COL)
+            reduce_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
             ctx.reduce_size = reduce_size
             return output.clone() / reduce_size
         return output.clone()
@@ -676,6 +743,6 @@ class _ReduceByBatch2D(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, output_grad):
         if ctx.reduce_mean:
-            return output_grad / ctx.reduce_size, None
+            return output_grad / ctx.reduce_size, None, None
         else:
-            return output_grad, None
+            return output_grad, None, None

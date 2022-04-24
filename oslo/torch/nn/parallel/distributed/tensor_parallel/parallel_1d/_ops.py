@@ -25,14 +25,12 @@ class _Broadcast1D(torch.autograd.Function):
 
 class _AllReduce1D(torch.autograd.Function):
     def forward(ctx, inputs, parallel_context):
-        return (
-            all_reduce(
-                inputs,
-                parallel_mode=ParallelMode.TENSOR_1D,
-                parallel_context=parallel_context,
-                on_cpu=str(inputs.device) == "cpu",
-                async_op=False,
-            ),
+        return all_reduce(
+            inputs,
+            parallel_mode=ParallelMode.TENSOR_1D,
+            parallel_context=parallel_context,
+            on_cpu=str(inputs.device) == "cpu",
+            async_op=False,
         )
 
     def backward(ctx, grad):
