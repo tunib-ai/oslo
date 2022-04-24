@@ -6,11 +6,8 @@ import torch
 import torch.distributed as dist
 from anytree import Node
 
-from oslo.torch.nn.parallel.distributed.pipeline_parallel._utils import (
-    dfs,
-    get_parameter_dtype,
-    is_huggingface_model,
-)
+from oslo.torch.nn.parallel.distributed.pipeline_parallel._utils import dfs
+from oslo.torch.nn.parallel.utils import get_parameter_dtype, is_huggingface_model
 
 
 class PartitioningCostEstimator(object):

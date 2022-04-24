@@ -11,8 +11,7 @@ class LazyModuleMixin:
         super().__init__(*args, **kwargs)  # type: ignore[misc]
 
     def has_uninitialized_params(self: _LazyProtocol):
-        r"""Check if a module has parameters that are not initialized
-        """
+        r"""Check if a module has parameters that are not initialized"""
         # This is to avoid the JIT to track this parameter and force
         # custom modules __setstate__ to add it
         params = self._parameters.values()
@@ -22,11 +21,7 @@ class LazyModuleMixin:
                 return True
         return False
 
-    def initialize_parameters(self: _LazyProtocol, *args, **kwargs):
-        r"""Initialize parameters according to the input batch properties.
-        This adds an interface to isolate parameter initialization from the
-        forward pass when doing parameter shape inference.
-        """
-        raise NotImplementedError(
-            'initialize_parameters is not implemented for {}'.format(self.__class__.__name__)
-        )
+    def initialize_parameters(self, *args, **kwargs):
+        for module in self.modules():
+            if isinstance(module, LazyModuleMixin):
+                module.initialize_parameters(*args, **kwargs)
