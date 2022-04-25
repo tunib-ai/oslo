@@ -7,7 +7,7 @@ except ImportError:
 
 import oslo
 
-from oslo.torch.nn.parallel.distributed.tensor_parallel._mapping_1d import (
+from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._mapping import (
     Column,
     Row,
     Update,
@@ -103,8 +103,27 @@ class _TensorParallelMappingForHuggingFace(object):
         except ImportError:
             return None
 
+    def get_mapping(self, model):
+        """
+        Get mapping by model obj
 
-TENSOR_PARALLEL_MAPPING_FOR_HF = _TensorParallelMappingForHuggingFace()
+        Args:
+            model (PreTrainedModel): model object (e.g. BertForSequenceClassification)
+
+        Returns:
+            dict: mapping by model
+        """
+        mapping_by_model = None
+        for cls, mapping in self.__MAPPING__.items():
+            if isinstance(model, cls):
+                mapping_by_model = {cls: mapping}
+
+        assert mapping_by_model is not None, (
+            f"Currently, {model.__class__.__qualname__} is not supported. "
+            f"The current supported models are {list(self.__MAPPING__.keys())}"
+        )
+        return mapping_by_model
+
 
 HF_TO_OSLO = {
     transformers.GPT2Model: oslo.transformers.GPT2Model,
