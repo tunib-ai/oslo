@@ -1,2 +1,2 @@
 from .flatten_params_wrapper import FlattenParamsWrapper
-from .fsdp import FullyShardedDataParallel, TrainingState
+from .fully_sharded_data_parallel import FullyShardedDataParallel, TrainingState
