@@ -41,6 +41,7 @@ from torch.distributed import ProcessGroup
 from torch.nn.parameter import Parameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.utils import ParallelWrapper
 from oslo.torch.nn.parallel.distributed.wrap import (
     auto_wrap,
     config_auto_wrap_policy,
@@ -121,7 +122,7 @@ class OffloadConfig:
     dir: Optional[str] = None
 
 
-class FullyShardedDataParallel(nn.Module):
+class FullyShardedDataParallel(ParallelWrapper):
     """
     A wrapper for sharding Module parameters across data parallel workers. This
     is inspired by `Xu et al.`_ as well as the ZeRO Stage 3 from DeepSpeed_.
