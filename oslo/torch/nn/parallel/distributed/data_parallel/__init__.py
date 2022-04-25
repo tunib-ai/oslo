@@ -1,1 +1,1 @@
-from .distributed import DistributedDataParallel
+from .distributed_data_parallel import DistributedDataParallel
