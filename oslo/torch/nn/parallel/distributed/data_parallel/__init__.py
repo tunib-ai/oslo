@@ -1,1 +1,1 @@
-from sdp import ShardedDataParallel
+from .sdp import ShardedDataParallel
