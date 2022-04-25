@@ -134,10 +134,16 @@ class FullyShardedDataParallel(ParallelWrapper):
     Pseudo-code usage::
 
         import torch
-        from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
+        from oslo.torch.distributed import ParallelContext
+        from oslo.torch.nn.parallel import FullyShardedDataParallel as FSDP
 
         torch.cuda.set_device(device_id)
-        sharded_module = FSDP(my_module)
+        parallel_context = ParallelContext.from_torch(
+            data_parallel_size=1,
+            pipeline_parallel_size=1,
+            tensor_parallel_size=1
+        )
+        sharded_module = FSDP(my_module, parallel_context=parallel_context)
         optim = torch.optim.Adam(sharded_module.parameters(), lr=0.0001)
         x = sharded_module(x, y=3, z=torch.Tensor([1]))
         loss = x.sum()
@@ -151,13 +157,18 @@ class FullyShardedDataParallel(ParallelWrapper):
     across the forward pass. For example::
 
         import torch
-        from fairscale.nn.wrap import wrap, enable_wrap, auto_wrap
-        from fairscale.nn.data_parallel import FullyShardedDataParallel as FSDP
-        from fairscale.utils.testing import dist_init, teardown, rmf
+        from oslo.torch.distributed import ParallelContext
+        from oslo.torch.nn.parallel.wrap import wrap, enable_wrap, auto_wrap
+        from oslo.torch.nn.parallel import FullyShardedDataParallel as FSDP
+        from oslo.torch.utils.testing import teardown
 
-        result = dist_init(0, 1, "/tmp/t1", "/tmp/t2")
-        assert result
-        fsdp_params = dict(wrapper_cls=FSDP, mixed_precision=True, flatten_parameters=True)
+        parallel_context = ParallelContext.from_torch(
+            data_parallel_size=1,
+            pipeline_parallel_size=1,
+            tensor_parallel_size=1
+        )
+        assert parallel_context
+        fsdp_params = dict(wrapper_cls=FSDP, mixed_precision=True, flatten_parameters=True, parallel_context=parallel_context)
         with enable_wrap(**fsdp_params):
             l1 = wrap(torch.nn.Linear(5, 5))
             assert isinstance(l1, FSDP)
@@ -170,8 +181,6 @@ class FullyShardedDataParallel(ParallelWrapper):
             assert isinstance(l2.decoder, FSDP)
             print(l2)  # You can print the model to examine FSDP wrapping.
         teardown()
-        rmf("/tmp/t1")
-        rmf("/tmp/t2")
 
     .. warning::
 
