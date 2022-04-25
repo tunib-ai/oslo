@@ -1,1 +1,1 @@
-from .distributed_data_parallel import DistributedDataParallel
+from oslo.torch.nn.parallel.distributed.data_parallel.distributed_data_parallel import DistributedDataParallel
