@@ -1,2 +1,3 @@
-from .flatten_params_wrapper import FlattenParamsWrapper
-from .fully_sharded_data_parallel import FullyShardedDataParallel, TrainingState
+from oslo.torch.nn.parallel.distributed.data_parallel.distributed_data_parallel import DistributedDataParallel
+from oslo.torch.nn.parallel.distributed.data_parallel.flatten_params_wrapper import FlattenParamsWrapper
+from oslo.torch.nn.parallel.distributed.data_parallel.fully_sharded_data_parallel import FullyShardedDataParallel, TrainingState
