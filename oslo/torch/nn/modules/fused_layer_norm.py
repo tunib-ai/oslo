@@ -1,4 +1,3 @@
-from pyparsing import OnlyOnce
 import torch
 import torch.nn as nn
 from typing import Optional
@@ -9,8 +8,6 @@ from torch.nn import init
 from torch.nn import functional as F
 from oslo.torch import nn as onn
 
-global fused_layer_norm_cuda
-# fused_layer_norm_cuda = FusedLayerNormBinder().bind()
 
 
 # Reference implementation from Huggingface
