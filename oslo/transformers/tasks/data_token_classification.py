@@ -1,9 +1,26 @@
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
+from abc import ABC, abstractmethod
+import torch
 
-from transformers import GPT2ForTokenClassification, AutoTokenizer
+from transformers import AutoTokenizer
 from transformers.file_utils import PaddingStrategy
 from datasets import Dataset, DatasetDict
-from data_utils import BaseProcessor
+from datasets.arrow_dataset import Batch
+
+
+class BaseProcessor(ABC):
+    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self._max_length = max_length
+        self._chunk_size = max_length
+        self._buffer = []
+
+    def save_tokenizer(self, path: str) -> None:
+        self._tokenizer.save_pretrained(path)
+
+    @abstractmethod
+    def __call__(self, list_of_str: List[str]) -> Dict[str, List[int]]:
+        pass
 
 
 class ProcessorForTokenClassification(BaseProcessor):
@@ -13,7 +30,7 @@ class ProcessorForTokenClassification(BaseProcessor):
         self._chunk_size = max_length
         self._buffer = []
     
-    def __call__(self, examples: Union[DatasetDict, Dataset]) -> Dict[str, List[int]]:
+    def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["tokens"],
             is_split_into_words=True,
@@ -21,34 +38,68 @@ class ProcessorForTokenClassification(BaseProcessor):
         )
         all_labels = examples["labels"]
         new_labels = []
+        self.make_B_to_I_label(self.label_names)
+
         for i, labels in enumerate(all_labels):
-            word_ids = dict_of_training_examples.word_ids(i)
+            word_ids = dict_of_training_examples.word_ids(batch_index=i)
             new_labels.append(self.align_labels_with_tokens(labels, word_ids))
         
         dict_of_training_examples["labels"] = new_labels
         return dict_of_training_examples
     
-    def align_labels_with_tokens(self, labels, word_ids):
-        new_labels = []
-        current_word = None
-        for word_id in word_ids:
-            if word_id != current_word:
-                # Start of a new word!
-                current_word = word_id
-                label = -100 if word_id is None else labels[word_id]
-                new_labels.append(label)
-            elif word_id is None:
-                # Special token
-                new_labels.append(-100)
-            else:
-                # Same word as previous token
-                label = labels[word_id]
-                # If the label is B-XXX we change it to I-XXX
-                if label % 2 == 1:
-                    label += 1
-                new_labels.append(label)
+    def get_label_names(self, dataset: Union[Dataset, DatasetDict]) -> List[str]:
+        if isinstance(dataset, Dataset):
+            features = dataset.features["labels"]
+            label_names = features.feature.names
+        else:
+            features = dataset["train"].features["labels"]
+            label_names = features.feature.names
         
-        return new_labels
+        self.label_names = label_names
+
+        return label_names
+    
+    def get_label_map(self, label_names: Union[List[str], Dataset, DatasetDict]) -> Dict[str, Dict[str, str]]:
+        if isinstance(label_names, Dataset) or isinstance(label_names, DatasetDict):
+            label_names = self.get_label_names(label_names)
+
+        id2label = {str(i): label for i, label in enumerate(label_names)}
+        label2id = {v: k for k, v in id2label.items()}
+
+        self.id2label = id2label
+        self.label2id = label2id
+
+        return {"label2id": label2id, "id2label": id2label}
+    
+    def make_B_to_I_label(self, label_names: List[str]) -> List[int]:
+        # Map that sends B-Xxx label to its I-Xxx counterpart
+        b_to_i_label = []
+        for idx, label in enumerate(label_names):
+            if label.startswith("B-") and label.replace("B-", "I-") in label_names:
+                b_to_i_label.append(label_names.index(label.replace("B-", "I-")))
+            else:
+                b_to_i_label.append(idx)
+        
+        self.b_to_i_label = b_to_i_label
+
+        return b_to_i_label
+    
+    def align_labels_with_tokens(self, labels, word_ids) -> List[int]:
+        previous_word_idx = None
+        label_ids = []
+        for word_idx in word_ids:
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # ignored in the loss function.
+            if word_idx is None:
+                label_ids.append(-100)
+            # We set the label for the first token of each word.
+            elif word_idx != previous_word_idx:
+                label_ids.append(labels[word_idx])
+            else:
+                label_ids.append(self.b_to_i_label[labels[word_idx]])
+            previous_word_idx = word_idx
+
+        return label_ids
 
 
 class DataCollatorForTokenClassification:
@@ -71,8 +122,6 @@ class DataCollatorForTokenClassification:
             self.tokenizer._pad_token = self.tokenizer._eos_token
 
     def __call__(self, features):
-        import torch
-
         label_name = "label" if "label" in features[0].keys() else "labels"
         labels = [feature[label_name] for feature in features] if label_name in features[0].keys() else None
         batch = self.tokenizer.pad(
