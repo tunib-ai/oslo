@@ -4,7 +4,6 @@ from typing import Union, Tuple, Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import Tensor
 from torch.nn.parameter import UninitializedParameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -239,7 +238,7 @@ class Linear2D(Linear):
         skip_bias_add: bool = False,
     ):
         self.parallel_context = parallel_context
-        self.summa_dim = math.sqrt(parallel_context.get_world_size(ParallelMode.TENSOR))
+        self.summa_dim = math.sqrt(self.parallel_context.get_world_size(ParallelMode.TENSOR))
         assert (
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
@@ -247,8 +246,8 @@ class Linear2D(Linear):
             out_features % self.summa_dim == 0
         ), "out_features must be divisible by summa dim."
 
-        self.row_rank = parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        self.col_rank = parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
 
         super().__init__(
             in_features=int(in_features // self.summa_dim),
@@ -258,3 +257,29 @@ class Linear2D(Linear):
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
+
+    def forward(
+        self, input: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        # input: [m/q, n/q, k/q]
+        # output: [m/q, n/q, h/q]
+        out_shape = input.shape[:-1] + (self.out_features, )
+        outputs = Matmul_ABT_2D.apply(input, self.weight, self.summa_dim, out_shape, self.row_rank, self.col_rank, 
+                                     ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, self.data_parallel_rank,
+                                     self.pipeline_parallel_rank, self.pipeline_parallel_size, self.tensor_parallel_size)
+
+        if self.bias is not None:
+            if self.skip_bias_add:
+                bias = add_bias_2d(None, self.bias, self.out_features, self.row_rank, self.col_rank,
+                                   ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, True,
+                                   self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
+                                   self.tensor_parallel_size)
+                return outputs, bias
+            else:
+                outputs = add_bias_2d(outputs, self.bias, self.out_features, self.row_rank, self.col_rank,
+                                   ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, False,
+                                   self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
+                                   self.tensor_parallel_size)
+        else:
+            return outputs
+
