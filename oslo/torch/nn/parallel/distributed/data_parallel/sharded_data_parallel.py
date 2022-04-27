@@ -22,7 +22,7 @@ from torch import nn
 from torch.autograd import Variable
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.optim import OSS
+from oslo.torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.utils import GradBucket, Workhandle, get_global_rank
 
 
@@ -94,7 +94,7 @@ class ShardedDataParallel(nn.Module):
     def __init__(
         self,
         module: nn.Module,
-        sharded_optimizer: Union[OSS, List[OSS]],
+        sharded_optimizer: Union[ZeroRedundancyOptimizer, List[ZeroRedundancyOptimizer]],
         parallel_context: ParallelContext,
         broadcast_buffers: bool = True,
         sync_models_at_startup: bool = True,

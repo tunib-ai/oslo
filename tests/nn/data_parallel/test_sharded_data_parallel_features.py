@@ -20,7 +20,7 @@ from torch.nn import Linear, Sequential
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.distributed.data_parallel import ShardedDataParallel
-from oslo.torch.optim import OSS
+from oslo.torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.utils.testing import (
     GPT2,
     SGDWithPausingCompute,
@@ -104,7 +104,7 @@ def run_one_step(
     if optimizer_type == SGDWithPausingCompute:
         optimizer_settings["rank"] = rank
 
-    optimizer = OSS(params=model.parameters(), optim=optimizer_type, parallel_context=gpc, **optimizer_settings)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=optimizer_type, parallel_context=gpc, **optimizer_settings)
     ddp_model = ShardedDataParallel(
         model,
         optimizer,
@@ -218,7 +218,7 @@ def run_test_two_inputs(rank, world_size, backend, device, temp_file_name, reduc
     np.random.seed(rank)
 
     model = _DoubleInput().to(device)
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(model, optimizer, reduce_buffer_size=reduce_buffer_size, parallel_context=gpc)
 
     # Optim loop
@@ -275,7 +275,7 @@ def test_ddp_attributes():
             backend="gloo"
         )
         model = Sequential(Linear(2, 3), Linear(3, 3))
-        optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+        optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
         ddp_model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
         
         assert hasattr(ddp_model, "is_multi_device_module")
@@ -303,7 +303,7 @@ def test_random_attributes():
         model = Sequential(Linear(2, 3), Linear(3, 3))
         model.banana = "sweet"
 
-        optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+        optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
         ddp_model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
 
         assert hasattr(ddp_model, "banana")
@@ -335,7 +335,7 @@ def test_catch_grad_grad():
         chained_grad.requires_grad = True
         next(model.parameters()).grad = chained_grad
 
-        optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+        optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
         ddp_model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
 
         inputs = torch.rand(100, 2)
@@ -364,7 +364,7 @@ def test_mixed_types():
 
         model = _get_mlp(tripwire=True)
 
-        optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+        optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
         model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
         input_tensor = torch.rand((2, 2))
         _ = model(input_tensor)
@@ -387,7 +387,7 @@ def run_test_train_eval_change(rank, world_size, file):
 
     model = _get_mlp()
     model.train()
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
     input_tensor = torch.rand((2, 2))
     loss = model(input_tensor).sum()
@@ -437,7 +437,7 @@ def run_test_device_change(rank, world_size, backend, device, temp_file_name, re
     torch.cuda.set_device(rank)
 
     model = Sequential(Linear(2, 3), Linear(3, 3)).cpu()  # not device on purpose, test changing it after the fact
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(
         model, optimizer, sync_models_at_startup=False, reduce_buffer_size=reduce_buffer_size, parallel_context=gpc
     )
@@ -490,7 +490,7 @@ def run_test_training_change(rank, world_size, backend, device, temp_file_name, 
     torch.cuda.set_device(rank)
 
     model = Sequential(Linear(2, 3), Linear(3, 3)).to(device)
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(model, optimizer, parallel_context=gpc, reduce_buffer_size=reduce_buffer_size)
 
     inputs = torch.rand((10, 2), device=device)
@@ -539,7 +539,7 @@ def run_test_ddp_sync_batch_norm(rank, world_size, backend, device, temp_file_na
     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model.to(device)  # in pytorch 1.5 syncBN switches to the default device/cpu
 
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(model, optimizer, parallel_context=gpc)
 
     assert isinstance(model[1], torch.nn.SyncBatchNorm)
@@ -588,8 +588,8 @@ def run_test_two_optimizers(rank, world_size, backend, device, temp_file_name):
     model = _DoubleInput().to(device)
 
     parameters = list(model.parameters())
-    optimizer_1 = OSS(params=parameters[:-10], optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
-    optimizer_2 = OSS(params=parameters[-10:], optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer_1 = ZeroRedundancyOptimizer(params=parameters[:-10], optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer_2 = ZeroRedundancyOptimizer(params=parameters[-10:], optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(model, [optimizer_1, optimizer_2], parallel_context=gpc)
 
     # Optim loop
@@ -648,7 +648,7 @@ def run_test_gpt2(rank, world_size, backend, device, temp_file_name, reduce_buff
     model = GPT2(
         embed_dim=256, num_heads=2, num_layers=12, num_positions=INPUT_DIM * INPUT_DIM, num_vocab=512, num_classes=2
     )
-    optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
+    optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-3, momentum=0.99, parallel_context=gpc)
     ddp_model = ShardedDataParallel(model, optimizer, reduce_buffer_size=reduce_buffer_size, parallel_context=gpc)
 
     # Move the model to another device post-construction
@@ -755,7 +755,7 @@ def run_test_multiple_groups(rank, world_size, tempfile_name, backend, reduce_bu
         )
 
         # With SGD, Momentum is required to get a state to shard
-        optimizer = OSS(optim=torch.optim.SGD, params=model.parameters(), parallel_context=gpc, lr=1e-3, momentum=0.99)
+        optimizer = ZeroRedundancyOptimizer(optim=torch.optim.SGD, params=model.parameters(), parallel_context=gpc, lr=1e-3, momentum=0.99)
         model = ShardedDataParallel(
             model, optimizer, parallel_context=gpc, reduce_buffer_size=reduce_buffer_size
         )

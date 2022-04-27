@@ -79,11 +79,11 @@ class TestSingleRank(unittest.TestCase):
 
     def test_create(self):
         params = [torch.rand(1)]
-        o = optim.OSS(torch.optim.SGD, params,self.gpc, lr=0.01)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, params,self.gpc, lr=0.01)
 
     def test_state_dict(self):
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(torch.optim.SGD,[x], self.gpc, lr=0.1, momentum=0.9)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD,[x], self.gpc, lr=0.1, momentum=0.9)
         x.backward()
         o.step()
         assert x == torch.tensor([0.9], device=DEVICE)
@@ -109,7 +109,7 @@ class TestSingleRank(unittest.TestCase):
                 assert state_dict["param_groups"][0][k] == o.param_groups[0][k]
 
         # Check that it's correctly loaded
-        o = optim.OSS(torch.optim.SGD, [x], self.gpc, lr=0.01)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, [x], self.gpc, lr=0.01)
         o.load_state_dict(state_dict)
         # Check that state is correct and on proper device
         assert o.optim.state[x]["momentum_buffer"] == torch.tensor([1.0], device=DEVICE)
@@ -128,7 +128,7 @@ class TestSingleRank(unittest.TestCase):
     def test_lr_scheduler(self):
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
         x2 = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(torch.optim.SGD, [x], self.gpc, lr=0.01)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, [x], self.gpc, lr=0.01)
         o2 = torch.optim.SGD([x2], lr=0.01)
         s = torch.optim.lr_scheduler.StepLR(o, 1)
         s2 = torch.optim.lr_scheduler.StepLR(o2, 1)
@@ -151,7 +151,7 @@ class TestSingleRank(unittest.TestCase):
 
         kwarg = []
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(SGDWithStepKWArg, [x], self.gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(SGDWithStepKWArg, [x], self.gpc, lr=0.1)
         x.backward()
         o.step(0, kwarg=kwarg)
         assert kwarg == [5]
@@ -160,7 +160,7 @@ class TestSingleRank(unittest.TestCase):
     @skip_if_no_cuda
     def test_device_change(self):
         x = torch.nn.Linear(1, 1).to("cpu")
-        o = optim.OSS(torch.optim.SGD, x.parameters(), self.gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, x.parameters(), self.gpc, lr=0.1)
 
         # Move the model to device after OSS was constructed
         x.to(DEVICE)
@@ -180,7 +180,7 @@ class TestSingleRank(unittest.TestCase):
                 self.param_groups[0]["new_key"] = 0.1
 
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(SGDWithNewKey, [x], self.gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(SGDWithNewKey, [x], self.gpc, lr=0.1)
         x.backward()
         o.step()
         assert o.param_groups[0]["new_key"] == 0.1
@@ -192,14 +192,14 @@ class TestSingleRank(unittest.TestCase):
                 return super().step()
 
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(SGDWithoutClosure, [x], self.gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(SGDWithoutClosure, [x], self.gpc, lr=0.1)
         x.backward()
         o.step()
         assert x == torch.tensor([0.9], device=DEVICE)
 
     def test_implicit_local_state_dict(self):
         x = torch.tensor([1.0], device=DEVICE, requires_grad=True)
-        o = optim.OSS(torch.optim.SGD, [x], self.gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, [x], self.gpc, lr=0.1)
         with pytest.raises(RuntimeError):
             _ = o.state_dict()
 
@@ -225,7 +225,7 @@ def run_test_add_param_group(rank, world_size, tempfile_name):
         for p in params:
             p.requires_grad = True
 
-        o = optim.OSS(torch.optim.SGD, params, gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, params, gpc, lr=0.1)
 
         assert len(o.param_groups) == 1
         o.add_param_group({"params": [torch.rand(3, 1)]})
@@ -246,7 +246,7 @@ def run_test_add_param_group(rank, world_size, tempfile_name):
         for p in params[1:]:
             p.requires_grad = True
 
-        o = optim.OSS(torch.optim.SGD, params, gpc, lr=0.1)
+        o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, params, gpc, lr=0.1)
 
         assert len(o.param_groups) == 1
         o.add_param_group({"params": [torch.rand(3, 1)]})
@@ -287,7 +287,7 @@ def run_test_zero_grad(rank, world_size, tempfile_name):
 
     x = torch.rand(1)
     m = torch.nn.Linear(1, 1)
-    o = optim.OSS(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
+    o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
     y = m(x)
     y.backward(x)
     assert m.weight.grad
@@ -331,7 +331,7 @@ def run_test_empty_shard(rank, world_size, tempfile_name, backend):
         m = m.to(rank)
         x = x.to(rank)
 
-    o = optim.OSS(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
+    o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
     y = m(x).sum()
     y.backward()
     o.step()
@@ -371,7 +371,7 @@ def run_test_step(rank, world_size, tempfile_name):
     m.weight.data = torch.tensor([[1.0]])
     m.bias.data = torch.tensor([2.0])
     m.to(rank)
-    o = optim.OSS(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
+    o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
     y = m(x)
     y.backward(x)
     for p in m.parameters():
@@ -419,7 +419,7 @@ def run_test_step_with_closure(rank, world_size, tempfile_name, optimizer=None):
     m.bias.data = torch.tensor([bias])
     m.to(rank)
 
-    o = optim.OSS(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
+    o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, m.parameters(), gpc, lr=0.1)
 
     y = m(x)
     y.backward(x)
@@ -477,7 +477,7 @@ def run_test_sharding(rank, world_size, tempfile_name):
     for p in params:
         p.requires_grad = True
 
-    o = optim.OSS(torch.optim.SGD, params, gpc, lr=0.1)
+    o = optim.ZeroRedundancyOptimizer(torch.optim.SGD, params, gpc, lr=0.1)
     assert sum([x.numel() for x in o.optim.param_groups[0]["params"]]) == sum(sizes)
 
     dist.destroy_process_group()
@@ -521,7 +521,7 @@ def run_test_collect_shards(rank, world_size, reference_rank, tempfile_name):
     loss_fn.to(device)
 
     # With SGD, Momentum is required to get a state to shard
-    optimizer = optim.OSS(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
+    optimizer = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
 
     def closure():
         optimizer.zero_grad()
@@ -564,7 +564,7 @@ def run_test_collect_shards(rank, world_size, reference_rank, tempfile_name):
 
     # Check that if the model is moved to cpu, the optimizer consolidation still works
     model.cpu()
-    optimizer = optim.OSS(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
+    optimizer = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
     optimizer.consolidate_state_dict(recipient_rank=reference_rank)
 
     dist.destroy_process_group()
@@ -614,7 +614,7 @@ def run_test_reproducibility(rank, world_size, tempfile_name, broadcast_fp16):
     loss_fn = torch.nn.L1Loss()
     loss_fn.to(device)
 
-    optimizer = optim.OSS(torch.optim.RMSprop, model.parameters(), gpc, lr=0.1, broadcast_fp16=broadcast_fp16)
+    optimizer = optim.ZeroRedundancyOptimizer(torch.optim.RMSprop, model.parameters(), gpc, lr=0.1, broadcast_fp16=broadcast_fp16)
 
     def closure():
         optimizer.zero_grad()
@@ -734,7 +734,7 @@ def run_test_multiple_groups(rank, world_size, tempfile_name):
         )
 
         # With SGD, Momentum is required to get a state to shard
-        optimizer = optim.OSS(torch.optim.SGD,
+        optimizer = optim.ZeroRedundancyOptimizer(torch.optim.SGD,
             model.parameters(), gpc, lr=0.1, momentum=0.99
         )
         check(optimizer)
@@ -745,7 +745,7 @@ def run_test_multiple_groups(rank, world_size, tempfile_name):
         )
 
         # With SGD, Momentum is required to get a state to shard
-        optimizer = optim.OSS(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
+        optimizer = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model.parameters(), gpc, lr=0.1, momentum=0.99)
         check(optimizer)
 
     dist.destroy_process_group(process_group)
@@ -806,7 +806,7 @@ def run_gradient_clipping(rank, world_size, tempfile_name):
             module=model_oss,
             device_ids=[rank],
         )
-        sharded_optimizer = optim.OSS(torch.optim.SGD, model_oss.parameters(), gpc, lr=0.1, momentum=0.99)
+        sharded_optimizer = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model_oss.parameters(), gpc, lr=0.1, momentum=0.99)
 
         model = DDP(
             model,
@@ -906,14 +906,14 @@ def run_state_dict_distributed(rank, world_size, tempfile_name):
         module=model_oss1,
         device_ids=[rank],
     )
-    sharded_optimizer1 = optim.OSS(torch.optim.SGD, model_oss1.parameters(), gpc, lr=0.1, momentum=0.99)
+    sharded_optimizer1 = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model_oss1.parameters(), gpc, lr=0.1, momentum=0.99)
     sharded_optimizer1.add_param_group({"params": head_oss1.parameters()})
 
     model_oss2 = DDP(
         module=model_oss2,
         device_ids=[rank],
     )
-    sharded_optimizer2 = optim.OSS(torch.optim.SGD, model_oss2.parameters(), gpc, lr=0.1, momentum=0.99)
+    sharded_optimizer2 = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model_oss2.parameters(), gpc, lr=0.1, momentum=0.99)
     sharded_optimizer2.add_param_group({"params": head_oss2.parameters()})
 
     loss_fn = torch.nn.L1Loss().to(device)
@@ -928,7 +928,7 @@ def run_state_dict_distributed(rank, world_size, tempfile_name):
     state_dict2 = sync_object_ranks(state_dict2, RECIPIENT_RANK, device)
 
     # re-create a new optimizer from scratch with absurd values, load the previous state
-    sharded_optimizer2 = optim.OSS(torch.optim.SGD, model_oss2.parameters(), gpc, lr=1e6, momentum=0.0001)
+    sharded_optimizer2 = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model_oss2.parameters(), gpc, lr=1e6, momentum=0.0001)
     sharded_optimizer2.add_param_group({"params": head_oss2.parameters()})
     sharded_optimizer2.load_state_dict(state_dict2)
     check_same_model_params(
@@ -966,7 +966,7 @@ def run_state_dict_distributed(rank, world_size, tempfile_name):
     state_dict2 = sync_object_ranks(state_dict2, RECIPIENT_RANK, device)
 
     # reload the state_dict
-    sharded_optimizer2 = optim.OSS(torch.optim.SGD, model_oss2.parameters(), gpc, lr=0.1, momentum=0.99)
+    sharded_optimizer2 = optim.ZeroRedundancyOptimizer(torch.optim.SGD, model_oss2.parameters(), gpc, lr=0.1, momentum=0.99)
     sharded_optimizer2.add_param_group({"params": head_oss2.parameters()})
     sharded_optimizer2.load_state_dict(state_dict2)
 
@@ -1046,7 +1046,7 @@ def run_ddp_parity(rank, world_size, backend, temp_file_name, change_train_graph
         if isinstance(optimizer, torch.optim.SGD):
             optimizer_settings["momentum"] = 0.9
 
-        sharded_optimizer = optim.OSS(
+        sharded_optimizer = optim.ZeroRedundancyOptimizer(
             optim=optimizer,
             params=oss_trainable_params,
             parallel_context=gpc,

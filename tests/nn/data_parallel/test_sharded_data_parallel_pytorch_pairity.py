@@ -23,7 +23,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.distributed import ShardedDataParallel
-from oslo.torch.optim import OSS
+from oslo.torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.utils import torch_version
 from oslo.torch.utils.testing import check_same_model_params, skip_if_no_cuda, skip_if_single_gpu, temp_files_ctx
 
@@ -150,7 +150,7 @@ def run_ddp_parity(
     # properly reassigned when/if this changes
     next(model.parameters()).requires_grad = False
 
-    sharded_optimizer = OSS(params=model.parameters(), optim=torch.optim.SGD, lr=1e-4, momentum=0.99, parallel_context=gpc)
+    sharded_optimizer = ZeroRedundancyOptimizer(params=model.parameters(), optim=torch.optim.SGD, lr=1e-4, momentum=0.99, parallel_context=gpc)
     sharded_ddp_model = ShardedDataParallel(
         module=model,
         sharded_optimizer=sharded_optimizer,
@@ -324,8 +324,8 @@ def run_ddp_parity_two_optim(rank, world_size, backend, temp_file_name, reduce_b
     n_half_params = len(list(model.parameters())) // 2
     optim_settings = {"lr": 1e-3, "momentum": 0.99}
 
-    sharded_optimizer = OSS(params=list(model.parameters())[:n_half_params], optim=torch.optim.SGD, parallel_context=gpc, **optim_settings)
-    sharded_optimizer_2 = OSS(params=list(model.parameters())[n_half_params:], optim=torch.optim.SGD, parallel_context=gpc, **optim_settings)
+    sharded_optimizer = ZeroRedundancyOptimizer(params=list(model.parameters())[:n_half_params], optim=torch.optim.SGD, parallel_context=gpc, **optim_settings)
+    sharded_optimizer_2 = ZeroRedundancyOptimizer(params=list(model.parameters())[n_half_params:], optim=torch.optim.SGD, parallel_context=gpc, **optim_settings)
 
     sharded_ddp_model = ShardedDataParallel(
         module=model,

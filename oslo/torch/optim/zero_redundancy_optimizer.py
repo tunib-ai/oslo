@@ -9,7 +9,16 @@ import logging
 from collections import OrderedDict
 from itertools import chain
 from math import inf
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Type,
+    Union,
+)
 
 import torch
 import torch.distributed as dist
@@ -18,15 +27,14 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils._param_bucket import ParamBucket
 from oslo.torch.utils._params import (
     calc_grad_norm,
     get_global_rank,
     recursive_copy_to_device,
 )
 
-from oslo.torch.utils._param_bucket import ParamBucket
-
-__all__ = ["OSS"]
+__all__ = ["ZeroRedundancyOptimizer"]
 
 if TYPE_CHECKING:  # pragma: no cover
     from torch.optim.optimizer import _params_t
@@ -87,7 +95,7 @@ def _broadcast_object(
     return obj
 
 
-class OSS(Optimizer):
+class ZeroRedundancyOptimizer(Optimizer):
     """Wraps an arbitrary :class:`optim.Optimizer <torch.optim.Optimizer>`
     optimizer and shards its state as described by ZeRO_.
     ::
@@ -232,7 +240,7 @@ class OSS(Optimizer):
         .. note: Any extra parameter is passed to the base optimizer as-is"""
 
         # Sync oss param_groups attributes in case they've been updated by a scheduler.
-        OSS._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
 
         # Catch a possible change of devices in between OSS construction and step()
         with profiler.record_function("fairscale::oss::refresh_trainable"):
@@ -257,7 +265,7 @@ class OSS(Optimizer):
         self._broadcast_params()
 
         # Sync hypothethical new results from the wrapped optimizer to the exposed param_groups
-        OSS._sync_param_groups(self.optim.param_groups, self.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(self.optim.param_groups, self.param_groups)
 
         return loss
 
@@ -319,7 +327,7 @@ class OSS(Optimizer):
                 # n_i = sum_rank(a^p)^1/p
                 # -> n_total = all_reduce(n_i^p)^(1/p) = sum_i(n_i^p)^1/p = sum_i(sum_rank(a^p))^1/p
                 # all reduce over data parallel and model parallel workers
-                total_norm = local_norm ** norm_type
+                total_norm = local_norm**norm_type
                 dist.all_reduce(total_norm)
                 total_norm = total_norm ** (1.0 / norm_type)
 
@@ -346,7 +354,7 @@ class OSS(Optimizer):
         .. warning: This needs to be called on all replicas"""
 
         # Sync lr and other attributes in case its been updated
-        OSS._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
 
         # Pull the sharded state from all the other replicas
         # Store all the states in order, rank by rank
@@ -519,8 +527,8 @@ class OSS(Optimizer):
         super().load_state_dict(state_dict)
 
         # Sync with the optimizer param groups
-        OSS._sync_param_groups(state_dict["param_groups"], self.param_groups)
-        OSS._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(state_dict["param_groups"], self.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
 
     def refresh_trainable(self) -> None:
         """Updates the partitioning and communication patterns if the trainability (`requires_grad`)
@@ -536,7 +544,7 @@ class OSS(Optimizer):
             self.optim = self._optim_constructor(
                 self.partition_parameters()[self.rank], **self._optim_defaults
             )
-            OSS._sync_param_groups(self.optim.param_groups, self.param_groups)
+            ZeroRedundancyOptimizer._sync_param_groups(self.optim.param_groups, self.param_groups)
 
         self._setup_flat_buffers()
 
