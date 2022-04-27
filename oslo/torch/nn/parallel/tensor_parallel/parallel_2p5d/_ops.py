@@ -9,16 +9,67 @@ from torch import Tensor
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 
-# def get_parallel_group(parallel_mode: ParallelMode):
-#     return gpc.get_group(parallel_mode)
-#
-#
-# def get_global_rank():
-#     return gpc.get_global_rank()
-#
-#
-# def get_parallel_rank(parallel_mode: ParallelMode):
-#     return gpc.get_local_rank(parallel_mode)
+def classifier_2p5d(A: Tensor, B: Tensor, bias, tesseract_dim: int, out_shape: Tuple[int,
+                                                                                     ...], row_rank: int, col_rank: int,
+                    row_parallel_mode: ParallelMode, col_parallel_mode: ParallelMode, data_parallel_rank: int,
+                    pipeline_parallel_rank: int, pipeline_parallel_size: int, tensor_parallel_size: int) -> Tensor:
+    return _Classifier2p5D.apply(A, B, bias, tesseract_dim, out_shape, row_rank, col_rank, row_parallel_mode,
+                                 col_parallel_mode, data_parallel_rank, pipeline_parallel_rank, pipeline_parallel_size,
+                                 tensor_parallel_size)
+
+
+def add_bias_2p5d(input: Tensor, bias: Tensor, output_size_per_partition: int, tesseract_dim: int, row_rank: int,
+                  col_rank: int, dep_rank: int, col_parallel_mode: ParallelMode, skip_bias_add: bool,
+                  data_parallel_rank: int, pipeline_parallel_rank: int, pipeline_parallel_size: int,
+                  tensor_parallel_size: int) -> Tensor:
+    return _Add_Bias_2p5D.apply(input, bias, output_size_per_partition, tesseract_dim, row_rank, col_rank, dep_rank,
+                                col_parallel_mode, skip_bias_add, data_parallel_rank, pipeline_parallel_rank,
+                                pipeline_parallel_size, tensor_parallel_size)
+
+
+def layernorm_2p5d(input: Tensor, E_x: Tensor, Var_x: Tensor, hidden_size: int,
+                   row_parallel_mode: ParallelMode) -> Tensor:
+    return _Layernorm2p5D.apply(input, E_x, Var_x, hidden_size, row_parallel_mode)
+
+
+def all_gather_tensor_2p5d(inputs: Tensor, dim: int, col_parallel_mode: ParallelMode) -> Tensor:
+    return _AllGatherTensor2p5D.apply(inputs, dim, col_parallel_mode)
+
+
+def reduce_by_batch_2p5d(input_, reduce_mean: bool = False) -> Tensor:
+    return _ReduceByBatch2p5D.apply(input_, reduce_mean)
+
+
+def reduce_tensor_2p5d(input_: Tensor, parallel_mode: ParallelMode) -> Tensor:
+    return _ReduceTensor2p5D.apply(input_, parallel_mode)
+
+
+def reduce_scatter_tensor_2p5d(
+        input_: Tensor,
+        dim: int,
+        parallel_mode: ParallelMode,
+        parallel_context:
+        ParallelContext) -> Tensor:
+    dim_size = input_.size(dim)
+    world_size = parallel_context.get_world_size(parallel_mode)
+    assert dim_size % world_size == 0, \
+        f'The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size}).'
+
+    return _ReduceScatterTensor2p5D.apply(input_, dim, parallel_mode)
+
+
+def split_batch_2p5d(input_: Tensor, dim: int, parallel_context: ParallelContext) -> Tensor:
+    dim_size = input_.size(dim)
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+
+    if world_size <= 1:
+        return input_
+
+    assert dim_size % world_size == 0, \
+        f'The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size}).'
+
+    return torch.chunk(input_, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL),
+                       dim=dim)[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
 
 
 def get_current_device():
@@ -28,6 +79,7 @@ def get_current_device():
     return torch.cuda.current_device()
 
 
+# TODO: 만약 2D와 비슷할 경우 병합(?)
 class _Classifier2p5D(torch.autograd.Function):
 
     @staticmethod
@@ -103,15 +155,6 @@ class _Classifier2p5D(torch.autograd.Function):
                 bias_grad = None
 
         return A_grad, B_grad, bias_grad, None, None, None, None, None, None, None, None, None, None
-
-
-def classifier_2p5d(A: Tensor, B: Tensor, bias, tesseract_dim: int, out_shape: Tuple[int, ...],
-                    row_rank: int, col_rank: int, row_parallel_mode: ParallelMode, col_parallel_mode: ParallelMode,
-                    data_parallel_rank: int, pipeline_parallel_rank: int,
-                    pipeline_parallel_size: int, tensor_parallel_size: int) -> Tensor:
-    return _Classifier2p5D.apply(A, B, bias, tesseract_dim, out_shape, row_rank, col_rank, row_parallel_mode,
-                                 col_parallel_mode, data_parallel_rank, pipeline_parallel_rank, pipeline_parallel_size,
-                                 tensor_parallel_size)
 
 
 class Matmul_AB_2p5D(torch.autograd.Function):
@@ -558,15 +601,6 @@ class _Add_Bias_2p5D(torch.autograd.Function):
                     None, None, None, None, None, None, None, None, None
 
 
-def add_bias_2p5d(input: Tensor, bias: Tensor, output_size_per_partition: int, tesseract_dim: int, row_rank: int,
-                  col_rank: int, dep_rank: int, col_parallel_mode: ParallelMode, skip_bias_add: bool,
-                  data_parallel_rank: int, pipeline_parallel_rank: int, pipeline_parallel_size: int,
-                  tensor_parallel_size: int) -> Tensor:
-    return _Add_Bias_2p5D.apply(input, bias, output_size_per_partition, tesseract_dim, row_rank, col_rank, dep_rank,
-                                col_parallel_mode, skip_bias_add, data_parallel_rank, pipeline_parallel_rank,
-                                pipeline_parallel_size, tensor_parallel_size)
-
-
 class _Layernorm2p5D(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32)
@@ -605,11 +639,6 @@ class _Layernorm2p5D(torch.autograd.Function):
         return input_grad, None, None, None, None, None, None
 
 
-def layernorm_2p5d(input: Tensor, E_x: Tensor, Var_x: Tensor, hidden_size: int,
-                   row_parallel_mode: ParallelMode) -> Tensor:
-    return _Layernorm2p5D.apply(input, E_x, Var_x, hidden_size, row_parallel_mode)
-
-
 class _AllGatherTensor2p5D(torch.autograd.Function):
 
     @staticmethod
@@ -633,10 +662,6 @@ class _AllGatherTensor2p5D(torch.autograd.Function):
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
         grad = reduce_scatter(output_grad, ctx.dim, ctx.col_parallel_mode, parallel_context=ctx.parallel_context)
         return grad.contiguous(), None, None
-
-
-def all_gather_tensor_2p5d(inputs: Tensor, dim: int, col_parallel_mode: ParallelMode) -> Tensor:
-    return _AllGatherTensor2p5D.apply(inputs, dim, col_parallel_mode)
 
 
 class SplitFirst(torch.autograd.Function):
@@ -664,29 +689,7 @@ class SplitFirst(torch.autograd.Function):
         return grad, None, None
 
 
-# def split_batch_2p5d(input_: Tensor, dim: int = 0) -> Tensor:
-#     """Splits 2P5D tensor in specified dimension across cols.
-#     Args:
-#         input_ (:class:`torch.tensor`): Input tensor.
-#         dim (int): Specified dimension in which to split.
-#     Returns:
-#         :class:`torch.tensor`: The tensor has been split.
-#     """
-#     dim_size = input_.size(dim)
-#     world_size = gpc.get_world_size(ParallelMode.PARALLEL_2P5D_COL)
-#
-#     if world_size <= 1:
-#         return input_
-#
-#     assert dim_size % world_size == 0, \
-#         f'The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size}).'
-#
-#     return torch.chunk(input_, gpc.get_world_size(ParallelMode.PARALLEL_2P5D_COL),
-#                        dim=dim)[gpc.get_local_rank(ParallelMode.PARALLEL_2P5D_COL)].contiguous()
-
-
 class _ReduceTensor2p5D(torch.autograd.Function):
-
     @staticmethod
     def forward(ctx, input_, parallel_mode, parallel_context):
         return all_reduce(input_, parallel_mode=parallel_mode, parallel_context=parallel_context)
@@ -734,24 +737,6 @@ class _ReduceScatterTensor2p5D(torch.autograd.Function):
             None,
             None,
         )
-
-
-# def reduce_scatter_tensor_2p5d(input_: Tensor, dim: int, parallel_mode: ParallelMode) -> Tensor:
-#     r"""Reduce-scatter the input.
-#     Args:
-#         input_ (:class:`torch.tensor`): Input tensor.
-#         dim (int): Dimension to reduce.
-#         parallel_mode (:class:`colossalai.context.ParallelMode`): The parallel mode tensor used.
-#     Note:
-#         The parallel_mode should be concluded in ``ParallelMode``. More details about ``ParallelMode`` could be found
-#         in `parallel_mode <https://github.com/hpcaitech/ColossalAI/blob/main/colossalai/context/parallel_mode.py>`_
-#     """
-#     dim_size = input_.size(dim)
-#     world_size = gpc.get_world_size(parallel_mode)
-#     assert dim_size % world_size == 0, \
-#         f'The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size}).'
-#
-#     return _ReduceScatterTensor2p5D.apply(input_, dim, parallel_mode)
 
 
 class _ReduceByBatch2p5D(torch.autograd.Function):
