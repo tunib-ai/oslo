@@ -9,7 +9,7 @@ from typing import NamedTuple
 import torch
 from torch.nn.parallel import comm
 import torch.distributed as dist
-
+from oslo.torch.distributed import ParallelContext, ParallelMode
 RPC_AVAILABLE = False
 if dist.is_available():
     from torch.distributed.distributed_c10d import _get_default_group
@@ -352,13 +352,14 @@ class DistributedDataParallel(Module):
         >>> torch.distributed.init_process_group(backend='nccl', world_size=4, init_method='...')
         >>> net = torch.nn.parallel.DistributedDataParallel(model, pg)
     """
-    def __init__(self, module, device_ids=None,
-                 output_device=None, dim=0, broadcast_buffers=True,
-                 process_group=None,
-                 bucket_cap_mb=25,
-                 find_unused_parameters=False,
-                 check_reduction=False,
-                 gradient_as_bucket_view=False):
+    def __init__(self, module, 
+                parallel_context:ParallelContext,
+                device_ids=None,
+                output_device=None, dim=0, broadcast_buffers=True,
+                bucket_cap_mb=25,
+                find_unused_parameters=False,
+                check_reduction=False,
+                gradient_as_bucket_view=False):
 
         super(DistributedDataParallel, self).__init__()
 
@@ -396,11 +397,7 @@ class DistributedDataParallel(Module):
 
             self.output_device = _get_device_index(output_device, True)
 
-        if process_group is None:
-            self.process_group = _get_default_group()
-        else:
-            self.process_group = process_group
-
+        self.process_group = parallel_context.get_group(ParallelMode.DATA)
         self.dim = dim
         self.module = module
         self.device = list(self.module.parameters())[0].device
@@ -628,7 +625,8 @@ class DistributedDataParallel(Module):
 
     def __setstate__(self, state):
         # If serializable, then the process group should be the default one
-        self.process_group = _get_default_group()
+        #self.process_group = _get_default_group()
+        self.process_group = parallel_context.get_group(ParallelMode.DATA)
         super(DistributedDataParallel, self).__setstate__(state)
         self.__dict__.setdefault('require_forward_param_sync', True)
         self.__dict__.setdefault('require_backward_grad_sync', True)
