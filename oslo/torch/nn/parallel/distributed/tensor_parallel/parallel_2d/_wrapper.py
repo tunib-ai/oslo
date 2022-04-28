@@ -1,4 +1,9 @@
-from oslo.torch.nn.parallel.utils import ParallelWrapper
+from oslo.torch.nn.parallel.utils import (
+    is_huggingface_model, 
+    is_oslo_model, 
+    ParallelWrapper, 
+    _update_module_arguments,
+)
 
 
 class _TensorParallel2D(ParallelWrapper):
@@ -10,7 +15,11 @@ class _TensorParallel2D(ParallelWrapper):
         parallel_context (ParallelContext): parallel context object
     """
 
-    def __init__(self, module, parallel_context):
+    def __init__(
+        self, 
+        module: nn.Module, 
+        parallel_context: ParallelContext,
+    ):
         super().__init__()
         self.module = module
         self.parallel_context = parallel_context

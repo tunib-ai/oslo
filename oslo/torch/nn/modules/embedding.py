@@ -7,14 +7,6 @@ from torch.nn import UninitializedParameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.lazy import LazyModuleMixin
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
-    all_reduce_1d,
-)
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
-    split_batch_2d,
-    all_gather_tensor_2d,
-    reduce_scatter_tensor_2d,
-)
 
 
 class VocabUtility:
@@ -149,6 +141,9 @@ class VocabParallelEmbedding1D(nn.Embedding):
         )
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
+            all_reduce_1d,
+        )
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
 
         if world_size > 1:
@@ -188,10 +183,14 @@ class Embedding2D(nn.Embedding):
         self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         super().__init__(
             num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim // self.summa_dim ** 2,
+            embedding_dim=embedding_dim // (self.summa_dim ** 2),
         )
     
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+            split_batch_2d,
+            all_gather_tensor_2d,
+        )
         input_ = split_batch_2d(input_, self.parallel_context)
         weight = all_gather_tensor_2d(self.weight, -1, ParallelMode.TENSOR_2D_COL, self.parallel_context)
         output = F.embedding(
@@ -227,6 +226,9 @@ class VocabParallelEmbedding2D(nn.Embedding):
         )
     
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+            reduce_scatter_tensor_2d,
+        )
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         if world_size > 1:
             input_mask = (input_ < self.vocab_start_index) | (

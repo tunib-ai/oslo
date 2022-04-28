@@ -43,6 +43,9 @@ dataloader = DataLoader(datasets, batch_size=4)
 if dist.get_rank() == 0:
     wandb.init(project="oslo", name="tp_exp")
 
+# 모니터링 생성 대기
+dist.barrier()
+
 # 학습 시작
 for data in dataloader:
     optimizer_tp.zero_grad()

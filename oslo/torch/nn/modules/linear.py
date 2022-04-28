@@ -7,10 +7,6 @@ from torch.nn.parameter import UninitializedParameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.lazy import LazyModuleMixin
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
-    Matmul_ABT_2D,
-    add_bias_2d,
-)
 
 
 class Linear(nn.Linear):
@@ -265,6 +261,10 @@ class Linear2D(Linear):
     def forward(
         self, input: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+            Matmul_ABT_2D,
+            add_bias_2d,
+        )
         # input: [m/q, n/q, k/q]
         # output: [m/q, n/q, h/q]
         out_shape = input.shape[:-1] + (self.out_features, )

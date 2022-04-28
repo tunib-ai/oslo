@@ -60,6 +60,11 @@ def get_parameter_dtype(parameter: nn.Module):
         return first_tuple[1].dtype
 
 
+def _update_module_arguments(module, **kwargs):
+    for k, v in kwargs.items():
+        setattr(module, k, v)
+
+
 def allocate_params(model, parallel_context):
     for name, parameter in model.named_parameters():
         if hasattr(parameter, "oslo_parallel"):
