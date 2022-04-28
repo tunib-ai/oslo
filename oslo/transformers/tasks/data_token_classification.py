@@ -1,36 +1,33 @@
 from typing import Dict, List, Optional, Union
-from abc import ABC, abstractmethod
 import torch
 
-from transformers import AutoTokenizer
+from data_base import BaseProcessor
 from transformers.file_utils import PaddingStrategy
+from transformers import AutoTokenizer
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
 
 
-class BaseProcessor(ABC):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
-        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self._max_length = max_length
-        self._chunk_size = max_length
-        self._buffer = []
-
-    def save_tokenizer(self, path: str) -> None:
-        self._tokenizer.save_pretrained(path)
-
-    @abstractmethod
-    def __call__(self, list_of_str: List[str]) -> Dict[str, List[int]]:
-        pass
-
-
 class ProcessorForTokenClassification(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: Optional[int] = None) -> None:
+    def __init__(
+        self,
+        model_name_or_path: str,
+        max_length: Optional[int] = None,
+        dataset: Union[Dataset, DatasetDict] = None
+    ) -> None:
+        if dataset is None:
+            raise ValueError("dataset argument must be set. (dataset: Union[Dataset, DatasetDict])")
+
         self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, add_prefix_space=True)
         self._max_length = max_length
         self._chunk_size = max_length
         self._buffer = []
+        self.label_names = self.get_label_names(dataset)
     
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
+        column_names = [k for k, v in examples.items()]
+        assert "tokens" in column_names, "The name of dataset column that you want to tokenize must be 'tokens'"
+
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["tokens"],
             is_split_into_words=True,
@@ -49,16 +46,21 @@ class ProcessorForTokenClassification(BaseProcessor):
     
     def get_label_names(self, dataset: Union[Dataset, DatasetDict]) -> List[str]:
         if isinstance(dataset, Dataset):
+            assert "labels" in dataset.features, "The name of dataset column that you want to use as a label must be 'labels'"
+
             features = dataset.features["labels"]
             label_names = features.feature.names
         else:
+            assert "train" in dataset.keys(), "The key name of train dataset must be 'train'"
+            assert "labels" in dataset["train"].features, "The name of dataset column that you want to use as a label must be 'labels'"
+
             features = dataset["train"].features["labels"]
             label_names = features.feature.names
         
         self.label_names = label_names
 
         return label_names
-    
+
     def get_label_map(self, label_names: Union[List[str], Dataset, DatasetDict]) -> Dict[str, Dict[str, str]]:
         if isinstance(label_names, Dataset) or isinstance(label_names, DatasetDict):
             label_names = self.get_label_names(label_names)
@@ -118,8 +120,6 @@ class DataCollatorForTokenClassification:
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
         self.padding = padding
-        if self.tokenizer._pad_token is None:
-            self.tokenizer._pad_token = self.tokenizer._eos_token
 
     def __call__(self, features):
         label_name = "label" if "label" in features[0].keys() else "labels"

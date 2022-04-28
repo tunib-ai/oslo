@@ -1,23 +1,8 @@
 from typing import List, Dict, Optional
-from abc import ABC, abstractmethod
 
-from transformers import AutoTokenizer
+from data_base import BaseProcessor
+from datasets.arrow_dataset import Batch
 from transformers.data.data_collator import _torch_collate_batch
-
-
-class BaseProcessor(ABC):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
-        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        self._max_length = max_length
-        self._chunk_size = max_length
-        self._buffer = []
-
-    def save_tokenizer(self, path: str) -> None:
-        self._tokenizer.save_pretrained(path)
-
-    @abstractmethod
-    def __call__(self, list_of_str: List[str]) -> Dict[str, List[int]]:
-        pass
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -25,11 +10,14 @@ class ProcessorForCausalLM(BaseProcessor):
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
         self._chunk_size = max_length
     
-    def __call__(self, list_of_str: List[str]) -> Dict[str, List[int]]:
+    def __call__(self, examples: Batch) -> Dict[str, List[int]]:
+        column_names = [k for k, v in examples.items()]
+        assert "text" in column_names, "The name of dataset column that you want to tokenize must be 'text'"
+
         dict_of_training_examples: Dict[str, List[int]] = {}
 
         list_of_input_ids: List[List[int]] = self._tokenizer(
-            list_of_str,
+            examples["text"],
             padding=False,
             truncation=False,
             return_attention_mask=False,
