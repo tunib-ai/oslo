@@ -1,16 +1,19 @@
+import os
+import logging
 from pathlib import Path
-from typing import Generator, Union
+from typing import Union
+from numpy.random import choice
 
 import datasets
 from datasets import load_dataset, load_from_disk, Dataset, DatasetDict
 from transformers import AutoTokenizer
 from transformers.file_utils import ExplicitEnum
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import List, Optional
 from data_causal_lm import ProcessorForCausalLM
 from data_sequence_classification import ProcessorForSequenceClassification
 from data_token_classification import ProcessorForTokenClassification
+
 
 SENT_TEXT_SCRIPT = str((Path(__file__).parent / "loading" / "sent_text.py").resolve().absolute())
 
@@ -32,7 +35,6 @@ def batch_iterator(
 
 def load_corpora(dir_path: str, corpus_type: str = "docu_json") -> Union[Dataset, DatasetDict]:
     corpora_dir = Path(dir_path).absolute()
-    print(corpora_dir)
     extension = corpus_type.split("_")[-1]
 
     if extension == "json":
@@ -59,21 +61,20 @@ def load_corpora(dir_path: str, corpus_type: str = "docu_json") -> Union[Dataset
 
 
 def train_tokenizer(
-    model_type: str = "gpt2",
-    vocab_size: int = 30000,
-    min_frequency: int = 2,
+    model_name: str,
+    vocab_size: int,
+    min_frequency: int,
+    corpora_dir: str,
+    corpus_type: CorpusType,
+    save_dir: Optional[str] = None,
     additional_special_tokens: Optional[List[str]] = None,
-    corpora_dir: str = "./corpora",
-    corpus_type: CorpusType = "docu_text",
     batch_size: int = 1000,
     sampling_ratio: float = 0.1,
 ):
-    from numpy.random import choice
-
-    model_type_to_predefined_model = {
-        "gpt2": "gpt2"
-    }
-
+    if save_dir is None:
+        corpora_name = corpora_dir.split("/")[-1]
+        save_dir = f"tokenizers/{model_name}_{corpora_name}"
+        
     if corpus_type == "dataset":
         corpora = load_from_disk(corpora_dir)["train"]
     else:
@@ -86,9 +87,9 @@ def train_tokenizer(
         sample_size = int(total_size * sampling_ratio)
         corpora = corpora.select(indices=choice(total_size, sample_size, replace=False))
     else:
-        print("Since sampling_ratio >= 1.0, all corpora will be used.")
+        logging.warning("Since sampling_ratio >= 1.0, all corpora will be used.")
     
-    tokenizer = AutoTokenizer.from_pretrained(model_type_to_predefined_model[model_type])
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     data_iterator = batch_iterator(corpora, batch_size=batch_size)
 
     if additional_special_tokens:
@@ -111,34 +112,36 @@ def train_tokenizer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
         )
-
-    corpora_name = corpora_dir.split("/")[-1]
-    tokenizer.save_pretrained(f"tokenizers/{model_type}_{corpora_name}")
+    
+    tokenizer.save_pretrained(save_dir)
 
 
 def serialize_corpora(
-    model_type: str = "gpt2",
-    task_type: str = "causal_lm",
-    tokenizer_dir: str = "./tokenizers/gpt2",
-    corpora_dir: str = "./corpora",
-    corpus_type: CorpusType = "docu_text",
-    max_length: int = 512,
+    model_type: str,
+    task_type: str,
+    tokenizer_dir: str,
+    corpora_dir: str,
+    corpus_type: CorpusType,
+    max_length: int,
+    save_dir: Optional[str] = None,
     batched: bool = True,
-    num_proc: Optional[int] = None,
+    num_proc: Optional[int] = os.cpu_count(),
     batch_size: int = 1000,
     writer_batch_size: int = 1000,
     load_from_cache_file: bool = True,
     keep_in_memory: bool = False,
 ):
+    if save_dir is None:
+        save_dir = f"datasets/{model_type}_{task_type}"
+
     task_type_to_processor = {
         "causal_lm": ProcessorForCausalLM,
         "sequence_classification": ProcessorForSequenceClassification,
         "token_classification": ProcessorForTokenClassification,
     }
-
-    assert task_type in task_type_to_processor, "task_type must be in {'causal_lm', 'sequence_classification', 'token_classification'}"
-
-    data_processor = task_type_to_processor[task_type](tokenizer_dir, max_length)
+    
+    if task_type not in task_type_to_processor:
+        raise ValueError(f"{task_type} must be one of ['causal_lm', 'sequence_classification', 'token_classification']")
 
     if corpus_type == "dataset":
         corpora = load_from_disk(corpora_dir)["train"]
@@ -150,12 +153,14 @@ def serialize_corpora(
     
     if "label_ids" in corpora.column_names:
         corpora = corpora.rename_column("label_ids", "labels")
-        
+    
     if task_type == "token_classification":
-        data_processor.get_label_names(corpora)
+        data_processor = task_type_to_processor[task_type](tokenizer_dir, max_length, corpora)
+    else:
+        data_processor = task_type_to_processor[task_type](tokenizer_dir, max_length)
     
     dataset = corpora.map(
-        lambda examples: data_processor(examples["text"]) if task_type == "causal_lm" else data_processor(examples),
+        lambda examples: data_processor(examples),
         batched=batched,
         num_proc=num_proc,
         batch_size=batch_size,
@@ -165,5 +170,5 @@ def serialize_corpora(
         remove_columns=corpora.column_names,
     )
 
-    dataset.save_to_disk(f"datasets/{model_type}_{task_type}")
-    data_processor.save_tokenizer(f"datasets/{model_type}_{task_type}")
+    dataset.save_to_disk(save_dir)
+    data_processor.save_tokenizer(save_dir)
