@@ -23,8 +23,8 @@ class LayerNorm2D(nn.Module):
         self.normalized_shape = normalized_shape
         self.variance_epsilon = eps
 
-        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.PARALLEL_2D_COL)
-        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.PARALLEL_2D_ROW)
+        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 
         self.partitioned_dim = normalized_shape / self.summa_dim ** 2
         factory_kwargs = {'device': device, 'dtype': dtype}
@@ -35,11 +35,11 @@ class LayerNorm2D(nn.Module):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
             E_x = torch.sum(input, dim=-1, keepdim=True)
-            dist.all_reduce(E_x, group=self.parallel_context.get_group(ParallelMode.PARALLEL_2D_ROW))
+            dist.all_reduce(E_x, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW))
             E_x /= self.normalized_shape
 
             Var_x = torch.sum(x * x, dim=-1, keepdim=True)
-            dist.all_reduce(Var_x, group=self.parallel_context.get_group(ParallelMode.PARALLEL_2D_ROW))
+            dist.all_reduce(Var_x, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW))
             Var_x /= self.normalized_shape
 
             Var_x = Var_x - E_x * E_x

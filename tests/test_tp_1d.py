@@ -4,7 +4,6 @@ from datasets import load_dataset
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2LMHeadModel, GPT2Config
-
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.distributed.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params

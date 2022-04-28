@@ -17,8 +17,8 @@ def matmul_2d(
     parallel_context: ParallelContext,
     row_rank=None,
     col_rank=None,
-    row_parallel_mode=ParallelMode.PARALLEL_2D_ROW,
-    col_parallel_mode=ParallelMode.PARALLEL_2D_COL,
+    row_parallel_mode=ParallelMode.TENSOR_2D_ROW,
+    col_parallel_mode=ParallelMode.TENSOR_2D_COL,
 ):
     if row_rank is None:
         row_rank = parallel_context.get_local_rank(col_parallel_mode)

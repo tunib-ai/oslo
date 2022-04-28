@@ -14,5 +14,6 @@ from oslo.torch.nn.modules.linear import (
     LazyLinear,
     ColumnParallelLinear,
     RowParallelLinear,
+    Linear2D,
 )
 from oslo.torch.nn.modules.embedding import LazyEmbedding, VocabParallelEmbedding1D

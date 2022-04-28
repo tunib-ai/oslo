@@ -265,19 +265,19 @@ class Linear2D(Linear):
         # output: [m/q, n/q, h/q]
         out_shape = input.shape[:-1] + (self.out_features, )
         outputs = Matmul_ABT_2D.apply(input, self.weight, self.summa_dim, out_shape, self.row_rank, self.col_rank, 
-                                     ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, self.data_parallel_rank,
+                                     ParallelMode.TENSOR_2D_ROW, ParallelMode.TENSOR_2D_COL, self.data_parallel_rank,
                                      self.pipeline_parallel_rank, self.pipeline_parallel_size, self.tensor_parallel_size)
 
         if self.bias is not None:
             if self.skip_bias_add:
                 bias = add_bias_2d(None, self.bias, self.out_features, self.row_rank, self.col_rank,
-                                   ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, True,
+                                   ParallelMode.TENSOR_2D_ROW, ParallelMode.TENSOR_2D_COL, True,
                                    self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
                                    self.tensor_parallel_size)
                 return outputs, bias
             else:
                 outputs = add_bias_2d(outputs, self.bias, self.out_features, self.row_rank, self.col_rank,
-                                   ParallelMode.PARALLEL_2D_ROW, ParallelMode.PARALLEL_2D_COL, False,
+                                   ParallelMode.TENSOR_2D_ROW, ParallelMode.TENSOR_2D_COL, False,
                                    self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
                                    self.tensor_parallel_size)
         else:
