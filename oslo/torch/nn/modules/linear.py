@@ -1,4 +1,3 @@
-import math
 from typing import Union, Tuple, Optional
 
 import torch
@@ -238,7 +237,7 @@ class Linear2D(Linear):
         skip_bias_add: bool = False,
     ):
         self.parallel_context = parallel_context
-        self.summa_dim = math.sqrt(self.parallel_context.get_world_size(ParallelMode.TENSOR))
+        self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         assert (
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
@@ -248,6 +247,11 @@ class Linear2D(Linear):
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        self.data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+        self.pipeline_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
+
+        self.tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
+        self.pipeline_parallel_size = self.parallel_context.get_world_size(ParallelMode.PIPELINE)
 
         super().__init__(
             in_features=int(in_features // self.summa_dim),
