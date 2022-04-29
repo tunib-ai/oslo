@@ -85,6 +85,9 @@ skip_if_py39_no_cuda = pytest.mark.skipif(
     reason="Python3.9 without CUDA is skipped",
 )
 
+available_devices = ["cpu"]
+if torch.cuda.is_available():
+    available_devices.append("cuda")
 
 def make_cudnn_deterministic() -> None:
     """Make cudnn (matmul) deterministic"""
@@ -272,6 +275,42 @@ def objects_are_equal(a: Any, b: Any, raise_exception: bool = False, dict_key: O
         return a == b
 
 
+def check_same_model_params(model_a: torch.nn.Module, model_b: torch.nn.Module, message: str = "") -> None:
+    for p_a, p_b in zip(model_a.parameters(), model_b.parameters()):
+        assert torch.allclose(p_a, p_b, atol=1e-3), f"Model parameters differ\n{p_a} {p_b}\n" + message
+
+    for b_a, b_b in zip(model_a.buffers(), model_b.buffers()):
+        assert torch.allclose(b_a, b_b), f"Model buffers differ {b_a} - {b_b}\n" + message
+
+
+def check_same_models_across_ranks(
+    model: torch.nn.Module, process_group: Any, params_should_be_equal: bool, check_broadcast_buffers: bool
+) -> None:
+    world_size = dist.get_world_size(process_group)
+    rank = dist.get_rank(process_group)
+    for param in model.parameters():
+        # collect the params across the rank
+        receptacle = [param.clone() for _ in range(world_size)]
+        dist.all_gather(receptacle, param, group=process_group)
+
+        if rank == 0:
+            for sync_p in receptacle[1:]:
+                assert not params_should_be_equal or torch.all(
+                    torch.eq(receptacle[0], sync_p)
+                ), f"Models differ in between ranks {receptacle[0]} - {sync_p}"
+
+    # Check that all the buffers are in sync (authoritative rank is 0, its buffer is 0)
+    if check_broadcast_buffers:
+        for buffer in model.buffers():
+            receptacle = [buffer.clone() for _ in range(world_size)]
+            dist.all_gather(receptacle, buffer, group=process_group)
+            if rank == 0:
+                for sync_b in receptacle[1:]:
+                    assert not params_should_be_equal or torch.all(
+                        torch.eq(receptacle[0], sync_b)
+                    ), f"Models differ in between ranks {receptacle[0]} - {sync_b}"
+
+
 @contextlib.contextmanager
 def temp_files_ctx(num: int) -> Generator:
     """A context to get tempfiles and ensure they are cleaned up."""
@@ -283,3 +322,113 @@ def temp_files_ctx(num: int) -> Generator:
         # temp files could have been removed, so we use rmf.
         for name in files:
             rmf(name)
+
+
+class SGDWithPausingCompute(torch.optim.SGD):
+    def __init__(self, *args, **kwargs) -> None:  # type: ignore
+        self.rank = kwargs["rank"]
+        del kwargs["rank"]
+
+        super().__init__(*args, **kwargs)
+
+    def step(self, closure: Optional[Any] = None) -> Any:
+        loss = super().step(closure=closure)
+
+        # This is used to make sure that OSS and ShardedDDP enforce a proper stream synchronization
+        # - Add a long cuda wait on a compute stream, non blocking from the CPU perspective
+        with torch.cuda.stream(torch.cuda.Stream()):
+            torch.cuda._sleep(100000000)
+
+            # - optionally change the params on a per rank basis
+            with torch.no_grad():
+                for param_group in self.param_groups:
+                    for param in param_group["params"]:
+                        param *= 1.0 + self.rank / 10.0
+
+        return loss
+
+      
+class _Block(Base):
+    def __init__(self, embed_dim: int, num_heads: int) -> None:
+        super().__init__()
+        self.ln_1 = nn.LayerNorm(embed_dim)
+        self.ln_2 = nn.LayerNorm(embed_dim)
+        self.attn = nn.MultiheadAttention(embed_dim, num_heads)  # type: ignore
+        self.mlp = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim * 4),
+            nn.GELU(),
+            nn.Linear(embed_dim * 4, embed_dim),
+        )
+
+    def forward(self, *inputs: Any, **kwargs: Any) -> Tensor:
+        x = inputs[0]
+        attn_mask = torch.full((len(x), len(x)), -float("Inf"), device=x.device, dtype=x.dtype)
+        attn_mask = torch.triu(attn_mask, diagonal=1)
+
+        x = self.ln_1(x)
+        a, _ = self.attn(x, x, x, attn_mask=attn_mask, need_weights=False)
+        x = x + a
+        m = self.mlp(self.ln_2(x))
+        x = x + m
+        return x
+
+
+class GPT2(Base):
+    """
+    GPT2 pytorch implementation, for testing purposes in the image-GPT context
+    Credits: https://github.com/teddykoker/image-gpt"""
+
+    def __init__(
+        self, embed_dim: int, num_heads: int, num_layers: int, num_positions: int, num_vocab: int, num_classes: int
+    ) -> None:
+        super().__init__()
+
+        self.embed_dim = embed_dim
+
+        # start of sequence token
+        self.sos = torch.nn.Parameter(torch.zeros(embed_dim))
+        nn.init.normal_(self.sos)
+
+        self.token_embeddings = nn.Embedding(num_vocab, embed_dim)
+        self.position_embeddings = nn.Embedding(num_positions, embed_dim)
+
+        self.layers = nn.ModuleList()
+        for _ in range(num_layers):
+            self.layers.append(_Block(embed_dim, num_heads))
+
+        self.ln_f = nn.LayerNorm(embed_dim)
+        self.head = nn.Linear(embed_dim, num_vocab, bias=False)
+        self.clf_head = nn.Linear(embed_dim, num_classes)
+
+    def forward(self, x: Tensor, classify: bool = False) -> Any:  # type: ignore
+        """
+        Expect input as shape [sequence len, batch]
+        If classify, return classification logits
+        """
+        length, batch = x.shape
+
+        h = self.token_embeddings(x)
+
+        # prepend sos token
+        sos = torch.ones(1, batch, self.embed_dim, device=x.device) * self.sos
+        h = torch.cat([sos, h[:-1, :, :]], dim=0)
+
+        # add positional embeddings
+        positions = torch.arange(length, device=x.device).unsqueeze(-1)
+        h = h + self.position_embeddings(positions).expand_as(h)
+
+        # transformer
+        for layer in self.layers:
+            h = layer(h)
+
+        h = self.ln_f(h)
+
+        logits = self.head(h)
+
+        if not classify:
+            # return logits
+            return logits
+
+        h = torch.mean(h, dim=0)  # average pool over sequence
+        # return classification logits and generative logits
+        return self.clf_head(h), logits

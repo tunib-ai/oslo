@@ -1,1 +1,1 @@
-from oss import OSS
+from .zero_redundancy_optimizer import ZeroRedundancyOptimizer
