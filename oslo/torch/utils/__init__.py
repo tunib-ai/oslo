@@ -1,2 +1,6 @@
-from .version import *
-from .flatten_params_wrapper import FlattenParamsWrapper
+from .version import torch_version
+from .common import (divide)
+
+__all__ = [
+    'torch_version', 'divide'
+]
