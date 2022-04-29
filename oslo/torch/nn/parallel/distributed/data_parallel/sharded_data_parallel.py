@@ -22,6 +22,7 @@ from torch import nn
 from torch.autograd import Variable
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.utils import ParallelWrapper
 from oslo.torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.utils import GradBucket, Workhandle, get_global_rank
 
@@ -30,7 +31,7 @@ def _trainable(param: torch.Tensor) -> bool:
     return param.requires_grad
 
 
-class ShardedDataParallel(nn.Module):
+class ShardedDataParallel(ParallelWrapper):
     """Wrap the model, and reduce the gradients to the right rank during the backward pass.
 
     - the partition is given by the sharded optimizer
@@ -74,12 +75,12 @@ class ShardedDataParallel(nn.Module):
     .. warning:
         As a consequence of sharding:
             * in case of gradient clipping, one has to use the `clip_grad_norm` exposed by
-                the `optimizer state sharding wrapper <fairscale.optim.OSS>`
+                the `optimizer state sharding wrapper <oslo.torch.optim.ZeroRedundancyOptimizer>`
 
             * after loss.backward() (or equivalent) each rank will have `None` in place of some param.grad
 
             * Pytorch and Apex AMP implementations will hang when used in conjunction with `ShardedDDP`.
-                One needs a `shard-aware grad scaler<ShardedGradScaler>`, which is proposed in `fairscale.optim.grad_scaler`,
+                One needs a `shard-aware grad scaler<ShardedGradScaler>`, which is proposed in `oslo.torch.optim.sharded_grad_scaler`,
                 compatible with PytorchAMP.
 
     .. warning:
@@ -215,7 +216,7 @@ class ShardedDataParallel(nn.Module):
         backward pass for gradient reduction to the proper ranks.
         """
 
-        with profiler.record_function("fairscale::sdp::forward"):
+        with profiler.record_function("oslo::torch::sdp::forward"):
             # Deferred initialization, or change detection
             needs_setup = len(self._grad_hooks) == 0 and self.training
 
@@ -297,7 +298,7 @@ class ShardedDataParallel(nn.Module):
                 "Grads waiting to be reduced. If this is on purpose (grad accumulation), please use a no_sync() context"
             )
 
-        with profiler.record_function("fairscale::sdp::refresh_trainable"):
+        with profiler.record_function("oslo::torch::sdp::refresh_trainable"):
             self._trainable_params = list(
                 filter(lambda x: x.requires_grad, self._all_params)
             )
@@ -352,7 +353,7 @@ class ShardedDataParallel(nn.Module):
             blocking (bool): wait for the operation to conclude.
         """
 
-        with profiler.record_function("fairscale::sdp::sync_buffers"):
+        with profiler.record_function("oslo::torch::sdp::sync_buffers"):
             work_handles = []
 
             for buffer in self.module.buffers(recurse=True):
@@ -539,7 +540,7 @@ class ShardedDataParallel(nn.Module):
         Attach a reduce function to each grad-requiring parameter.
         This makes the gradient reduction automatic whenever there's a backward pass
         """
-        with profiler.record_function("fairscale::sdp::setup_backward_hooks"):
+        with profiler.record_function("oslo::torch::sdp::setup_backward_hooks"):
             # Detach possible pre-existing hooks
             while len(self._grad_hooks) > 0:
                 self._grad_hooks.pop().remove()
@@ -622,7 +623,7 @@ class ShardedDataParallel(nn.Module):
         This method can be a slow for big models, but it it not typically called often (not for every forward for instance)
         """
 
-        with profiler.record_function("fairscale::sdp::setup_buckets"):
+        with profiler.record_function("oslo::torch::sdp::setup_buckets"):
             if not self._use_buckets:
                 return
 
@@ -708,7 +709,7 @@ class ShardedDataParallel(nn.Module):
         self._consume_work_handles()
 
     def _detect_train_change(self) -> bool:
-        with profiler.record_function("fairscale::sdp::detect_train_changes"):
+        with profiler.record_function("oslo::torch::sdp::detect_train_changes"):
             # Optionally check whether the trainable parameters have changed
             trainable_mask = list(map(_trainable, self._all_params))
 
