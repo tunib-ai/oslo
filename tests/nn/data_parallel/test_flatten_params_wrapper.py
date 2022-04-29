@@ -10,7 +10,7 @@ from collections import OrderedDict
 
 import torch
 
-from oslo.torch.utils import FlattenParamsWrapper
+from oslo.torch.nn.parallel.distributed import FlattenParamsWrapper
 from oslo.torch.utils.testing import objects_are_equal
 
 

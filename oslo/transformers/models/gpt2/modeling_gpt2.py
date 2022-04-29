@@ -3,7 +3,8 @@ import torch.nn as nn
 from packaging import version
 
 from oslo.torch import nn as onn
-from oslo.torch.nn.modules.lazy import ParentLazyModuleMixin
+from oslo.torch.nn.modules.lazy import LazyModuleMixin
+from oslo.transformers.modeling_utils import OsloModel
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
     is_amp_available = True
@@ -21,7 +22,11 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
-class GPT2Attention(ParentLazyModuleMixin, nn.Module):
+class GPT2PreTrainedModel(PreTrainedModel, OsloModel):
+    pass
+
+
+class GPT2Attention(LazyModuleMixin, nn.Module):
     def __init__(self, config, is_cross_attention=False, layer_idx=None):
         super().__init__()
 
@@ -278,7 +283,7 @@ class GPT2Attention(ParentLazyModuleMixin, nn.Module):
         return outputs  # a, present, (attentions)
 
 
-class GPT2MLP(ParentLazyModuleMixin, nn.Module):
+class GPT2MLP(LazyModuleMixin, nn.Module):
     def __init__(self, intermediate_size, config):
         super().__init__()
         embed_dim = config.hidden_size
@@ -295,7 +300,7 @@ class GPT2MLP(ParentLazyModuleMixin, nn.Module):
         return hidden_states, bias
 
 
-class GPT2Block(ParentLazyModuleMixin, nn.Module):
+class GPT2Block(LazyModuleMixin, nn.Module):
     def __init__(self, config, layer_idx=None):
         super().__init__()
         hidden_size = config.hidden_size

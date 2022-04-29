@@ -1,12 +1,43 @@
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.modules.lazy import LazyModuleMixin
+from torch.nn.parameter import UninitializedParameter
+
+from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.modules.lazy import LazyModuleMixin
 
 
-class LazyLinear(LazyModuleMixin, nn.Linear):
+class Linear(nn.Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
+    ):
+        super(Linear, self).__init__(
+            in_features=in_features,
+            out_features=out_features,
+            bias=bias,
+            device=device,
+            dtype=dtype,
+        )
+        self.skip_bias_add = skip_bias_add
+
+    def forward(
+        self, input: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        if not self.skip_bias_add:
+            return F.linear(input, self.weight, self.bias)
+        else:
+            return F.linear(input, self.weight), self.bias
+
+
+class LazyLinear(LazyModuleMixin, Linear):
     """
     Lazy initialized linear layer.
 
@@ -44,18 +75,18 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
                 [ 0.4704,  0.6281]], requires_grad=True)
     """
 
-    cls_to_become = nn.Linear
-    weight: nn.UninitializedParameter
-    bias: nn.UninitializedParameter
+    cls_to_become = Linear
+    weight: UninitializedParameter
+    bias: UninitializedParameter
 
     def __init__(
         self,
         in_features: int,
         out_features: int,
         bias: bool = True,
-        device=None,
-        dtype=None,
-        skip_bias_add=False,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__(0, 0, False)
@@ -63,20 +94,12 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
         self.out_features = out_features
         self.skip_bias_add = skip_bias_add
 
-        self.weight = nn.UninitializedParameter(**factory_kwargs)
+        self.weight = UninitializedParameter(**factory_kwargs)
         if bias:
-            self.bias = nn.UninitializedParameter(**factory_kwargs)
-
-    def forward(
-        self, input: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        if not self.skip_bias_add:
-            return F.linear(input, self.weight, self.bias)
-        else:
-            return F.linear(input, self.weight), self.bias
+            self.bias = UninitializedParameter(**factory_kwargs)
 
     def reset_parameters(self) -> None:
-        if not self.has_uninitialized_params():
+        if not self.has_uninitialized_params() and self.in_features != 0:
             super().reset_parameters()
 
     def initialize_parameters(self) -> None:
@@ -87,15 +110,113 @@ class LazyLinear(LazyModuleMixin, nn.Linear):
                 if self.bias is not None:
                     self.bias.materialize((self.out_features,))
                 self.reset_parameters()
+        if self.cls_to_become is not None:
+            self.__class__ = self.cls_to_become
 
 
-class ColumnParallelLinear(nn.Module):
-    pass
+class ColumnParallelLinear(Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        parallel_context: ParallelContext,
+        bias: bool = True,
+        skip_bias_add: bool = False,
+        dtype: Optional[torch.dtype] = None,
+        gather_output: bool = False,
+    ):
+        self.parallel_context = parallel_context
+        self.gather_output = gather_output
+        self.reversed = False
+
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        assert (
+            out_features % world_size == 0
+        ), "out_features must be divisible by world_size for tensor parallelism."
+
+        super().__init__(
+            in_features=in_features,
+            out_features=out_features // world_size,
+            skip_bias_add=skip_bias_add,
+            bias=bias,
+            dtype=dtype,
+            device=torch.device(torch.cuda.current_device()),
+        )
+
+    def forward(
+        self, input: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        # to avoid circular import
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
+            broadcast_1d,
+            all_gather_1d,
+        )
+
+        input = broadcast_1d(input, self.parallel_context)
+
+        if self.reversed:
+            outputs = torch.matmul(input, self.weight)
+        else:
+            outputs = torch.matmul(input, self.weight.t())
+
+        if self.gather_output:
+            outputs = all_gather_1d(outputs, self.parallel_context).clone()
+
+        if self.bias is not None:
+            if self.skip_bias_add:
+                return outputs, self.bias
+            else:
+                return outputs + self.bias
+
+        return outputs
 
 
-class RowParallelLinear(nn.Module):
-    pass
+class RowParallelLinear(Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        parallel_context: ParallelContext,
+        bias: bool = True,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
+    ):
+        self.parallel_context = parallel_context
+        self.reversed = False
 
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        assert (
+            in_features % world_size == 0
+        ), "in_features must be divisible by world_size for tensor parallelism."
 
-class Linear2D(nn.Module):
-    pass
+        super().__init__(
+            in_features=in_features // world_size,
+            out_features=out_features,
+            skip_bias_add=skip_bias_add,
+            bias=bias,
+            dtype=dtype,
+            device=torch.device(torch.cuda.current_device()),
+        )
+
+    def forward(
+        self, input: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+        # to avoid circular import
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
+            all_reduce_1d,
+        )
+
+        if self.reversed:
+            outputs = torch.matmul(input, self.weight)
+        else:
+            outputs = torch.matmul(input, self.weight.t())
+
+        outputs = all_reduce_1d(outputs, self.parallel_context)
+
+        if self.bias is not None:
+            if self.skip_bias_add:
+                return outputs, self.bias
+            else:
+                return outputs + self.bias
+
+        return outputs

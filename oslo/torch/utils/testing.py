@@ -201,6 +201,18 @@ def spawn_for_all_world_sizes(
             rmf(filename_rpc)
 
 
+def teardown() -> None:
+    # destroy_model_parallel()
+
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+    try:
+        # torch 1.5 hangs on shutdown if waiting for all processes
+        torch.distributed.rpc.shutdown(graceful=False)
+    except Exception:
+        pass
+
+
 def rmf(filename: str) -> None:
     """Remove a file like rm -f."""
     try:
@@ -262,6 +274,7 @@ def objects_are_equal(a: Any, b: Any, raise_exception: bool = False, dict_key: O
     else:
         return a == b
 
+
 def check_same_model_params(model_a: torch.nn.Module, model_b: torch.nn.Module, message: str = "") -> None:
     for p_a, p_b in zip(model_a.parameters(), model_b.parameters()):
         assert torch.allclose(p_a, p_b, atol=1e-3), f"Model parameters differ\n{p_a} {p_b}\n" + message
@@ -297,6 +310,7 @@ def check_same_models_across_ranks(
                         torch.eq(receptacle[0], sync_b)
                     ), f"Models differ in between ranks {receptacle[0]} - {sync_b}"
 
+
 @contextlib.contextmanager
 def temp_files_ctx(num: int) -> Generator:
     """A context to get tempfiles and ensure they are cleaned up."""
@@ -308,6 +322,7 @@ def temp_files_ctx(num: int) -> Generator:
         # temp files could have been removed, so we use rmf.
         for name in files:
             rmf(name)
+
 
 class SGDWithPausingCompute(torch.optim.SGD):
     def __init__(self, *args, **kwargs) -> None:  # type: ignore
@@ -332,6 +347,7 @@ class SGDWithPausingCompute(torch.optim.SGD):
 
         return loss
 
+      
 class _Block(Base):
     def __init__(self, embed_dim: int, num_heads: int) -> None:
         super().__init__()
@@ -355,8 +371,6 @@ class _Block(Base):
         m = self.mlp(self.ln_2(x))
         x = x + m
         return x
-
-
 
 
 class GPT2(Base):
@@ -417,4 +431,4 @@ class GPT2(Base):
 
         h = torch.mean(h, dim=0)  # average pool over sequence
         # return classification logits and generative logits
-        return self.clf_head(h), 
+        return self.clf_head(h), logits
