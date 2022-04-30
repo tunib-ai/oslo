@@ -341,3 +341,82 @@ class Linear2D(Linear):
                 )
 
         return outputs
+
+
+class Linear2P5d(Linear):
+    def __init__(
+            self,
+            in_features: int,
+            out_features: int,
+            bias: bool = True,
+            dtype: torch.dtype = torch.float32,
+            skip_bias_add: bool = False,
+    ):
+        self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+        assert self.tesseract_dim > 0, 'TESSERACT_DIM must be larger than zero'
+        assert (
+                in_features % self.tesseract_dim == 0
+        ), "in_features must be divisible by tesseract dim."
+        assert (
+                out_features % self.tesseract_dim == 0
+        ), "out_features must be divisible by tesseract dim."
+
+        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        self.dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
+        self.data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+        self.pipeline_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
+
+        self.tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
+        self.pipeline_parallel_size = self.parallel_context.get_world_size(ParallelMode.PIPELINE)
+
+        super().__init__(
+            in_features=int(in_features // self.tesseract_dim),
+            out_features=int(out_features // self.tesseract_dim),
+            bias=bias,
+            device=torch.device(torch.cuda.current_device()),
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        # input: [m/dq, n/q, k/q]
+        # output: [m/dq, n/q, h/q]
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+            all_reduce,
+            Matmul_AB_2p5D,
+            add_bias_2p5d
+        )
+        out_shape = input.shape[:-1] + (self.out_features, )
+
+        output = Matmul_AB_2p5D.apply(
+            input,
+            self.weight,
+            self.tesseract_dim,
+            out_shape,
+            self.row_rank,
+            self.col_rank,
+            self.dep_rank,
+            ParallelMode.TENSOR_2P5D_ROW,
+            ParallelMode.TENSOR_2P5D_COL,
+            self.data_parallel_rank,
+            self.pipeline_parallel_rank,
+            self.pipeline_parallel_size,
+            self.tensor_parallel_size,
+        )
+
+        if self.bias is not None:
+            if self.skip_bias_add:
+                bias = add_bias_2p5d(None, self.bias, self.out_features, self.tesseract_dim, self.row_rank,
+                                     self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL, True,
+                                     self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
+                                     self.tensor_parallel_size)
+                return output, bias
+            else:
+                output = add_bias_2p5d(output, self.bias, self.out_features, self.tesseract_dim,
+                                       self.row_rank, self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL,
+                                       False, self.data_parallel_rank, self.pipeline_parallel_rank,
+                                       self.pipeline_parallel_size, self.tensor_parallel_size)
+                return output
+        else:
+            return output
