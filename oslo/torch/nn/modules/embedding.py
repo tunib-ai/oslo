@@ -269,3 +269,88 @@ class VocabParallelEmbedding2D(nn.Embedding):
             output_parallel, 0, ParallelMode.TENSOR_2D_COL, self.parallel_context
         )
         return output
+
+
+class Embedding2p5D(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        parallel_context: ParallelContext,
+    ):
+        self.parallel_context  = parallel_context
+        self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+        super().__init__(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim // (self.tesseract_dim ** 2),
+        )
+
+    def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+            all_gather_tensor_2p5d,
+            split_batch_2p5d
+        )
+        input_ = split_batch_2p5d(input_, 0, self.parallel_context)
+        weight = all_gather_tensor_2p5d(self.weight, -1, ParallelMode.TENSOR_2P5D_COL, self.parallel_context)
+
+        output = F.embedding(input_, weight, self.padding_idx, *self.embed_args, **self.embed_kwargs)
+
+        return output
+
+
+# TODO: Implement this class.
+class VocabParallelEmbedding2p5D(nn.Embedding):
+    def __init__(
+            self,
+            num_embeddings: int,
+            embedding_dim: int,
+            parallel_context: ParallelContext,
+    ):
+        self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+        self.parallel_context = parallel_context
+
+        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        (
+            self.vocab_start_index,
+            self.vocab_end_index,
+        ) = VocabUtility.vocab_range_from_global_vocab_size(
+            num_embeddings, rank, self.tesseract_dim,
+        )
+        super().__init__(
+            num_embeddings=num_embeddings // self.tesseract_dim,
+            embedding_dim=embedding_dim // self.tesseract_dim,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+            Matmul_ABT_2p5D,
+            add_bias_2p5d
+        )
+        # input: [m/dq, n/q, k/q]
+        # output: [m/dq, n/q, h/q]
+        out_shape = x.shape[:-1] + (self.hidden_size_per_partition, )
+
+        output = Matmul_ABT_2p5D.apply(
+            x,
+            self.weight,
+            self.tesseract_dim,
+            out_shape,
+            self.row_rank,
+            self.col_rank,
+            self.dep_rank,
+            self.parallel_context,
+            ParallelMode.TENSOR_2P5D_ROW,
+            ParallelMode.TENSOR_2P5D_COL,
+            self.data_parallel_rank,
+            self.pipeline_parallel_rank,
+            self.pipeline_parallel_size,
+            self.tensor_parallel_size,
+        )
+
+        if self.bias is not None:
+            output = add_bias_2p5d(
+                output, self.bias, self.hidden_size_per_partition, self.tesseract_dim, self.row_rank,
+                self.col_rank, self.dep_rank, self.parallel_context,ParallelMode.TENSOR_2P5D_COL, False,
+                self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
+                self.tensor_parallel_size)
+        return output

@@ -19,43 +19,47 @@ def classifier_2p5d(A: Tensor, B: Tensor, bias, tesseract_dim: int, out_shape: T
 
 
 def add_bias_2p5d(input: Tensor, bias: Tensor, output_size_per_partition: int, tesseract_dim: int, row_rank: int,
-                  col_rank: int, dep_rank: int, col_parallel_mode: ParallelMode, skip_bias_add: bool,
+                  col_rank: int, dep_rank: int,
+                  parallel_context: ParallelContext,
+                  col_parallel_mode: ParallelMode, skip_bias_add: bool,
                   data_parallel_rank: int, pipeline_parallel_rank: int, pipeline_parallel_size: int,
                   tensor_parallel_size: int) -> Tensor:
     return _Add_Bias_2p5D.apply(input, bias, output_size_per_partition, tesseract_dim, row_rank, col_rank, dep_rank,
+                                parallel_context,
                                 col_parallel_mode, skip_bias_add, data_parallel_rank, pipeline_parallel_rank,
                                 pipeline_parallel_size, tensor_parallel_size)
 
 
 def layernorm_2p5d(input: Tensor, E_x: Tensor, Var_x: Tensor, hidden_size: int,
-                   row_parallel_mode: ParallelMode) -> Tensor:
-    return _Layernorm2p5D.apply(input, E_x, Var_x, hidden_size, row_parallel_mode)
+                   row_parallel_mode: ParallelMode, parallel_context: ParallelContext) -> Tensor:
+    return _Layernorm2p5D.apply(input, E_x, Var_x, hidden_size, parallel_context, row_parallel_mode)
 
 
-def all_gather_tensor_2p5d(inputs: Tensor, dim: int, col_parallel_mode: ParallelMode) -> Tensor:
-    return _AllGatherTensor2p5D.apply(inputs, dim, col_parallel_mode)
+def all_gather_tensor_2p5d(
+        inputs: Tensor, dim: int,
+        col_parallel_mode: ParallelMode, parallel_context: ParallelContext) -> Tensor:
+    return _AllGatherTensor2p5D.apply(inputs, dim, col_parallel_mode, parallel_context)
 
 
-def reduce_by_batch_2p5d(input_, reduce_mean: bool = False) -> Tensor:
-    return _ReduceByBatch2p5D.apply(input_, reduce_mean)
+def reduce_by_batch_2p5d(input_, reduce_mean: bool, parallel_context: ParallelContext) -> Tensor:
+    return _ReduceByBatch2p5D.apply(input_, parallel_context, reduce_mean)
 
 
-def reduce_tensor_2p5d(input_: Tensor, parallel_mode: ParallelMode) -> Tensor:
-    return _ReduceTensor2p5D.apply(input_, parallel_mode)
+def reduce_tensor_2p5d(input_: Tensor, parallel_mode: ParallelMode, parallel_context: ParallelContext) -> Tensor:
+    return _ReduceTensor2p5D.apply(input_, parallel_mode, parallel_context)
 
 
 def reduce_scatter_tensor_2p5d(
         input_: Tensor,
         dim: int,
         parallel_mode: ParallelMode,
-        parallel_context:
-        ParallelContext) -> Tensor:
+        parallel_context: ParallelContext) -> Tensor:
     dim_size = input_.size(dim)
     world_size = parallel_context.get_world_size(parallel_mode)
     assert dim_size % world_size == 0, \
         f'The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size}).'
 
-    return _ReduceScatterTensor2p5D.apply(input_, dim, parallel_mode)
+    return _ReduceScatterTensor2p5D.apply(input_, dim, parallel_mode, parallel_context)
 
 
 def split_batch_2p5d(input_: Tensor, dim: int, parallel_context: ParallelContext) -> Tensor:

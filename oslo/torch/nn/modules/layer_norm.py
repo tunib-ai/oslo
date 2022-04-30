@@ -1,4 +1,4 @@
-from typing import Union, Tuple, Optional
+from typing import Optional
 
 import torch
 import torch.distributed as dist
@@ -178,14 +178,15 @@ class LayerNorm2p5D(nn.Module):
             # this time 1/sqrt(Var_x + epsilon)
             Var_x = 1.0 / torch.sqrt(Var_x + self.variance_epsilon)
 
-        output = layernorm_2p5d(_input, E_x, Var_x, self.normalized_shape, ParallelMode.TENSOR_2P5D_ROW)
+        output = layernorm_2p5d(_input, E_x, Var_x, self.normalized_shape, ParallelMode.TENSOR_2P5D_ROW, self.parallel_context)
         scale = add_bias_2p5d(None, self.gamma, self.partitioned_dim, self.tesseract_dim, self.row_rank,
-                              self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL, True,
+                              self.col_rank, self.dep_rank, self.parallel_context, ParallelMode.TENSOR_2P5D_COL, True,
                               self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
                               self.tensor_parallel_size)
         if self.bias is not None:
             bias = add_bias_2p5d(None, self.beta, self.partitioned_dim, self.tesseract_dim, self.row_rank,
-                                 self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL, True,
+                                 self.col_rank, self.dep_rank, self.parallel_context,
+                                 ParallelMode.TENSOR_2P5D_COL, True,
                                  self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
                                  self.tensor_parallel_size)
             output = torch.addcmul(bias, scale, output)

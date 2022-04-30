@@ -343,15 +343,17 @@ class Linear2D(Linear):
         return outputs
 
 
-class Linear2P5d(Linear):
+class Linear2p5D(Linear):
     def __init__(
             self,
             in_features: int,
             out_features: int,
+            parallel_context: ParallelContext,
             bias: bool = True,
             dtype: torch.dtype = torch.float32,
             skip_bias_add: bool = False,
     ):
+        self.paralle_context = parallel_context
         self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
         assert self.tesseract_dim > 0, 'TESSERACT_DIM must be larger than zero'
         assert (
@@ -393,6 +395,7 @@ class Linear2P5d(Linear):
             input,
             self.weight,
             self.tesseract_dim,
+            self.paralle_context,
             out_shape,
             self.row_rank,
             self.col_rank,
@@ -408,13 +411,15 @@ class Linear2P5d(Linear):
         if self.bias is not None:
             if self.skip_bias_add:
                 bias = add_bias_2p5d(None, self.bias, self.out_features, self.tesseract_dim, self.row_rank,
-                                     self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL, True,
+                                     self.col_rank, self.dep_rank, self.parallel_context,
+                                     ParallelMode.TENSOR_2P5D_COL, True,
                                      self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
                                      self.tensor_parallel_size)
                 return output, bias
             else:
                 output = add_bias_2p5d(output, self.bias, self.out_features, self.tesseract_dim,
-                                       self.row_rank, self.col_rank, self.dep_rank, ParallelMode.TENSOR_2P5D_COL,
+                                       self.row_rank, self.col_rank, self.dep_rank, self.parallel_context,
+                                       ParallelMode.TENSOR_2P5D_COL,
                                        False, self.data_parallel_rank, self.pipeline_parallel_rank,
                                        self.pipeline_parallel_size, self.tensor_parallel_size)
                 return output
