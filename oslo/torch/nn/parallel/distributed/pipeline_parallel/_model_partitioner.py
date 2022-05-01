@@ -54,7 +54,6 @@ class ModelPartitioner(object):
             cost=1.0,
         )
         self._construct_tree(self.root_node, self.root_node.name)
-        print(self.root_node)
 
         # 2. compute the partitioning cost
         cost_estimator = PartitioningCostEstimator(
@@ -71,17 +70,25 @@ class ModelPartitioner(object):
         for node in dfs(self.root_node):
             for parameter in node.modules[0].parameters():
                 setattr(parameter, "pp_rank", node.device)
-                if node.parent is not None:
+                if node.parent is None:
+                    # if node doesn't have a parent we use the the same device to not use p2p com.
+                    setattr(parameter, "pp_rank_parent", node.device)
+                else:
                     setattr(parameter, "pp_rank_parent", node.parent.device)
             for buffer in node.modules[0].buffers():
                 setattr(buffer, "pp_rank", node.device)
-                if node.parent is not None:
+                if node.parent is None:
+                    # if node doesn't have a parent we use the the same device to not use p2p com.
+                    setattr(buffer, "pp_rank_parent", node.device)
+                else:
                     setattr(buffer, "pp_rank_parent", node.parent.device)
             for module in node.modules:
                 setattr(module, "pp_rank", node.device)
-                if node.parent is not None:
-                        setattr(module, "pp_rank_parent", node.parent.device)
-                module = PPModuleWrapper(module)
+                if node.parent is None:
+                    # if node doesn't have a parent we use the the same device to not use p2p com.
+                    setattr(module, "pp_rank_parent", node.device)
+                else:
+                    setattr(module, "pp_rank_parent", node.parent.device)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
