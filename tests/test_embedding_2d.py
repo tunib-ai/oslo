@@ -1,7 +1,7 @@
 import torch
 
 from oslo.torch.distributed import ParallelContext
-from oslo.torch.nn import Linear2D
+from oslo.torch.nn import Embedding2D
 
 
 parallel_context = ParallelContext.from_torch(
@@ -11,7 +11,7 @@ parallel_context = ParallelContext.from_torch(
     tensor_parallel_mode="2d",
 )
 
-layer_2d = Linear2D(4, 4, parallel_context)
-input_ = torch.Tensor([[0.1, 0.2], [0.3, 0.4]])
-out = layer_2d(input_.cuda())
+emb_2d = Embedding2D(20, 100, parallel_context)
+input_ = torch.LongTensor([1,2,3,4,5,6,7,8])
+out = emb_2d(input_.cuda())
 print(out, out.shape)

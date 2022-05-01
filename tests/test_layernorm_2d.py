@@ -1,7 +1,7 @@
 import torch
 
 from oslo.torch.distributed import ParallelContext
-from oslo.torch.nn import Linear2D
+from oslo.torch.nn import LayerNorm2D
 
 
 parallel_context = ParallelContext.from_torch(
@@ -11,7 +11,7 @@ parallel_context = ParallelContext.from_torch(
     tensor_parallel_mode="2d",
 )
 
-layer_2d = Linear2D(4, 4, parallel_context)
+layernorm_2d = LayerNorm2D(4, parallel_context)
 input_ = torch.Tensor([[0.1, 0.2], [0.3, 0.4]])
-out = layer_2d(input_.cuda())
+out = layernorm_2d(input_.cuda())
 print(out, out.shape)

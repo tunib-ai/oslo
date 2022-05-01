@@ -16,4 +16,12 @@ from oslo.torch.nn.modules.linear import (
     RowParallelLinear,
     Linear2D,
 )
-from oslo.torch.nn.modules.embedding import LazyEmbedding, VocabParallelEmbedding1D
+from oslo.torch.nn.modules.layer_norm import (
+    LayerNorm2D,
+)
+from oslo.torch.nn.modules.embedding import (
+    LazyEmbedding,
+    VocabParallelEmbedding1D,
+    Embedding2D,
+    VocabParallelEmbedding2D,
+)

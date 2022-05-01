@@ -138,6 +138,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
         super().__init__(
             num_embeddings=num_embeddings // world_size,
             embedding_dim=embedding_dim,
+            device=torch.device(torch.cuda.current_device()),
         )
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
@@ -180,10 +181,12 @@ class Embedding2D(nn.Embedding):
         embedding_dim: int,
         parallel_context: ParallelContext,
     ):
+        self.parallel_context = parallel_context
         self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // (self.summa_dim ** 2),
+            device=torch.device(torch.cuda.current_device()),
         )
     
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
@@ -212,6 +215,7 @@ class VocabParallelEmbedding2D(nn.Embedding):
         embedding_dim: int,
         parallel_context: ParallelContext,
     ):
+        self.parallel_context = parallel_context
         self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         (
@@ -223,6 +227,7 @@ class VocabParallelEmbedding2D(nn.Embedding):
         super().__init__(
             num_embeddings=num_embeddings // self.summa_dim,
             embedding_dim=embedding_dim // self.summa_dim,
+            device=torch.device(torch.cuda.current_device()),
         )
     
     def forward(self, input_: torch.Tensor) -> torch.Tensor:

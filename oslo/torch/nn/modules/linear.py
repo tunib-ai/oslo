@@ -2,6 +2,7 @@ from typing import Union, Tuple, Optional
 
 import torch
 import torch.nn as nn
+from torch.nn import Parameter
 import torch.nn.functional as F
 from torch.nn.parameter import UninitializedParameter
 
@@ -240,11 +241,11 @@ class Linear2D(Linear):
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
         assert (
-            out_features % self.summa_dim == 0
-        ), "out_features must be divisible by summa dim."
+            out_features % (self.summa_dim ** 2) == 0
+        ), "out_features must be divisible by summa dim^2."
 
-        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.data_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.DATA
         )
@@ -262,11 +263,20 @@ class Linear2D(Linear):
         super().__init__(
             in_features=int(in_features // self.summa_dim),
             out_features=int(out_features // self.summa_dim),
-            bias=bias,
+            bias=False,
             device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
+        if bias:
+            self.bias = Parameter(
+                torch.empty(
+                    self.out_features // self.summa_dim,
+                    device=self.weight.device,
+                    dtype=dtype,
+                )
+            )
+        super().reset_parameters()
 
     def forward(
         self, input: torch.Tensor
