@@ -34,7 +34,7 @@ class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
             for i in range(self.depth):
                 for k in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for j in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -79,7 +79,7 @@ class _TensorParallel3DWeightGroupInitializer(ProcessGroupInitializer):
             for k in range(self.depth):
                 for j in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for i in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -124,7 +124,7 @@ class _TensorParallel3DOutputGroupInitializer(ProcessGroupInitializer):
             for i in range(self.depth):
                 for j in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for k in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -157,7 +157,7 @@ class TensorParallel3DGroupInitializer(ProcessGroupInitializer):
         self.num_group = self.world_size // self.tensor_parallel_size
         self.depth = round(math.pow(self.tensor_parallel_size, 1 / 3))
         assert (
-            self.tensor_parallel_size == self.depth ** 3
+            self.tensor_parallel_size == self.depth**3
         ), f"3D depth ({self.depth}) if not cube root of tensor parallel size ({self.tensor_parallel_size})"
 
         self.input_initializer = _TensorParallel3DInputGroupInitializer(
