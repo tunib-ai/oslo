@@ -86,6 +86,7 @@ and we also support various scheduling strategies such as Pipedream Flush and GP
 **Expert Model Parallelism** partitions large FFN layers into multiple pieces and makes each piece an expert in a specific domain. 
 We should additionally train the gate function layer for this. This mechanism is also called Mixture of Experts.
 
+#### References
 - [GShard: Scaling Giant Models with Conditional Computation and Automatic Sharding](https://arxiv.org/abs/2006.16668)
 - [Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity](https://arxiv.org/abs/2101.03961)
 
