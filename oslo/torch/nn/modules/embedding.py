@@ -198,7 +198,7 @@ class Embedding2D(nn.Embedding):
         weight = all_gather_tensor_2d(self.weight, -1, ParallelMode.TENSOR_2D_COL, self.parallel_context)
         output = F.embedding(
             input_,
-            self.weight,
+            weight,
             self.padding_idx,
             self.max_norm,
             self.norm_type,
