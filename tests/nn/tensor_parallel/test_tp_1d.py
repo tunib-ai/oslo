@@ -4,7 +4,6 @@ from datasets import load_dataset
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2LMHeadModel, GPT2Config
-
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.distributed.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
@@ -43,6 +42,9 @@ dataloader = DataLoader(datasets, batch_size=4)
 # 모니터링 생성
 if dist.get_rank() == 0:
     wandb.init(project="oslo", name="tp_exp")
+
+# 모니터링 생성 대기
+dist.barrier()
 
 # 학습 시작
 for data in dataloader:

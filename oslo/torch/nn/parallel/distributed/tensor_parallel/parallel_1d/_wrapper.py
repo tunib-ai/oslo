@@ -11,14 +11,13 @@ from oslo.torch.nn.modules.linear import ColumnParallelLinear, RowParallelLinear
 from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._mapping import (
     TensorParallelMapping,
 )
-from oslo.torch.nn.parallel.utils import is_huggingface_model
-from oslo.torch.nn.parallel.utils import is_oslo_model, ParallelWrapper
+from oslo.torch.nn.parallel.utils import (
+    is_huggingface_model, 
+    is_oslo_model, 
+    ParallelWrapper, 
+    _update_module_arguments,
+)
 from oslo.transformers.mapping_utils import _TensorParallelMappingForHuggingFace
-
-
-def _update_module_arguments(module, **kwargs):
-    for k, v in kwargs.items():
-        setattr(module, k, v)
 
 
 class _TensorParallel1D(ParallelWrapper):

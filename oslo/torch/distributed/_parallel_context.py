@@ -740,6 +740,7 @@ class ParallelContext(object):
             DataParallelGroupInitializer(**initializer_param).init_dist_group(),
             ModelParallelGroupInitializer(**initializer_param).init_dist_group(),
             TensorParallelGroupInitializer(**initializer_param).init_dist_group(),
+            PipelineParallelGroupInitializer(**initializer_param).init_dist_group(),
         ]
 
         tensor_parallel_initializer_cls = TensorParallelGroupInitializerByMode[
@@ -756,11 +757,6 @@ class ParallelContext(object):
                 **_initializer_param
             )
             initializer_results.append(tensor_parallel_initializer.init_dist_group())
-
-        if self.pipeline_parallel_size > 1:
-            initializer_results.append(
-                PipelineParallelGroupInitializer(**initializer_param).init_dist_group()
-            )
 
         for initializer_result in initializer_results:
             if isinstance(initializer_result, list):
