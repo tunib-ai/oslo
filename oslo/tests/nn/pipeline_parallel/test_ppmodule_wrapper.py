@@ -4,9 +4,7 @@ from oslo.torch.nn.parallel.distributed.pipeline_parallel.p2p import (
     PPModuleWrapper, wrap_nn_modules, check_wrap_nn_modules
 )
 
-import numpy as np
 from torch import nn
-import pdb
 
 
 class CustomModule(nn.Module):
@@ -67,7 +65,6 @@ class TestPPModuleWrapper(unittest.TestCase):
             check_wrap_nn_modules(self.model_original)
 
     def test_check_wrap_nn_modules_pos_test(self):
-        assert check_wrap_nn_modules(self.model_wrapped)
         self.assertTrue(check_wrap_nn_modules(self.model_wrapped))
 
 
