@@ -1,7 +1,7 @@
 import torch
 import torch.distributed as dist
-from torch.distributed import ReduceOp
 from torch import Tensor
+from torch.distributed import ReduceOp
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
 

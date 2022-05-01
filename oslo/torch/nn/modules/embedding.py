@@ -286,7 +286,7 @@ class Embedding2p5D(nn.Embedding):
         )
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
             all_gather_tensor_2p5d,
             split_batch_2p5d
         )
@@ -322,7 +322,7 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
             Matmul_ABT_2p5D,
             add_bias_2p5d
         )

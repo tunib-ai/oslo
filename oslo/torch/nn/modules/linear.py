@@ -384,7 +384,7 @@ class Linear2p5D(Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # input: [m/dq, n/q, k/q]
         # output: [m/dq, n/q, h/q]
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
             all_reduce,
             Matmul_AB_2p5D,
             add_bias_2p5d

@@ -10,7 +10,7 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
     add_bias_2d,
     layernorm_2d,
 )
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2p5d._ops import (
+from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
     layernorm_2p5d,
     add_bias_2p5d,
 )
