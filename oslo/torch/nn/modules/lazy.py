@@ -7,7 +7,7 @@ class LazyModuleMixin:
     cls_to_become = None
 
     def __init__(self: _LazyProtocol, *args, **kwargs):
-        # Mypy doesnt like this super call in a mixin
+        # Mypy doesn't like this super call in a mixin
         super().__init__(*args, **kwargs)  # type: ignore[misc]
 
     def has_uninitialized_params(self: _LazyProtocol):

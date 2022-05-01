@@ -1,11 +1,11 @@
 import math
 
-from transformers.training_args import ParallelMode
+import torch.distributed as dist
 
+from oslo.torch.distributed import ParallelMode
 from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
-import torch.distributed as dist
 
 
 class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
@@ -28,13 +28,13 @@ class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_INPUT
+        mode = ParallelMode.TENSOR_3D_INPUT
 
         for h in range(self.num_group):
             for i in range(self.depth):
                 for k in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for j in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -73,13 +73,13 @@ class _TensorParallel3DWeightGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_WEIGHT
+        mode = ParallelMode.TENSOR_3D_WEIGHT
 
         for h in range(self.num_group):
             for k in range(self.depth):
                 for j in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for i in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -118,13 +118,13 @@ class _TensorParallel3DOutputGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_OUTPUT
+        mode = ParallelMode.TENSOR_3D_OUTPUT
 
         for h in range(self.num_group):
             for i in range(self.depth):
                 for j in range(self.depth):
                     ranks = [
-                        h * self.depth ** 3 + i + self.depth * (j + self.depth * k)
+                        h * self.depth**3 + i + self.depth * (j + self.depth * k)
                         for k in range(self.depth)
                     ]
                     group = dist.new_group(ranks)
@@ -157,7 +157,7 @@ class TensorParallel3DGroupInitializer(ProcessGroupInitializer):
         self.num_group = self.world_size // self.tensor_parallel_size
         self.depth = round(math.pow(self.tensor_parallel_size, 1 / 3))
         assert (
-            self.tensor_parallel_size == self.depth ** 3
+            self.tensor_parallel_size == self.depth**3
         ), f"3D depth ({self.depth}) if not cube root of tensor parallel size ({self.tensor_parallel_size})"
 
         self.input_initializer = _TensorParallel3DInputGroupInitializer(
