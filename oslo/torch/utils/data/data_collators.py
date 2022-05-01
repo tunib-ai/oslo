@@ -7,7 +7,7 @@ from torch.utils.data import default_collate
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
-class SequenceParallelDataCollatorWrapper:
+class SequenceDataParallelCollator:
     def __init__(
         self,
         parallel_context: ParallelContext,

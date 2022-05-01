@@ -6,13 +6,13 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import ParallelWrapper
 
 
-class _SequenceParallelState(object):
+class _SequenceDataParallelState(object):
     def __init__(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
 
 
-def _sequence_parallel_hook(
-    state: _SequenceParallelState, bucket: dist._GradBucket
+def _sequence_data_parallel_hook(
+    state: _SequenceDataParallelState, bucket: dist._GradBucket
 ) -> torch.futures.Future:
     parallel_context = state.parallel_context
     group_to_use = parallel_context.get_group(ParallelMode.SEQUENCE_DP)
@@ -26,7 +26,7 @@ def _sequence_parallel_hook(
     return fut
 
 
-class SequenceParallel(DistributedDataParallel, ParallelWrapper):
+class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
     def __init__(
         self,
         module,
@@ -41,7 +41,7 @@ class SequenceParallel(DistributedDataParallel, ParallelWrapper):
         gradient_as_bucket_view=False,
     ):
         self._parallel_context = parallel_context
-        super(SequenceParallel, self).__init__(
+        super(SequenceDataParallel, self).__init__(
             module,
             process_group=self._parallel_context.get_group(ParallelMode.SEQUENCE_DP),
             device_ids=device_ids,
@@ -55,6 +55,6 @@ class SequenceParallel(DistributedDataParallel, ParallelWrapper):
         )
 
         self.register_comm_hook(
-            state=_SequenceParallelState(self._parallel_context),
-            hook=_sequence_parallel_hook,
+            state=_SequenceDataParallelState(self._parallel_context),
+            hook=_sequence_data_parallel_hook,
         )

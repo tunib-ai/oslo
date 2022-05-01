@@ -8,7 +8,7 @@
 
 ## O S L O
 
-**O**pen **S**ource framework for **L**arge-scale transformer **O**ptimization
+**O**pen **S**ource framework for **L**arge-scale model **O**ptimization
 
 <p align="center">
 <a href="https://github.com/tunib-ai/oslo/releases"><img alt="GitHub release" src="https://img.shields.io/github/release/tunib-ai/oslo.svg" /></a>
@@ -17,98 +17,23 @@
 
 </div>
 
-### Contributors
+## Features
+Refer to [FEATURES.md](FEATURES.md).
 
-<table>
-<tr>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/hyunwoongko>
-            <img src=https://avatars.githubusercontent.com/u/38183241?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Kevin Ko/>
-            <br />
-            <sub style="font-size:14px"><b>Kevin Ko</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jinok2im>
-            <img src=https://avatars.githubusercontent.com/u/42664793?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jinok Kim/>
-            <br />
-            <sub style="font-size:14px"><b>Jinok Kim</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/gimmaru>
-            <img src=https://avatars.githubusercontent.com/u/87857169?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=gimmaru/>
-            <br />
-            <sub style="font-size:14px"><b>gimmaru</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/l-yohai>
-            <img src=https://avatars.githubusercontent.com/u/49181231?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Yohan Lee/>
-            <br />
-            <sub style="font-size:14px"><b>Yohan Lee</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/bzantium>
-            <img src=https://avatars.githubusercontent.com/u/19511788?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Minho Ryu/>
-            <br />
-            <sub style="font-size:14px"><b>Minho Ryu</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/hmy831004>
-            <img src=https://avatars.githubusercontent.com/u/41275943?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=hmy831004/>
-            <br />
-            <sub style="font-size:14px"><b>hmy831004</b></sub>
-        </a>
-    </td>
-</tr>
-<tr>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jayten-jeon>
-            <img src=https://avatars.githubusercontent.com/u/57934461?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jayten/>
-            <br />
-            <sub style="font-size:14px"><b>Jayten</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/ohwi>
-            <img src=https://avatars.githubusercontent.com/u/22569365?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=ohwi/>
-            <br />
-            <sub style="font-size:14px"><b>ohwi</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/reniew>
-            <img src=https://avatars.githubusercontent.com/u/32028135?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=JungHyun Cho/>
-            <br />
-            <sub style="font-size:14px"><b>JungHyun Cho</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/Mistobaan>
-            <img src=https://avatars.githubusercontent.com/u/112599?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Fabrizio Milo/>
-            <br />
-            <sub style="font-size:14px"><b>Fabrizio Milo</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jinmang2>
-            <img src=https://avatars.githubusercontent.com/u/37775784?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=MyungHoon Jin/>
-            <br />
-            <sub style="font-size:14px"><b>MyungHoon Jin</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/sooftware>
-            <img src=https://avatars.githubusercontent.com/u/42150335?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Soohwan Kim/>
-            <br />
-            <sub style="font-size:14px"><b>Soohwan Kim</b></sub>
-        </a>
-    </td>
-</tr>
-</table>
+All Markdown documents will be migrated to the document website.
+
+## Administrative Notes
+### Citing OSLO
+If you find our work useful, please consider citing:
+```
+@misc{oslo,
+  author       = {...},
+  title        = {OSLO: Open Source framework for Large-scale model Optimization},
+  howpublished = {\url{https://github.com/tunib-ai/oslo}},
+  year         = {2021},
+}
+```
+### Contributors
 Thanks so much to all of our amazing contributors!
 
 ### Licensing
