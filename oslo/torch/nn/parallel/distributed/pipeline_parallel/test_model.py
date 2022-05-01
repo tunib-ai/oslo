@@ -3,6 +3,9 @@ from torch import nn
 from oslo.torch.nn.parallel.distributed.pipeline_parallel._model_partitioner import (
     ModelPartitioner,
 )
+from oslo.torch.nn.parallel.distributed.pipeline_parallel.p2p import (
+    PPModuleWrapper, wrap_nn_modules,
+)
 import torch.distributed as dist
 from torch.distributed.distributed_c10d import _get_default_group
 
@@ -69,5 +72,8 @@ mp = ModelPartitioner(model, _get_default_group())
 #model = ModelPartitioner(model)
 mp.partition()
 print("AFTER")
+print(model)
+print(mp.model)
+wrap_nn_modules(model)
 print(model)
 # run with: python -m torch.distributed.launch --nproc_per_node=2 test_model.py
