@@ -76,6 +76,7 @@ def multi_head_attention_forward(
             when ``need_weights=True.``. Default: True
         use_sequence_parallel: If true, use SequenceParallel. Default: False
         parallel_context: global parallel context.
+
     Shape:
         Inputs:
         - query: :math:`(L, E)` or :math:`(L, N, E)` where L is the target sequence length, N is the batch size, E is
@@ -99,6 +100,7 @@ def multi_head_attention_forward(
           N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
         - static_v: :math:`(N*num_heads, S, E/num_heads)`, where S is the source sequence length,
           N is the batch size, E is the embedding dimension. E/num_heads is the head dimension.
+
         Outputs:
         - attn_output: :math:`(L, E)` or :math:`(L, N, E)` where L is the target sequence length, N is the batch size,
           E is the embedding dimension.

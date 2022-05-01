@@ -35,6 +35,7 @@ class MultiheadAttention(nn.Module):
             as (batch, seq, feature). Default: ``False`` (seq, batch, feature).
         use_sequence_parallel: If ``True``, then self attention module is changed
             self attention ring module. Default: ``False``
+
     Examples::
         >>> multihead_attn = nn.MultiheadAttention(embed_dim, num_heads)
         >>> attn_output, attn_output_weights = multihead_attn(query, key, value)

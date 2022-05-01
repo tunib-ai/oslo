@@ -1,5 +1,4 @@
 import torch
-from torch.nn import functional as F
 from torch.nn.modules.activation import MultiheadAttention as torchMHA
 
 from oslo.torch.distributed import ParallelContext
