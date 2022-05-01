@@ -1,5 +1,5 @@
 from typing import Optional
-import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -33,7 +33,7 @@ class LazyEmbedding(LazyModuleMixin, nn.Embedding):
     Lazy initialized embedding layer.
 
     This can be very helpful for model parallelism. When you initialize the model, If you use multiprocessing,
-    multiple copies of paramters are copied to the CPU RAM, which causes the CPU RAM to run out.
+    multiple copies of parameters are copied to the CPU RAM, which causes the CPU RAM to run out.
     Therefore, after creating uninitialized parameters and re-adjusting them to a suitable size,
     you can initialize only the necessary parameters to a suitable GPU immediately.
 
@@ -142,9 +142,10 @@ class VocabParallelEmbedding1D(nn.Embedding):
         )
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             all_reduce_1d,
         )
+
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
 
         if world_size > 1:
@@ -182,20 +183,25 @@ class Embedding2D(nn.Embedding):
         parallel_context: ParallelContext,
     ):
         self.parallel_context = parallel_context
-        self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+        self.summa_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2D_COL
+        )
         super().__init__(
             num_embeddings=num_embeddings,
-            embedding_dim=embedding_dim // (self.summa_dim ** 2),
+            embedding_dim=embedding_dim // (self.summa_dim**2),
             device=torch.device(torch.cuda.current_device()),
         )
-    
+
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
-            split_batch_2d,
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             all_gather_tensor_2d,
+            split_batch_2d,
         )
+
         input_ = split_batch_2d(input_, self.parallel_context)
-        weight = all_gather_tensor_2d(self.weight, -1, ParallelMode.TENSOR_2D_COL, self.parallel_context)
+        weight = all_gather_tensor_2d(
+            self.weight, -1, ParallelMode.TENSOR_2D_COL, self.parallel_context
+        )
         output = F.embedding(
             input_,
             weight,
@@ -216,24 +222,29 @@ class VocabParallelEmbedding2D(nn.Embedding):
         parallel_context: ParallelContext,
     ):
         self.parallel_context = parallel_context
-        self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+        self.summa_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2D_COL
+        )
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         (
             self.vocab_start_index,
             self.vocab_end_index,
         ) = VocabUtility.vocab_range_from_global_vocab_size(
-            num_embeddings, rank, self.summa_dim,
+            num_embeddings,
+            rank,
+            self.summa_dim,
         )
         super().__init__(
             num_embeddings=num_embeddings // self.summa_dim,
             embedding_dim=embedding_dim // self.summa_dim,
             device=torch.device(torch.cuda.current_device()),
         )
-    
+
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             reduce_scatter_tensor_2d,
         )
+
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         if world_size > 1:
             input_mask = (input_ < self.vocab_start_index) | (
@@ -253,6 +264,8 @@ class VocabParallelEmbedding2D(nn.Embedding):
             self.scale_grad_by_freq,
             self.sparse,
         )
-        output_parallel[input_mask, :] = 0.
-        output = reduce_scatter_tensor_2d(output_parallel, 0, ParallelMode.TENSOR_2D_COL, self.parallel_context)
+        output_parallel[input_mask, :] = 0.0
+        output = reduce_scatter_tensor_2d(
+            output_parallel, 0, ParallelMode.TENSOR_2D_COL, self.parallel_context
+        )
         return output

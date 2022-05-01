@@ -1,18 +1,25 @@
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
-from data_base import BaseProcessor
 from datasets.arrow_dataset import Batch
-from transformers.data.data_collator import _torch_collate_batch
+
+from oslo.transformers.tasks.data_base import BaseProcessor
+
+try:
+    from transformers.data.data_collator import _torch_collate_batch
+except ImportError:
+    print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
 class ProcessorForCausalLM(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
         self._chunk_size = max_length
-    
+
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
-        assert "text" in column_names, "The name of dataset column that you want to tokenize must be 'text'"
+        assert (
+            "text" in column_names
+        ), "The name of dataset column that you want to tokenize must be 'text'"
 
         dict_of_training_examples: Dict[str, List[int]] = {}
 
@@ -44,9 +51,9 @@ class ProcessorForCausalLM(BaseProcessor):
                     if key not in dict_of_training_examples:
                         dict_of_training_examples.setdefault(key, [])
                     dict_of_training_examples[key].append(training_example[key])
-                
+
                 self._buffer = self._buffer[self._chunk_size :]
-        
+
         return dict_of_training_examples
 
 
@@ -67,7 +74,9 @@ class DataCollatorForCausalLM:
         examples = [example["input_ids"] for example in examples]
         batch = {
             "input_ids": _torch_collate_batch(
-                examples, tokenizer=self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of
+                examples,
+                tokenizer=self.tokenizer,
+                pad_to_multiple_of=self.pad_to_multiple_of,
             )
         }
         batch["labels"] = batch["input_ids"].clone()

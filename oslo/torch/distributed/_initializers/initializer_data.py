@@ -1,6 +1,9 @@
-from oslo.torch.distributed._initializers.initializer import ProcessGroupInitializer
-from oslo.torch.distributed._parallel_mode import ParallelMode
 import torch.distributed as dist
+
+from oslo.torch.distributed._initializers.initializer import (
+    ProcessGroupInitializer,
+)
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 class DataParallelGroupInitializer(ProcessGroupInitializer):
@@ -22,7 +25,11 @@ class DataParallelGroupInitializer(ProcessGroupInitializer):
                 for j in range(self.data_parallel_size)
             ]
             group = dist.new_group(ranks)
-            group_cpu = dist.new_group(ranks, backend='gloo') if dist.get_backend() != 'gloo' else group
+            group_cpu = (
+                dist.new_group(ranks, backend="gloo")
+                if dist.get_backend() != "gloo"
+                else group
+            )
 
             if self.rank in ranks:
                 local_rank = ranks.index(self.rank)

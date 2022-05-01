@@ -6,12 +6,7 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 import oslo
-
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._mapping import (
-    Column,
-    Row,
-    Update,
-)
+from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update
 
 
 class _TensorParallelMappingForHuggingFace(object):

@@ -43,13 +43,6 @@ repos:
       - id: flake8
         args: [--show-source, --statistics]
 
-    - repo: https://github.com/pycqa/isort
-      rev: 5.10.1
-      hooks:
-      - id: isort
-        exclude: README.md
-        additional_dependencies: [toml]
-
     - repo: https://github.com/codespell-project/codespell
       rev: v2.1.0
       hooks:

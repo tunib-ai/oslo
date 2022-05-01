@@ -1,8 +1,12 @@
-from typing import Dict, List
 from abc import ABC, abstractmethod
+from typing import Dict, List
 
-from transformers import AutoTokenizer
 from datasets.arrow_dataset import Batch
+
+try:
+    from transformers import AutoTokenizer
+except ImportError:
+    print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
 class BaseProcessor(ABC):

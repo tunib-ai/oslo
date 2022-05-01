@@ -5,7 +5,7 @@ import torch.distributed as dist
 from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
-from oslo.torch.distributed._parallel_mode import ParallelMode
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 class _TensorParallel2DRowGroupInitializer(ProcessGroupInitializer):
@@ -44,7 +44,11 @@ class _TensorParallel2DRowGroupInitializer(ProcessGroupInitializer):
                     for k in range(self.summa_dim)
                 ]
                 group = dist.new_group(ranks)
-                group_cpu = dist.new_group(ranks, backend='gloo') if dist.get_backend() != 'gloo' else group
+                group_cpu = (
+                    dist.new_group(ranks, backend="gloo")
+                    if dist.get_backend() != "gloo"
+                    else group
+                )
 
                 if self.rank in ranks:
                     local_rank = ranks.index(self.rank)
@@ -99,7 +103,11 @@ class _TensorParallel2DColumnGroupInitializer(ProcessGroupInitializer):
                     for k in range(self.summa_dim)
                 ]
                 group = dist.new_group(ranks)
-                group_cpu = dist.new_group(ranks, backend='gloo') if dist.get_backend() != 'gloo' else group
+                group_cpu = (
+                    dist.new_group(ranks, backend="gloo")
+                    if dist.get_backend() != "gloo"
+                    else group
+                )
 
                 if self.rank in ranks:
                     local_rank = ranks.index(self.rank)
@@ -131,10 +139,16 @@ class TensorParallel2DGroupInitializer(ProcessGroupInitializer):
         ), "2D summa dim should equal to tensor parallel size ^ 0.5"
 
         self.col_initializer = _TensorParallel2DColumnGroupInitializer(
-            self.num_group, self.summa_dim, *args, **kwargs,
+            self.num_group,
+            self.summa_dim,
+            *args,
+            **kwargs,
         )
         self.row_initializer = _TensorParallel2DRowGroupInitializer(
-            self.num_group, self.summa_dim, *args, **kwargs,
+            self.num_group,
+            self.summa_dim,
+            *args,
+            **kwargs,
         )
 
     def init_dist_group(self):

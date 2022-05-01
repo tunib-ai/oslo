@@ -1,7 +1,9 @@
 import torch.distributed as dist
 
-from oslo.torch.distributed._initializers.initializer import ProcessGroupInitializer
-from oslo.torch.distributed._parallel_mode import ParallelMode
+from oslo.torch.distributed._initializers.initializer import (
+    ProcessGroupInitializer,
+)
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 class TensorParallelGroupInitializer(ProcessGroupInitializer):

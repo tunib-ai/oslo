@@ -27,8 +27,8 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.distributed.data_parallel._param_bucket import ParamBucket
-from oslo.torch.nn.parallel.distributed.data_parallel._params import (
+from oslo.torch.nn.parallel.data_parallel._param_bucket import ParamBucket
+from oslo.torch.nn.parallel.data_parallel._params import (
     calc_grad_norm,
     get_global_rank,
     recursive_copy_to_device,
@@ -240,7 +240,9 @@ class ZeroRedundancyOptimizer(Optimizer):
         .. note: Any extra parameter is passed to the base optimizer as-is"""
 
         # Sync oss param_groups attributes in case they've been updated by a scheduler.
-        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(
+            self.param_groups, self.optim.param_groups
+        )
 
         # Catch a possible change of devices in between OSS construction and step()
         with profiler.record_function("fairscale::oss::refresh_trainable"):
@@ -265,7 +267,9 @@ class ZeroRedundancyOptimizer(Optimizer):
         self._broadcast_params()
 
         # Sync hypothethical new results from the wrapped optimizer to the exposed param_groups
-        ZeroRedundancyOptimizer._sync_param_groups(self.optim.param_groups, self.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(
+            self.optim.param_groups, self.param_groups
+        )
 
         return loss
 
@@ -327,7 +331,7 @@ class ZeroRedundancyOptimizer(Optimizer):
                 # n_i = sum_rank(a^p)^1/p
                 # -> n_total = all_reduce(n_i^p)^(1/p) = sum_i(n_i^p)^1/p = sum_i(sum_rank(a^p))^1/p
                 # all reduce over data parallel and model parallel workers
-                total_norm = local_norm**norm_type
+                total_norm = local_norm ** norm_type
                 dist.all_reduce(total_norm)
                 total_norm = total_norm ** (1.0 / norm_type)
 
@@ -354,7 +358,9 @@ class ZeroRedundancyOptimizer(Optimizer):
         .. warning: This needs to be called on all replicas"""
 
         # Sync lr and other attributes in case its been updated
-        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(
+            self.param_groups, self.optim.param_groups
+        )
 
         # Pull the sharded state from all the other replicas
         # Store all the states in order, rank by rank
@@ -527,8 +533,12 @@ class ZeroRedundancyOptimizer(Optimizer):
         super().load_state_dict(state_dict)
 
         # Sync with the optimizer param groups
-        ZeroRedundancyOptimizer._sync_param_groups(state_dict["param_groups"], self.param_groups)
-        ZeroRedundancyOptimizer._sync_param_groups(self.param_groups, self.optim.param_groups)
+        ZeroRedundancyOptimizer._sync_param_groups(
+            state_dict["param_groups"], self.param_groups
+        )
+        ZeroRedundancyOptimizer._sync_param_groups(
+            self.param_groups, self.optim.param_groups
+        )
 
     def refresh_trainable(self) -> None:
         """Updates the partitioning and communication patterns if the trainability (`requires_grad`)
@@ -544,7 +554,9 @@ class ZeroRedundancyOptimizer(Optimizer):
             self.optim = self._optim_constructor(
                 self.partition_parameters()[self.rank], **self._optim_defaults
             )
-            ZeroRedundancyOptimizer._sync_param_groups(self.optim.param_groups, self.param_groups)
+            ZeroRedundancyOptimizer._sync_param_groups(
+                self.optim.param_groups, self.param_groups
+            )
 
         self._setup_flat_buffers()
 

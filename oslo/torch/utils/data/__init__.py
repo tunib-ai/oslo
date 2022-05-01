@@ -1,1 +1,3 @@
-from oslo.torch.utils.data._data_collator import SequenceParallelDataCollator
+from oslo.torch.utils.data.data_collator import (
+    SequenceParallelDataCollatorWrapper,
+)

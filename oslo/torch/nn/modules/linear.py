@@ -1,9 +1,9 @@
-from typing import Union, Tuple, Optional
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch.nn import Parameter
 import torch.nn.functional as F
+from torch.nn import Parameter
 from torch.nn.parameter import UninitializedParameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -43,7 +43,7 @@ class LazyLinear(LazyModuleMixin, Linear):
     Lazy initialized linear layer.
 
     This can be very helpful for model parallelism. When you initialize the model, If you use multiprocessing,
-    multiple copies of paramters are copied to the CPU RAM, which causes the CPU RAM to run out.
+    multiple copies of parameters are copied to the CPU RAM, which causes the CPU RAM to run out.
     Therefore, after creating uninitialized parameters and re-adjusting them to a suitable size,
     you can initialize only the necessary parameters to a suitable GPU immediately.
 
@@ -148,9 +148,9 @@ class ColumnParallelLinear(Linear):
         self, input: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # to avoid circular import
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
-            broadcast_1d,
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             all_gather_1d,
+            broadcast_1d,
         )
 
         input = broadcast_1d(input, self.parallel_context)
@@ -203,7 +203,7 @@ class RowParallelLinear(Linear):
         self, input: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # to avoid circular import
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_1d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             all_reduce_1d,
         )
 
@@ -241,7 +241,7 @@ class Linear2D(Linear):
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
         assert (
-            out_features % (self.summa_dim ** 2) == 0
+            out_features % (self.summa_dim**2) == 0
         ), "out_features must be divisible by summa dim^2."
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -281,7 +281,7 @@ class Linear2D(Linear):
     def forward(
         self, input: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             Matmul_ABT_2D,
             add_bias_2d,
         )

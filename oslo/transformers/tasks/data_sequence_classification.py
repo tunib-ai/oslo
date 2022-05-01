@@ -1,19 +1,30 @@
 from typing import Any, Dict, List, Optional
 
-from transformers.file_utils import PaddingStrategy
 from datasets.arrow_dataset import Batch
-from data_base import BaseProcessor
+
+from oslo.transformers.tasks.data_base import BaseProcessor
+
+try:
+    from transformers.file_utils import PaddingStrategy
+except ImportError:
+    print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
 class ProcessorForSequenceClassification(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: Optional[int] = None) -> None:
+    def __init__(
+        self, model_name_or_path: str, max_length: Optional[int] = None
+    ) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
-    
+
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
-        assert "text" in column_names, "The name of dataset column that you want to tokenize must be 'text'"
-        assert "labels" in column_names, "The name of dataset column that you want to use as a label must be 'labels'"
-        
+        assert (
+            "text" in column_names
+        ), "The name of dataset column that you want to tokenize must be 'text'"
+        assert (
+            "labels" in column_names
+        ), "The name of dataset column that you want to use as a label must be 'labels'"
+
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["text"],
             verbose=False,
@@ -54,4 +65,3 @@ class DataCollatorForSequenceClassification:
             batch["labels"] = batch["label_ids"]
             del batch["label_ids"]
         return batch
-

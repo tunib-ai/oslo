@@ -1,8 +1,8 @@
 import os
-import subprocess
 import sys
 from pathlib import Path
 
+import torch
 from torch.utils import cpp_extension
 
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
@@ -19,7 +19,7 @@ class Binder(object):
 
     @property
     def base_path(self):
-        from oslo.pytorch._C import csrc
+        from oslo.torch._C import csrc
 
         return Path(csrc.__file__).parent.absolute()
 
@@ -36,50 +36,9 @@ class Binder(object):
         return []
 
     @staticmethod
-    def _search_compatibility_version():
-        device_query = os.path.join(
-            cpp_extension.CUDA_HOME,
-            "extras",
-            "demo_suite",
-            "deviceQuery",
-        )
-
-        output = subprocess.check_output(
-            [device_query],
-            universal_newlines=True,
-        ).split("\n")
-
-        versions = []
-        for line in output:
-            if "CUDA Capability" in line:
-                versions.append(line)
-
-        return versions[0].replace(".", "")[-2:].strip()
-
-    @staticmethod
-    def _constant_compatibility_version():
-        try:
-            output = subprocess.check_output(
-                [os.path.join(cpp_extension.CUDA_HOME, "bin", "nvcc"), "-V"],
-                universal_newlines=True,
-            )
-            cuda_version = output.split()
-            cuda_bare_metal_version = cuda_version[
-                cuda_version.index("release") + 1
-            ].split(".")[0]
-
-            if int(cuda_bare_metal_version) >= 11:
-                return 80  # A100
-            else:
-                return 70  # V100
-        except:
-            return 0
-
-    def get_compatibility_version(self):
-        try:
-            return self._search_compatibility_version()
-        except Exception:
-            return self._constant_compatibility_version()
+    def get_compatibility_version():
+        a, b = torch.cuda.get_device_capability(torch.cuda.current_device())
+        return int(str(a) + str(b))
 
     def bind(self):
         try:

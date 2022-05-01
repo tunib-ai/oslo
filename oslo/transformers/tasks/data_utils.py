@@ -1,21 +1,31 @@
-import os
 import logging
+import os
 from pathlib import Path
-from typing import Union
-from numpy.random import choice
+from typing import List, Optional, Union
 
 import datasets
-from datasets import load_dataset, load_from_disk, Dataset, DatasetDict
-from transformers import AutoTokenizer
-from transformers.file_utils import ExplicitEnum
+from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
+from numpy.random import choice
 
-from typing import List, Optional
-from data_causal_lm import ProcessorForCausalLM
-from data_sequence_classification import ProcessorForSequenceClassification
-from data_token_classification import ProcessorForTokenClassification
+from oslo.transformers.tasks.data_causal_lm import ProcessorForCausalLM
+from oslo.transformers.tasks.data_sequence_classification import (
+    ProcessorForSequenceClassification,
+)
+from oslo.transformers.tasks.data_token_classification import (
+    ProcessorForTokenClassification,
+)
+
+try:
+    from transformers import AutoTokenizer
+    from transformers.file_utils import ExplicitEnum
+except ImportError:
+    print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
-SENT_TEXT_SCRIPT = str((Path(__file__).parent / "loading" / "sent_text.py").resolve().absolute())
+SENT_TEXT_SCRIPT = str(
+    (Path(__file__).parent / "loading" / "sent_text.py").resolve().absolute()
+)
+
 
 class CorpusType(ExplicitEnum):
     DOCU_TEXT = "docu_text"
@@ -24,25 +34,33 @@ class CorpusType(ExplicitEnum):
     SENT_JSON = "sent_json"
     DATASET = "dataset"
 
+
 def batch_iterator(
     dataset: datasets.arrow_dataset.Dataset,
     key: str = "text",
     batch_size: int = 1000,
-):  
-    return (dataset[i : i + batch_size][key]
-            for i in range(0, len(dataset), batch_size))
+):
+    return (
+        dataset[i : i + batch_size][key] for i in range(0, len(dataset), batch_size)
+    )
 
 
-def load_corpora(dir_path: str, corpus_type: str = "docu_json") -> Union[Dataset, DatasetDict]:
+def load_corpora(
+    dir_path: str, corpus_type: str = "docu_json"
+) -> Union[Dataset, DatasetDict]:
     corpora_dir = Path(dir_path).absolute()
     extension = corpus_type.split("_")[-1]
 
     if extension == "json":
-        list_of_file_paths = [str(file_path) for file_path in corpora_dir.rglob("*.json")]
+        list_of_file_paths = [
+            str(file_path) for file_path in corpora_dir.rglob("*.json")
+        ]
         if not list_of_file_paths:
             raise Exception("Check file extensions. Your files are not *.json")
     elif extension == "text":
-        list_of_file_paths = [str(file_path) for file_path in corpora_dir.rglob("*.txt")]
+        list_of_file_paths = [
+            str(file_path) for file_path in corpora_dir.rglob("*.txt")
+        ]
         if not list_of_file_paths:
             raise Exception("Check file extensions. Your files are not *.txt")
     else:
@@ -53,11 +71,15 @@ def load_corpora(dir_path: str, corpus_type: str = "docu_json") -> Union[Dataset
     elif corpus_type == "docu_json":
         return load_dataset("json", data_files=list_of_file_paths, split="train")
     elif corpus_type == "sent_text":
-        return load_dataset(SENT_TEXT_SCRIPT, data_files=list_of_file_paths, split="train")
+        return load_dataset(
+            SENT_TEXT_SCRIPT, data_files=list_of_file_paths, split="train"
+        )
     elif corpus_type == "sent_json":
         raise NotImplementedError("sent_json will be supported soon.")
     else:
-        raise ValueError(f"{corpus_type} must be one of ['docu_text', 'docu_json', 'sent_text', 'sent_json']")
+        raise ValueError(
+            f"{corpus_type} must be one of ['docu_text', 'docu_json', 'sent_text', 'sent_json']"
+        )
 
 
 def train_tokenizer(
@@ -74,7 +96,7 @@ def train_tokenizer(
     if save_dir is None:
         corpora_name = corpora_dir.split("/")[-1]
         save_dir = f"tokenizers/{model_name}_{corpora_name}"
-        
+
     if corpus_type == "dataset":
         corpora = load_from_disk(corpora_dir)["train"]
     else:
@@ -88,7 +110,7 @@ def train_tokenizer(
         corpora = corpora.select(indices=choice(total_size, sample_size, replace=False))
     else:
         logging.warning("Since sampling_ratio >= 1.0, all corpora will be used.")
-    
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     data_iterator = batch_iterator(corpora, batch_size=batch_size)
 
@@ -112,7 +134,7 @@ def train_tokenizer(
             vocab_size=vocab_size,
             min_frequency=min_frequency,
         )
-    
+
     tokenizer.save_pretrained(save_dir)
 
 
@@ -139,9 +161,11 @@ def serialize_corpora(
         "sequence_classification": ProcessorForSequenceClassification,
         "token_classification": ProcessorForTokenClassification,
     }
-    
+
     if task_type not in task_type_to_processor:
-        raise ValueError(f"{task_type} must be one of ['causal_lm', 'sequence_classification', 'token_classification']")
+        raise ValueError(
+            f"{task_type} must be one of ['causal_lm', 'sequence_classification', 'token_classification']"
+        )
 
     if corpus_type == "dataset":
         corpora = load_from_disk(corpora_dir)["train"]
@@ -150,15 +174,17 @@ def serialize_corpora(
 
     if "label" in corpora.column_names:
         corpora = corpora.rename_column("label", "labels")
-    
+
     if "label_ids" in corpora.column_names:
         corpora = corpora.rename_column("label_ids", "labels")
-    
+
     if task_type == "token_classification":
-        data_processor = task_type_to_processor[task_type](tokenizer_dir, max_length, corpora)
+        data_processor = task_type_to_processor[task_type](
+            tokenizer_dir, max_length, corpora
+        )
     else:
         data_processor = task_type_to_processor[task_type](tokenizer_dir, max_length)
-    
+
     dataset = corpora.map(
         lambda examples: data_processor(examples),
         batched=batched,

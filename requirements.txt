@@ -1,5 +1,6 @@
-torch==1.11.0
-transformers
-packaging
-rich
 anytree
+datasets
+packaging
+parameterized >= 0.8.1
+rich
+torch==1.11.0

@@ -1,25 +1,25 @@
-import warnings
 from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.nn import functional as F
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.nn.parameter import Parameter
 
-from oslo.torch.nn.functional import multi_head_attention_forward
+from oslo.torch.nn.modules.functional import multi_head_attention_forward
 
 
 class MultiheadAttention(nn.Module):
     r"""Allows the model to jointly attend to information
     from different representation subspaces as described in the paper:
     `Attention Is All You Need <https://arxiv.org/abs/1706.03762>`_.
+
     Multi-Head Attention is defined as:
     .. math::
         \text{MultiHead}(Q, K, V) = \text{Concat}(head_1,\dots,head_h)W^O
     where :math:`head_i = \text{Attention}(QW_i^Q, KW_i^K, VW_i^V)`.
+
     Args:
         embed_dim: Total dimension of the model.
         num_heads: Number of parallel attention heads. Note that ``embed_dim`` will be split

@@ -1,22 +1,27 @@
 import torch
-from torch.cuda.amp import custom_fwd, custom_bwd
+import torch.distributed as dist
+from torch.cuda.amp import custom_bwd, custom_fwd
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
-def send_forward_recv_forward(tensor_send_next: torch.Tensor, parallel_context: ParallelContext, parallel_mode: ParallelMode):
+def send_forward_recv_forward(
+    tensor_send_next: torch.Tensor,
+    parallel_context: ParallelContext,
+    parallel_mode: ParallelMode,
+):
     """
-        Sends a tensor to the next member and receives a tensor from the previous member.
-        This function returns the received tensor from the previous member.
-        This function assumes that the receiving tensor has the same shape with the sending tensor.
+    Sends a tensor to the next member and receives a tensor from the previous member.
+    This function returns the received tensor from the previous member.
+    This function assumes that the receiving tensor has the same shape with the sending tensor.
 
-        This function is based on the `send_forward_recv_forward` implementation of Megatron-LM.
-        Args:
-            tensor_send_next: Tensor sent to next member
-            parallel_context: ParallelContext holding process group information
-            parallel_mode: Parallel group mode used in this communication
-        Returns:
-            :class:`torch.Tensor`: The tensor received from the previous.
+    This function is based on the `send_forward_recv_forward` implementation of Megatron-LM.
+    Args:
+        tensor_send_next: Tensor sent to next member
+        parallel_context: ParallelContext holding process group information
+        parallel_mode: Parallel group mode used in this communication
+    Returns:
+        :class:`torch.Tensor`: The tensor received from the previous.
     """
 
     buffer_shape = tensor_send_next.size()
@@ -66,7 +71,9 @@ class _RingQK(torch.autograd.Function):
 
     @staticmethod
     @custom_fwd
-    def forward(ctx, sub_q: torch.Tensor, sub_k: torch.Tensor, parallel_context: ParallelContext):
+    def forward(
+        ctx, sub_q: torch.Tensor, sub_k: torch.Tensor, parallel_context: ParallelContext
+    ):
         # save tensor for backward
         ctx.save_for_backward(sub_q, sub_k)
         # save process group information
@@ -85,7 +92,9 @@ class _RingQK(torch.autograd.Function):
 
         # create local segment of attention score
         sub_attn = torch.empty(
-            bsz, len_sub_q, len_k,  # shape of sub-attention matrix
+            bsz,
+            len_sub_q,
+            len_k,  # shape of sub-attention matrix
             device=torch.cuda.current_device(),
             dtype=sub_q.dtype,
         )
@@ -94,11 +103,13 @@ class _RingQK(torch.autograd.Function):
         sub_attn_part = torch.einsum("b q d, b k d -> b q k", sub_q, sub_k)
         start_idx = local_rank * len_sub_k
         end_idx = (local_rank + 1) * len_sub_k
-        sub_attn[:, :, start_idx: end_idx] = sub_attn_part
+        sub_attn[:, :, start_idx:end_idx] = sub_attn_part
 
         # compute QK^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(sub_k, parallel_context, ParallelMode.SEQUENCE)
+            sub_k = send_forward_recv_forward(
+                sub_k, parallel_context, ParallelMode.SEQUENCE
+            )
             sub_attn_part = torch.einsum("b q d, b k d -> b q k", sub_q, sub_k)
 
             sender_local_rank = (local_rank - 1 - i) % local_world_size
@@ -111,7 +122,10 @@ class _RingQK(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, grad_output):
-        sub_q, sub_k, = ctx.saved_tensors
+        (
+            sub_q,
+            sub_k,
+        ) = ctx.saved_tensors
         parallel_context = ctx.parallel_context
 
         local_rank = parallel_context.local_rank
@@ -125,7 +139,7 @@ class _RingQK(torch.autograd.Function):
         # slice for sub-sequence
         start_idx = local_rank * len_sub_k
         end_idx = (local_rank + 1) * len_sub_k
-        grad_k = grad_k[:, start_idx: end_idx]
+        grad_k = grad_k[:, start_idx:end_idx]
 
         # calculate gradient for sub_q
         grad_q = torch.zeros_like(
@@ -137,15 +151,21 @@ class _RingQK(torch.autograd.Function):
         # compute with local sub_k
         start_idx = local_rank * len_sub_k
         end_idx = (local_rank + 1) * len_sub_k
-        grad_q += torch.einsum("b q k, b k d -> b q d", grad_output[:, :, start_idx:end_idx], sub_k)
+        grad_q += torch.einsum(
+            "b q k, b k d -> b q d", grad_output[:, :, start_idx:end_idx], sub_k
+        )
 
         # compute (dL/dZ)K in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(sub_k, parallel_context, ParallelMode.SEQUENCE)
+            sub_k = send_forward_recv_forward(
+                sub_k, parallel_context, ParallelMode.SEQUENCE
+            )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
             start_idx = sender_local_rank * len_sub_k
             end_idx = (sender_local_rank + 1) * len_sub_k
-            grad_q += torch.einsum("b q k, b k d -> b q d", grad_output[:, :, start_idx:end_idx], sub_k)
+            grad_q += torch.einsum(
+                "b q k, b k d -> b q d", grad_output[:, :, start_idx:end_idx], sub_k
+            )
 
         return grad_q, grad_k, None, None, None
 
@@ -173,7 +193,9 @@ class _RingAV(torch.autograd.Function):
 
         # create local segment of output
         sub_output = torch.zeros(
-            bsz, len_sub_attn, d,
+            bsz,
+            len_sub_attn,
+            d,
             device=torch.cuda.current_device(),
             dtype=sub_attn.dtype,
         )
@@ -181,15 +203,23 @@ class _RingAV(torch.autograd.Function):
         # compute local AV
         start_idx = local_rank * len_sub_v
         end_idx = (local_rank + 1) * len_sub_v
-        sub_output += torch.einsum("b q k, b k d -> b q d", sub_attn[:, :, start_idx:end_idx], sub_v)
+        sub_output += torch.einsum(
+            "b q k, b k d -> b q d", sub_attn[:, :, start_idx:end_idx], sub_v
+        )
 
         # compute AV in ring - all - reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(sub_v, parallel_context, ParallelMode.SEQUENCE)
+            sub_v = send_forward_recv_forward(
+                sub_v, parallel_context, ParallelMode.SEQUENCE
+            )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
-            start_idx = sender_local_rank * len_sub_k
-            end_idx = (sender_local_rank + 1) * len_sub_k
-            sub_output += torch.einsum("b q k, b k d -> b q d", sub_attn[:, :, start_idx:end_idx], sub_v)
+            start_idx = sender_local_rank * len_sub_v
+            end_idx = (sender_local_rank + 1) * len_sub_v
+            # kevin: I changed `len_sub_k` -> `len_sub_v` for pre-commit.
+            # If you checked this, please remove this comments :)
+            sub_output += torch.einsum(
+                "b q k, b k d -> b q d", sub_attn[:, :, start_idx:end_idx], sub_v
+            )
 
         return sub_output
 
@@ -220,14 +250,20 @@ class _RingAV(torch.autograd.Function):
         )
 
         # compute with local sub_v
-        grad_attn[:, :, start_idx:end_idx] += torch.einsum("b q d, b k d -> b q k", grad_output, sub_v)
+        grad_attn[:, :, start_idx:end_idx] += torch.einsum(
+            "b q d, b k d -> b q k", grad_output, sub_v
+        )
 
         # compute (dL/dZ)V^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(sub_v, parallel_context, ParallelMode.SEQUENCE)
+            sub_v = send_forward_recv_forward(
+                sub_v, parallel_context, ParallelMode.SEQUENCE
+            )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
             start_idx = sender_local_rank * len_sub_v
             end_idx = (sender_local_rank + 1) * len_sub_v
-            grad_attn[:, :, start_idx:end_idx] += torch.einsum("b q d, b k d -> b q k", grad_output, sub_v)
+            grad_attn[:, :, start_idx:end_idx] += torch.einsum(
+                "b q d, b k d -> b q k", grad_output, sub_v
+            )
 
         return grad_attn, grad_v, None, None, None, None

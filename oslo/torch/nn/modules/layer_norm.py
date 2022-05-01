@@ -1,26 +1,29 @@
 import torch
-import torch.nn as nn
 import torch.distributed as dist
-from oslo.torch.distributed import ParallelContext, ParallelMode
+import torch.nn as nn
 from torch.nn import Parameter
-from oslo.torch.nn.parallel.distributed.tensor_parallel.parallel_2d._ops import (
-    layernorm_2d,
+
+from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
     add_bias_2d,
+    layernorm_2d,
 )
 
 
 class LayerNorm2D(nn.Module):
     def __init__(
-        self, 
-        normalized_shape: int, 
-        parallel_context: ParallelContext, 
-        eps: float=1e-05,
+        self,
+        normalized_shape: int,
+        parallel_context: ParallelContext,
+        eps: float = 1e-05,
         bias=True,
         dtype=None,
     ):
         super().__init__()
         self.parallel_context = parallel_context
-        self.summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+        self.summa_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2D_COL
+        )
         assert (
             normalized_shape % self.summa_dim == 0
         ), "normalized_shape must be divisible by summa dim."
@@ -30,15 +33,26 @@ class LayerNorm2D(nn.Module):
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        self.data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-        self.pipeline_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
+        self.data_parallel_rank = self.parallel_context.get_local_rank(
+            ParallelMode.DATA
+        )
+        self.pipeline_parallel_rank = self.parallel_context.get_local_rank(
+            ParallelMode.PIPELINE
+        )
 
-        self.tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
-        self.pipeline_parallel_size = self.parallel_context.get_world_size(ParallelMode.PIPELINE)
+        self.tensor_parallel_size = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR
+        )
+        self.pipeline_parallel_size = self.parallel_context.get_world_size(
+            ParallelMode.PIPELINE
+        )
 
-        self.partitioned_dim = normalized_shape // (self.summa_dim ** 2)
+        self.partitioned_dim = normalized_shape // (self.summa_dim**2)
 
-        factory_kwargs = {'device': torch.device(torch.cuda.current_device()), 'dtype': dtype}
+        factory_kwargs = {
+            "device": torch.device(torch.cuda.current_device()),
+            "dtype": dtype,
+        }
         self.weight = Parameter(torch.ones(self.partitioned_dim, **factory_kwargs))
         if bias:
             self.bias = Parameter(torch.zeros(self.partitioned_dim, **factory_kwargs))
@@ -48,16 +62,20 @@ class LayerNorm2D(nn.Module):
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
         with torch.no_grad():
             E_i = torch.sum(input_, dim=-1, keepdim=True)
-            dist.all_reduce(E_i, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW))
+            dist.all_reduce(
+                E_i, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW)
+            )
             E_i /= self.normalized_shape
 
             Var_i = torch.sum(input_ * input_, dim=-1, keepdim=True)
-            dist.all_reduce(Var_i, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW))
+            dist.all_reduce(
+                Var_i, group=self.parallel_context.get_group(ParallelMode.TENSOR_2D_ROW)
+            )
             Var_i /= self.normalized_shape
 
             Var_i = Var_i - E_i * E_i
             Var_i = 1.0 / torch.sqrt(Var_i + self.variance_epsilon)
-        
+
         output = layernorm_2d(
             input_,
             E_i,
