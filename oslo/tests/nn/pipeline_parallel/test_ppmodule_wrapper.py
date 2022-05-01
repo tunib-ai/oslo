@@ -1,14 +1,12 @@
-import torch
-from torch import nn
-from oslo.torch.nn.parallel.distributed.pipeline_parallel._model_partitioner import (
-    ModelPartitioner,
-)
-from oslo.torch.nn.parallel.distributed.pipeline_parallel.p2p import (
-    PPModuleWrapper, wrap_nn_modules,
-)
-import torch.distributed as dist
-from torch.distributed.distributed_c10d import _get_default_group
+import unittest
 
+from oslo.torch.nn.parallel.distributed.pipeline_parallel.p2p import (
+    PPModuleWrapper, wrap_nn_modules, check_wrap_nn_modules
+)
+
+import numpy as np
+from torch import nn
+import pdb
 
 
 class CustomModule(nn.Module):
@@ -16,13 +14,13 @@ class CustomModule(nn.Module):
         super().__init__()
         self.rank = 0
         self.rank_parent = 0
-        
+
         ### module 1
         self.module1 = nn.Linear(ndim, ndim)
-        
+
         setattr(self.module1, "rank", 0)
-        setattr(self.module1, "rank_parent", 0) # or should default to None?
-        
+        setattr(self.module1, "rank_parent", 0)
+
         ### module 2
         self.module2 = nn.Sequential(
             nn.Linear(ndim, ndim), # rank 0
@@ -34,46 +32,44 @@ class CustomModule(nn.Module):
         )
         setattr(self.module2, "rank", 0)
         setattr(self.module2, "rank_parent", 0)
-        
+
         setattr(self.module2[0], "rank", 0)
         setattr(self.module2[0], "rank_parent", 0)
-        
+
         setattr(self.module2[1], "rank", 0)
         setattr(self.module2[1], "rank_parent", 0)
-        
+
         setattr(self.module2[1][0], "rank", 1)
-        setattr(self.module2[1][0], "rank_parent", 0) # TO DO: Check this
-        
+        setattr(self.module2[1][0], "rank_parent", 0)
+
         setattr(self.module2[1][1], "rank", 0)
         setattr(self.module2[1][1], "rank_parent", 0)
-        
+
         setattr(self.module2[2], "rank", 1)
         setattr(self.module2[2], "rank_parent", 0)
-        
-        
+
+
     def forward(self, x):
         x = self.module1(x)
         x = self.module2(x)
         return x
 
-model = CustomModule()
-dist.init_process_group('nccl')
 
-#print(model)
+class TestPPModuleWrapper(unittest.TestCase):
+    def setUp(self):
+        self.model_original = CustomModule()
+        model_wrapped = CustomModule()
+        wrap_nn_modules(model_wrapped)
+        self.model_wrapped = model_wrapped
 
-#for name, module in model.named_modules():
-#    print(name, module.__class__.__name__, getattr(module, "rank", None), getattr(module, "rank_parent", None))
-#    setattr(module, "orig_forward", module.forward)
-#    setattr(module, "forward", "SOLUTION")
-print("BEFORE")
-print(model)
-print("\n\n\n\n\n\n\n")
-mp = ModelPartitioner(model, _get_default_group())
-#model = ModelPartitioner(model)
-mp.partition()
-print("AFTER")
-print(model)
-print(mp.model)
-wrap_nn_modules(model)
-print(model)
-# run with: python -m torch.distributed.launch --nproc_per_node=2 test_model.py
+    def test_check_wrap_nn_modules_negt_test(self):
+        with self.assertRaises(AssertionError):
+            check_wrap_nn_modules(self.model_original)
+
+    def test_check_wrap_nn_modules_pos_test(self):
+        assert check_wrap_nn_modules(self.model_wrapped)
+        self.assertTrue(check_wrap_nn_modules(self.model_wrapped))
+
+
+if __name__ == '__main__':
+    unittest.main()

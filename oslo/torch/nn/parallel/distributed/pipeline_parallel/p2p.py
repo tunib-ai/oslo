@@ -126,7 +126,18 @@ class PPModuleWrapper(nn.Module):
 
 
 def wrap_nn_modules(m):
+    """Wraps every nn.Module object in a PPModuleWrapper object."""
     for child_name, child in m.named_children():
         if isinstance(child, nn.Module) and not(isinstance(child, PPModuleWrapper)):
             setattr(m, child_name, PPModuleWrapper(child))
         wrap_nn_modules(child)
+
+
+def check_wrap_nn_modules(m):
+    """Tests if every nn.Module object is wrapped within a PPModuleWrapper object."""
+    for child_name, child in m.named_children():
+        if isinstance(child, nn.Module) and not(isinstance(child, PPModuleWrapper)):
+            # assert that parent nn.Module is of type PPModuleWrapper
+            assert isinstance(m, PPModuleWrapper), "nn.Module object is not wrapped inside PPModuleWrapper object."
+        check_wrap_nn_modules(child)
+    return True
