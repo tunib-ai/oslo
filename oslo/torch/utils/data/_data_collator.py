@@ -1,8 +1,9 @@
 import torch
 import math
+from typing import Optional, Callable, List
 from torch.utils.data import default_collate
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from typing import Optional, Callable, List
+
 
 class SequenceParallelDataCollatorWrapper:
     def __init__(
