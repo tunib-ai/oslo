@@ -11,7 +11,9 @@ class _SequenceParallelState(object):
         self.parallel_context = parallel_context
 
 
-def _sequence_parallel_hook(state: _SequenceParallelState, bucket: dist._GradBucket) -> torch.futures.Future:
+def _sequence_parallel_hook(
+    state: _SequenceParallelState, bucket: dist._GradBucket
+) -> torch.futures.Future:
     parallel_context = state.parallel_context
     group_to_use = parallel_context.get_group(ParallelMode.SEQUENCE_DP)
     div_factor = parallel_context.get_world_size(ParallelMode.DATA)
@@ -27,14 +29,16 @@ def _sequence_parallel_hook(state: _SequenceParallelState, bucket: dist._GradBuc
 class SequenceParallel(DistributedDataParallel, ParallelWrapper):
     def __init__(
         self,
-        module, parallel_context: ParallelContext,
+        module,
+        parallel_context: ParallelContext,
         device_ids=None,
         output_device=None,
-        dim=0, broadcast_buffers=True,
+        dim=0,
+        broadcast_buffers=True,
         bucket_cap_mb=25,
         find_unused_parameters=False,
         check_reduction=False,
-        gradient_as_bucket_view=False
+        gradient_as_bucket_view=False,
     ):
         self._parallel_context = parallel_context
         super(SequenceParallel, self).__init__(
