@@ -24,7 +24,7 @@ from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.distributed.data_parallel import \
     FullyShardedDataParallel as FSDP
 from oslo.torch.nn.parallel.distributed.data_parallel import TrainingState
-from oslo.torch.utils import torch_version
+from oslo.torch.utils.version import torch_version
 from oslo.torch.utils.testing import dist_init, skip_if_single_gpu, teardown
 
 

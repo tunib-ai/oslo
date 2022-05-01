@@ -12,8 +12,8 @@ from unittest import mock
 from parameterized import parameterized
 import torch
 
-from oslo.torch.utils import torch_version
-from oslo.torch.utils.reduce_scatter_bucketer import ReduceScatterBucketer
+from oslo.torch.nn.parallel.distributed.data_parallel._reduce_scatter_bucketer import ReduceScatterBucketer
+from oslo.torch.utils.version import torch_version
 from oslo.torch.utils.testing import dist_init, spawn_for_all_world_sizes
 
 

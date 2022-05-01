@@ -27,8 +27,8 @@ from torch.nn import Parameter
 from torch.optim import Optimizer
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.utils._param_bucket import ParamBucket
-from oslo.torch.utils._params import (
+from oslo.torch.nn.parallel.distributed.data_parallel._param_bucket import ParamBucket
+from oslo.torch.nn.parallel.distributed.data_parallel._params import (
     calc_grad_norm,
     get_global_rank,
     recursive_copy_to_device,
