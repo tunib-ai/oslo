@@ -1,11 +1,11 @@
 import math
 
-from transformers.training_args import ParallelMode
+import torch.distributed as dist
 
+from oslo.torch.distributed import ParallelMode
 from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
-import torch.distributed as dist
 
 
 class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
@@ -28,7 +28,7 @@ class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_INPUT
+        mode = ParallelMode.TENSOR_3D_INPUT
 
         for h in range(self.num_group):
             for i in range(self.depth):
@@ -73,7 +73,7 @@ class _TensorParallel3DWeightGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_WEIGHT
+        mode = ParallelMode.TENSOR_3D_WEIGHT
 
         for h in range(self.num_group):
             for k in range(self.depth):
@@ -118,7 +118,7 @@ class _TensorParallel3DOutputGroupInitializer(ProcessGroupInitializer):
         process_group = None
         cpu_group = None
         group_world_size = None
-        mode = ParallelMode.PARALLEL_3D_OUTPUT
+        mode = ParallelMode.TENSOR_3D_OUTPUT
 
         for h in range(self.num_group):
             for i in range(self.depth):
