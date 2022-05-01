@@ -55,7 +55,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch.distributed import rpc
 
-from oslo.torch.utils import torch_version
+from oslo.torch.utils.version import torch_version
 
 if TYPE_CHECKING:
     Base = nn.Module[Tensor]
