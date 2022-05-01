@@ -3,7 +3,7 @@ from torch import nn
 import torch.distributed as dist
 
 ### PP p2p com setup:
-
+#   PPPreFwdP2PCom      PPPostFwdP1PCom
 # -->  pre fwd --> fwd --> post fwd -->
 # <-- post bwd <-- bwd <--  pre bwd <--
 
