@@ -48,7 +48,7 @@ class LazyConv1D(LazyModuleMixin, Conv1D):
     Lazy initialized Conv1D layer.
 
     This can be very helpful for model parallelism. When you initialize the model, If you use multiprocessing,
-    multiple copies of paramters are copied to the CPU RAM, which causes the CPU RAM to run out.
+    multiple copies of parameters are copied to the CPU RAM, which causes the CPU RAM to run out.
     Therefore, after creating uninitialized parameters and re-adjusting them to a suitable size,
     you can initialize only the necessary parameters to a suitable GPU immediately.
 

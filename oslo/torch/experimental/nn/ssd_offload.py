@@ -38,7 +38,9 @@ except ImportError:
 DEFAULT_CHUNK_SIZE = 2048 * 2048
 
 
-def _get_num_chunks(input_tensor: torch.Tensor, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE) -> int:
+def _get_num_chunks(
+    input_tensor: torch.Tensor, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE
+) -> int:
     """Returns the number of chunks that the given tensor can be divided into."""
     size_in_bytes = input_tensor.nelement() * input_tensor.element_size()
     num_chunks = (size_in_bytes + (chunk_size_bytes - 1)) // chunk_size_bytes
@@ -46,7 +48,9 @@ def _get_num_chunks(input_tensor: torch.Tensor, chunk_size_bytes: int = DEFAULT_
 
 
 def _tensor_to_bytes_chunks(
-    input_tensor: torch.Tensor, chunk_idx: int, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE
+    input_tensor: torch.Tensor,
+    chunk_idx: int,
+    chunk_size_bytes: int = DEFAULT_CHUNK_SIZE,
 ) -> bytes:
     """Converts the given tensor into a chunked array containing chunk_size_bytes."""
     size_in_bytes = input_tensor.nelement() * input_tensor.element_size()
@@ -57,7 +61,9 @@ def _tensor_to_bytes_chunks(
     return input_tensor_np[chunk_start:chunk_end].tobytes()
 
 
-def write(input_tensor: torch.Tensor, filename: str, file_offset_bytes: int = 0) -> None:
+def write(
+    input_tensor: torch.Tensor, filename: str, file_offset_bytes: int = 0
+) -> None:
     """Populates the file with the data stored in the given tensor."""
     num_chunks = _get_num_chunks(input_tensor)
     file_flags = "r+b" if os.path.exists(filename) else "wb"
@@ -120,12 +126,17 @@ class SsdTensorHandle(torch.Tensor):
 
     @staticmethod
     def __new__(
-        cls: Type[SsdTensorHandle], shape: torch.Size, dtype: torch.dtype, requires_grad: bool = False
+        cls: Type[SsdTensorHandle],
+        shape: torch.Size,
+        dtype: torch.dtype,
+        requires_grad: bool = False,
     ) -> SsdTensorHandle:
         r = super(SsdTensorHandle, cls)._make_wrapper_subclass(cls, shape, dtype=dtype, requires_grad=requires_grad)  # type: ignore
         return r
 
-    def __init__(self, shape: torch.Size, dtype: torch.dtype, requires_grad: bool) -> None:
+    def __init__(
+        self, shape: torch.Size, dtype: torch.dtype, requires_grad: bool
+    ) -> None:
         self._unpickle_f: Optional[Union[BinaryIO, IO[bytes]]] = None
 
         self._shape = shape
@@ -144,7 +155,12 @@ class SsdTensorHandle(torch.Tensor):
 
     @classmethod
     def from_file(
-        cls, shape: torch.Size, dtype: torch.dtype, filename: str, offset: int = 0, requires_grad: bool = False
+        cls,
+        shape: torch.Size,
+        dtype: torch.dtype,
+        filename: str,
+        offset: int = 0,
+        requires_grad: bool = False,
     ) -> SsdTensorHandle:
         """Returns a new SsdTensorHandle from a file."""
         handle = cls(shape=shape, dtype=dtype, requires_grad=requires_grad)
@@ -152,9 +168,13 @@ class SsdTensorHandle(torch.Tensor):
         return handle
 
     @classmethod
-    def from_tensor(cls: Type[SsdTensorHandle], tensor: torch.Tensor) -> SsdTensorHandle:
+    def from_tensor(
+        cls: Type[SsdTensorHandle], tensor: torch.Tensor
+    ) -> SsdTensorHandle:
         """Returns a new SsdTensorHandle from a tensor."""
-        handle = cls(shape=tensor.shape, dtype=tensor.dtype, requires_grad=tensor.requires_grad)
+        handle = cls(
+            shape=tensor.shape, dtype=tensor.dtype, requires_grad=tensor.requires_grad
+        )
         handle.point_to_tensor(tensor)
         return handle
 
@@ -196,13 +216,19 @@ class SsdTensorHandle(torch.Tensor):
         if self.tensor is not None:
             return self.tensor
         else:
-            result_tensor = torch.empty(size=self._shape, dtype=self._dtype, requires_grad=self.requires_grad)
+            result_tensor = torch.empty(
+                size=self._shape, dtype=self._dtype, requires_grad=self.requires_grad
+            )
             self.copy_into_tensor(result_tensor)
             self.tensor = result_tensor
             self.storage_state = StorageState.ON_CPU
             return self.tensor
 
-    def to_file(self, permit_when_tensor_none: bool = False, release_tensor_after_write: bool = True) -> None:
+    def to_file(
+        self,
+        permit_when_tensor_none: bool = False,
+        release_tensor_after_write: bool = True,
+    ) -> None:
         """Saves the tensor to disk and releases memory if specified."""
         assert self.tensor is not None or permit_when_tensor_none
 
@@ -261,7 +287,11 @@ class SsdTensorHandle(torch.Tensor):
 
     @classmethod
     def __unpickle__(
-        cls: Type[SsdTensorHandle], shape: torch.Size, dtype: torch.dtype, requires_grad: bool, filename: str
+        cls: Type[SsdTensorHandle],
+        shape: torch.Size,
+        dtype: torch.dtype,
+        requires_grad: bool,
+        filename: str,
     ) -> SsdTensorHandle:
         result = cls(shape, dtype, requires_grad)
         result.point_to_file(filename, 0)
@@ -278,7 +308,10 @@ class SsdTensorHandle(torch.Tensor):
             byte_iter = iter(TensorChunkingIterator(self.tensor))
         else:
             byte_iter = iter(
-                FileChunkingIterator(self.filename, expected_size_bytes=self.numel() * self.element_size())
+                FileChunkingIterator(
+                    self.filename,
+                    expected_size_bytes=self.numel() * self.element_size(),
+                )
             )
         return (
             self.__unpickle__,  # Callable
@@ -359,10 +392,17 @@ class TorchSaver:
         self.pickle_module = DisableMemoizationPicklerModule
 
     def save(
-        self, obj: Any, f: Union[str, os.PathLike, BinaryIO, IO[bytes]], pickle_protocol: int = DEFAULT_PROTOCOL
+        self,
+        obj: Any,
+        f: Union[str, os.PathLike, BinaryIO, IO[bytes]],
+        pickle_protocol: int = DEFAULT_PROTOCOL,
     ) -> None:
         torch.serialization.save(
-            obj, f, self.pickle_module, pickle_protocol=pickle_protocol, _use_new_zipfile_serialization=False
+            obj,
+            f,
+            self.pickle_module,
+            pickle_protocol=pickle_protocol,
+            _use_new_zipfile_serialization=False,
         )
 
 
@@ -375,12 +415,19 @@ class SsdParameter(SsdTensorHandle, torch.nn.Parameter):
 
     @staticmethod
     def __new__(
-        cls: Type[SsdParameter], shape: torch.Size, dtype: torch.dtype, requires_grad: bool = True
+        cls: Type[SsdParameter],
+        shape: torch.Size,
+        dtype: torch.dtype,
+        requires_grad: bool = True,
     ) -> SsdParameter:
-        r = super(SsdParameter, cls).__new__(cls, shape, dtype=dtype, requires_grad=requires_grad)
+        r = super(SsdParameter, cls).__new__(
+            cls, shape, dtype=dtype, requires_grad=requires_grad
+        )
         return r  # type: ignore
 
-    def __init__(self, shape: torch.Size, dtype: torch.dtype, requires_grad: bool = True) -> None:
+    def __init__(
+        self, shape: torch.Size, dtype: torch.dtype, requires_grad: bool = True
+    ) -> None:
         super(SsdParameter, self).__init__(shape, dtype, requires_grad)
 
 
@@ -392,7 +439,10 @@ class SsdFlatParameter(SsdParameter):
     """
 
     def __new__(
-        cls: Type[SsdFlatParameter], shapes: Sequence[torch.Size], dtype: torch.dtype, requires_grad: bool = True
+        cls: Type[SsdFlatParameter],
+        shapes: Sequence[torch.Size],
+        dtype: torch.dtype,
+        requires_grad: bool = True,
     ) -> SsdFlatParameter:
         """Make an object using the parent's __new__ function."""
 
@@ -401,10 +451,17 @@ class SsdFlatParameter(SsdParameter):
             raise ValueError("An non-empty list or tuple argument is needed")
 
         size = sum([np.prod(s) for s in shapes])
-        r = super(SsdFlatParameter, cls).__new__(cls, torch.Size((size,)), dtype=dtype, requires_grad=requires_grad)
+        r = super(SsdFlatParameter, cls).__new__(
+            cls, torch.Size((size,)), dtype=dtype, requires_grad=requires_grad
+        )
         return r  # type: ignore
 
-    def __init__(self, shapes: Sequence[torch.Size], dtype: torch.dtype, requires_grad: bool = True):
+    def __init__(
+        self,
+        shapes: Sequence[torch.Size],
+        dtype: torch.dtype,
+        requires_grad: bool = True,
+    ):
         """Initialize the _param_numels and _param_shapes lists."""
         self._param_shapes = shapes
         self._param_numels = [np.prod(s) for s in shapes]
@@ -415,13 +472,17 @@ class SsdFlatParameter(SsdParameter):
 
         # These are set by FPW class below, not by this class itself.
         self._param_infos: List[Tuple[str, torch.nn.Module, str]] = []
-        self._shared_param_infos: List[Tuple[str, str, torch.nn.Module, str, torch.nn.Module, str]] = []
+        self._shared_param_infos: List[
+            Tuple[str, str, torch.nn.Module, str, torch.nn.Module, str]
+        ] = []
 
         super(SsdFlatParameter, self).__init__(
             shape=torch.Size((total_numels,)), dtype=dtype, requires_grad=requires_grad
         )
 
-    def get_param_views(self, external_data: Optional[torch.Tensor] = None) -> Iterator[torch.Tensor]:
+    def get_param_views(
+        self, external_data: Optional[torch.Tensor] = None
+    ) -> Iterator[torch.Tensor]:
         """Return a generator of views that map to the original parameters."""
         # Note, self.data could be sharded, so its numel is <= to the sum.
         """
@@ -434,9 +495,17 @@ class SsdFlatParameter(SsdParameter):
                 raise ValueError(
                     f"Incorrect numel of supplied data: got {external_data.numel()} but expected {sum(self._param_numels)}"
                 )
-            return (t.view(s) for (t, s) in zip(external_data.split(self._param_numels), self._param_shapes))
+            return (
+                t.view(s)
+                for (t, s) in zip(
+                    external_data.split(self._param_numels), self._param_shapes
+                )
+            )
         else:
-            return (t.view(s) for (t, s) in zip(self.split(self._param_numels), self._param_shapes))
+            return (
+                t.view(s)
+                for (t, s) in zip(self.split(self._param_numels), self._param_shapes)
+            )
 
     def metadata(self) -> Tuple[List[str], Sequence[torch.Size], List[int]]:
         """Return tuple of (names, shapes, numels) metadata for this flat parameter."""
@@ -445,7 +514,9 @@ class SsdFlatParameter(SsdParameter):
 
     @classmethod
     def from_tensors(
-        cls: Type[SsdFlatParameter], tensors: Sequence[torch.Tensor], direct_to_file: bool = False
+        cls: Type[SsdFlatParameter],
+        tensors: Sequence[torch.Tensor],
+        direct_to_file: bool = False,
     ) -> "SsdFlatParameter":
         """Returns a new SsdFlatParameter from a sequence of tensors."""
         assert (
@@ -460,13 +531,23 @@ class SsdFlatParameter(SsdParameter):
         if any(isinstance(t, SsdFlatParameter) for t in tensors):
             raise ValueError("Nesting SsdFlatParameter is not supported")
 
-        handle = cls(shapes=[t.size() for t in tensors], dtype=tensors[0].dtype, requires_grad=tensors[0].requires_grad)
+        handle = cls(
+            shapes=[t.size() for t in tensors],
+            dtype=tensors[0].dtype,
+            requires_grad=tensors[0].requires_grad,
+        )
         if direct_to_file:
             assert False, "direct_to_file not implemented yet"
             pass
         else:
             tensor = torch.cat(
-                [t.detach().reshape(-1) if isinstance(t, torch.nn.Parameter) else t.reshape(-1) for t in tensors], 0
+                [
+                    t.detach().reshape(-1)
+                    if isinstance(t, torch.nn.Parameter)
+                    else t.reshape(-1)
+                    for t in tensors
+                ],
+                0,
             )
             handle.point_to_tensor(tensor)
         return handle
@@ -494,7 +575,10 @@ class SsdFlatParameter(SsdParameter):
             byte_iter = iter(TensorChunkingIterator(self.tensor))
         else:
             byte_iter = iter(
-                FileChunkingIterator(self.filename, expected_size_bytes=self.numel() * self.element_size())
+                FileChunkingIterator(
+                    self.filename,
+                    expected_size_bytes=self.numel() * self.element_size(),
+                )
             )
         return (
             self.__unpickle_SFP__,  # Callable
@@ -526,7 +610,9 @@ class TensorChunkingIterator:
     order of O(min(file_size, 1000 * chunk_size_bytes)).
     """
 
-    def __init__(self, tensor: torch.Tensor, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE) -> None:
+    def __init__(
+        self, tensor: torch.Tensor, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE
+    ) -> None:
 
         self.tensor = tensor
         self.chunk_size_bytes = chunk_size_bytes
@@ -541,7 +627,9 @@ class TensorChunkingIterator:
         if self.num_chunks_read >= self.num_chunks:
             raise StopIteration
         next_chunk = _tensor_to_bytes_chunks(
-            self.tensor, chunk_idx=self.num_chunks_read, chunk_size_bytes=self.chunk_size_bytes
+            self.tensor,
+            chunk_idx=self.num_chunks_read,
+            chunk_size_bytes=self.chunk_size_bytes,
         )
 
         self.num_chunks_read += 1
@@ -559,7 +647,10 @@ class FileChunkingIterator:
     """
 
     def __init__(
-        self, filename: str, expected_size_bytes: int = -1, chunk_size_bytes: int = DEFAULT_CHUNK_SIZE
+        self,
+        filename: str,
+        expected_size_bytes: int = -1,
+        chunk_size_bytes: int = DEFAULT_CHUNK_SIZE,
     ) -> None:
         self.filename = filename
         self.file: Optional[Union[BinaryIO, IO[bytes]]] = None
