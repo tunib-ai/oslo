@@ -3,7 +3,7 @@ from torch.nn.modules.activation import MultiheadAttention as torchMHA
 
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.modules.activation import MultiheadAttention as osloMHA
-from oslo.torch.nn.parallel.distributed.data_parallel._sequence_parallel import (
+from oslo.torch.nn.parallel.distributed.data_parallel.sequence_parallel import (
     SequenceParallel,
 )
 from oslo.torch.nn.parallel.utils import allocate_params
