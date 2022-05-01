@@ -131,10 +131,10 @@ class TensorParallel2DGroupInitializer(ProcessGroupInitializer):
         ), "2D summa dim should equal to tensor parallel size ^ 0.5"
 
         self.col_initializer = _TensorParallel2DColumnGroupInitializer(
-            self.num_group, self.summa_dim
+            self.num_group, self.summa_dim, *args, **kwargs,
         )
         self.row_initializer = _TensorParallel2DRowGroupInitializer(
-            self.num_group, self.summa_dim
+            self.num_group, self.summa_dim, *args, **kwargs,
         )
 
     def init_dist_group(self):

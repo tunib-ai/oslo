@@ -60,7 +60,6 @@ class _TensorParallel1D(ParallelWrapper):
         self._update_mp_arguments()
         self._parallelize_embedding()
         self._parallelize_modules()
-        self._postprocess()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
     def _update_mp_arguments(self):
@@ -262,12 +261,3 @@ class _TensorParallel1D(ParallelWrapper):
                     fusion_degree=1,
                 )
                 module.__class__ = RowParallelLinear
-
-    def _postprocess(self):
-        for param in self.module.parameters():
-            if not param.is_cuda and torch.is_tensor(param):
-                param.data = param.to(self.device)
-
-        for param in self.module.buffers():
-            if not param.is_cuda and torch.is_tensor(param):
-                param.data = param.to(self.device)
