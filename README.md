@@ -17,6 +17,8 @@
 
 </div>
 
+### Contributors
+Thanks so much to all of our amazing contributors!
 
 ### Licensing
 
