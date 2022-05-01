@@ -47,7 +47,6 @@ from oslo.torch.nn.parallel.distributed.wrap import (
     config_auto_wrap_policy,
     enable_wrap,
 )
-from oslo.torch.utils._params import calc_grad_norm, recursive_copy_to_device
 from oslo.torch.utils.containers import apply_to_tensors
 from oslo.torch.utils.parallel import (
     ProcessGroupName,
@@ -56,11 +55,12 @@ from oslo.torch.utils.parallel import (
     get_process_group_cached,
     validate_process_group,
 )
-from oslo.torch.utils.reduce_scatter_bucketer import ReduceScatterBucketer
+from oslo.torch.nn.parallel.distributed.data_parallel._params import calc_grad_norm, recursive_copy_to_device
+from oslo.torch.nn.parallel.distributed.data_parallel._reduce_scatter_bucketer import ReduceScatterBucketer
 from oslo.torch.utils.state_dict import replace_by_prefix_
 
 from .flatten_params_wrapper import FlattenParamsWrapper
-from . import fsdp_optim_utils as ou
+from . import _fsdp_optim_utils as ou
 
 if TYPE_CHECKING:
     from collections import OrderedDict  # noqa: F401

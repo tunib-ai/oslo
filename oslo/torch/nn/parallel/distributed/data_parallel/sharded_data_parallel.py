@@ -24,7 +24,8 @@ from torch.autograd import Variable
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import ParallelWrapper
 from oslo.torch.optim import ZeroRedundancyOptimizer
-from oslo.torch.utils import GradBucket, Workhandle, get_global_rank
+from oslo.torch.nn.parallel.distributed.data_parallel._param_bucket import GradBucket
+from oslo.torch.nn.parallel.distributed.data_parallel._params import Workhandle, get_global_rank
 
 
 def _trainable(param: torch.Tensor) -> bool:

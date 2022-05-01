@@ -7,7 +7,6 @@ from transformers import AutoTokenizer, GPT2LMHeadModel, GPT2Config
 
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel import FullyShardedDataParallel as FSDP
-from oslo.torch.nn.parallel.distributed.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.nn.parallel.distributed import (
     auto_wrap,

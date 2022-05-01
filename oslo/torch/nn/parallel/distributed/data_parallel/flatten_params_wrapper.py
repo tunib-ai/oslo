@@ -170,7 +170,7 @@ class FlattenParamsWrapper(nn.Module):
 
         # Since the parameters will be deleted, let's record the number original
         # parameters managed by this class. This and get_param_views function
-        # below are used by fsdp_optim_utils.py to save/restore optimizer state,
+        # below are used by _fsdp_optim_utils.py to save/restore optimizer state,
         # which mirrors the flatten parameters here.
         self.num_params_managed = 0
 
