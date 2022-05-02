@@ -28,7 +28,9 @@ dist.barrier()
 w = embedding.weight.data.chunk(summa_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(summa_dim, dim=1)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 embedding_2d = Embedding2D(10, 8, parallel_context)
 embedding_2d.weight.data = w

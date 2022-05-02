@@ -28,7 +28,9 @@ dist.barrier()
 w = vocab_embedding.weight.data.chunk(summa_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(summa_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 vocab_embedding_2d = VocabParallelEmbedding2D(10, 8, parallel_context)
 vocab_embedding_2d.weight.data = w

@@ -36,13 +36,17 @@ input_ = input_.chunk(summa_dim, dim=-1)[
 w = linear.weight.data.chunk(summa_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(summa_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
 b = linear.bias.data.chunk(summa_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-b = b.chunk(summa_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+b = b.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 linear_2d = Linear2D(4, 4, parallel_context)
 linear_2d.weight.data = w
