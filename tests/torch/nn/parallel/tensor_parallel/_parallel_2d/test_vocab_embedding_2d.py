@@ -3,7 +3,7 @@ import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2D
-from utils import split_2d, gather_2d
+from _utils import split_2d, gather_2d
 
 
 parallel_context = ParallelContext.from_torch(

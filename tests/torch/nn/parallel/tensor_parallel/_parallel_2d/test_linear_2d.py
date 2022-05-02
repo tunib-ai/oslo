@@ -3,7 +3,7 @@ import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2D
-from utils import split_2d, split_1d_twice, gather_2d, gather_1d_twice
+from _utils import split_2d, split_1d_twice, gather_2d, gather_1d_twice
 
 
 parallel_context = ParallelContext.from_torch(
