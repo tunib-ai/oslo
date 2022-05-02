@@ -25,10 +25,12 @@ if parallel_context.get_global_rank() == 0:
 dist.barrier()
 
 # split weight into 0:[0], 1:[2], 2:[1], 3:[3]
-w = embedding.weight.data.chunk(2, dim=1)[
+w = embedding.weight.data.chunk(summa_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(2, dim=1)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 embedding_2d = Embedding2D(10, 8, parallel_context)
 embedding_2d.weight.data = w

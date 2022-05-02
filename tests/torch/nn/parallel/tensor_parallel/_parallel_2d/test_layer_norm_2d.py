@@ -25,24 +25,28 @@ if parallel_context.get_global_rank() == 0:
 dist.barrier()
 
 # split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-input_ = torch.chunk(input_, 2, dim=0)[
+input_ = input_.chunk(summa_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
 ]
-input_ = torch.chunk(input_, 2, dim=-1)[
+input_ = input_.chunk(summa_dim, dim=-1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
 
 # split weight into 0:[0], 1:[2], 2:[1], 3:[3]
-w = layernorm.weight.data.chunk(2, dim=0)[
+w = layernorm.weight.data.chunk(summa_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(2, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
-b = layernorm.bias.data.chunk(2, dim=0)[
+b = layernorm.bias.data.chunk(summa_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-b = b.chunk(2, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+b = b.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 layernorm_2d = LayerNorm2D(4, parallel_context)
 layernorm_2d.weight.data = w

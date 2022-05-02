@@ -25,10 +25,12 @@ if parallel_context.get_global_rank() == 0:
 dist.barrier()
 
 # split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
-w = vocab_embedding.weight.data.chunk(2, dim=1)[
+w = vocab_embedding.weight.data.chunk(summa_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
 ]
-w = w.chunk(2, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)]
+w = w.chunk(summa_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+]
 
 vocab_embedding_2d = VocabParallelEmbedding2D(10, 8, parallel_context)
 vocab_embedding_2d.weight.data = w
