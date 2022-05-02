@@ -60,4 +60,3 @@ if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{out}\n")
     print(f"parallel updated weight: \n{w}\n")
     print(f"original updated bias: \n{b}\n")
-

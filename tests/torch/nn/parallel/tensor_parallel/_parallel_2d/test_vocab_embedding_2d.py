@@ -49,7 +49,9 @@ logits.backward()
 optimizer.step()
 
 out = gather_2d(parallel_context, out, summa_dim, col_first=False)
-w = gather_2d(parallel_context, vocab_embedding_2d.weight.data, summa_dim, col_first=True)
+w = gather_2d(
+    parallel_context, vocab_embedding_2d.weight.data, summa_dim, col_first=True
+)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{out}\n")
