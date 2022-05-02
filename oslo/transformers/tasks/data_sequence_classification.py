@@ -27,6 +27,8 @@ class ProcessorForSequenceClassification(BaseProcessor):
 
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["text"],
+            truncation=True,
+            max_length=self._max_length,
             verbose=False,
         )
         dict_of_training_examples["labels"] = examples["labels"]
@@ -50,8 +52,6 @@ class DataCollatorForSequenceClassification:
         self.padding = padding
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        # assert self.tokenizer._padtoken is not None, ""
-
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,

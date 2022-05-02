@@ -25,13 +25,38 @@ class ProcessorForTokenClassification(BaseProcessor):
             raise ValueError(
                 "dataset argument must be set. (dataset: Union[Dataset, DatasetDict])"
             )
+        
+        if ("gpt2" in model_name_or_path) or ("roberta" in model_name_or_path):
+            self._tokenizer = AutoTokenizer.from_pretrained(
+                model_name_or_path, add_prefix_space=True
+            )
+        '''
+        In the 'gpt2' and 'roberta' models, it should be set to 'add_prefix_space=True' 
+        to convey information that the word in the sentence begins, not the sentence begins.
+        
+        For more information, please refer to the following link
+        : https://github.com/huggingface/transformers/issues/1880
 
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            model_name_or_path, add_prefix_space=True
+        Example) used in the transformers.examples.pytorch.token_classification.run_ner.py:
+        if config.model_type in {"gpt2", "roberta"}:
+            tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_name_or_path,
+                cache_dir=model_args.cache_dir,
+                use_fast=True,
+                revision=model_args.model_revision,
+                use_auth_token=True if model_args.use_auth_token else None,
+                add_prefix_space=True,
         )
-        self._max_length = max_length
-        self._chunk_size = max_length
-        self._buffer = []
+        else:
+            tokenizer = AutoTokenizer.from_pretrained(
+                tokenizer_name_or_path,
+                cache_dir=model_args.cache_dir,
+                use_fast=True,
+                revision=model_args.model_revision,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
+        '''
+        
         self.label_names = self.get_label_names(dataset)
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
@@ -42,6 +67,8 @@ class ProcessorForTokenClassification(BaseProcessor):
 
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["tokens"],
+            truncation=True,
+            max_length=self._max_length,
             is_split_into_words=True,
             verbose=False,
         )
