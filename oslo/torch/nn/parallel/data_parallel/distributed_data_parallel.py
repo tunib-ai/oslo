@@ -21,6 +21,7 @@ from torch.nn.parallel.scatter_gather import (
 )
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.utils import get_parallel_context
 
 RPC_AVAILABLE = False
 if dist.is_available():
@@ -360,7 +361,7 @@ class DistributedDataParallel(Module):
     def __init__(
         self,
         module,
-        parallel_context: ParallelContext,
+        parallel_context: ParallelContext = None,
         device_ids=None,
         output_device=None,
         dim=0,
@@ -407,7 +408,7 @@ class DistributedDataParallel(Module):
 
             self.output_device = _get_device_index(output_device, True)
 
-        self.parallel_context = parallel_context
+        self.parallel_context = get_parallel_context(module, parallel_context)
         self.process_group = parallel_context.get_group(ParallelMode.DATA)
         self.dim = dim
         self.module = module

@@ -76,3 +76,18 @@ def allocate_params(model, parallel_context):
     for name, buffer in model.named_buffers():
         if not hasattr(buffer, "oslo_parallel"):
             buffer.data = buffer.to(torch.cuda.current_device())
+
+
+def get_parallel_context(module, parallel_context):
+    if parallel_context is None:
+        if hasattr(module, "parallel_context"):
+            parallel_context = module.parallel_context
+        else:
+            raise ValueError(
+                "Please input parallel context. \n"
+                "There are two way to input parallel context: \n"
+                "1. model.from_pretrained('model_name', parallel_context=parallel_context) \n"
+                "2. model = XXXParallel(model, parallel_context=parallel_context)"
+            )
+
+    return parallel_context

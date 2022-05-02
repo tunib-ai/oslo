@@ -1,3 +1,5 @@
+from typing import Optional
+
 import torch
 import torch.nn as nn
 
@@ -5,7 +7,11 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._wrapper import (
     _TensorParallel1D,
 )
-from oslo.torch.nn.parallel.utils import ParallelWrapper, unwrap_parallel
+from oslo.torch.nn.parallel.utils import (
+    ParallelWrapper,
+    unwrap_parallel,
+    get_parallel_context,
+)
 
 
 class TensorParallel(ParallelWrapper):
@@ -32,11 +38,14 @@ class TensorParallel(ParallelWrapper):
         >>> optimizer.step()
     """
 
-    def __init__(self, module: nn.Module, parallel_context=ParallelContext):
+    def __init__(
+        self,
+        module: nn.Module,
+        parallel_context: Optional[ParallelContext] = None,
+    ):
         super().__init__()
-        orig_vocab_size, module = self._add_embeddings(module, parallel_context)
-
-        self.parallel_context = parallel_context
+        self.parallel_context = get_parallel_context(module, parallel_context)
+        orig_vocab_size, module = self._add_embeddings(module, self.parallel_context)
         if self.parallel_context.tensor_parallel_mode == "1d":
             self.module = _TensorParallel1D(module, self.parallel_context)
         else:
