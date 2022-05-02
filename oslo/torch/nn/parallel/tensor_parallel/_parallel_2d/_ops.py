@@ -283,6 +283,7 @@ class Matmul_AB_2D(torch.autograd.Function):
 
         if ctx:
             ctx.summa_dim = summa_dim
+            ctx.parallel_context = parallel_context
             ctx.row_rank = row_rank
             ctx.col_rank = col_rank
             ctx.row_parallel_mode = row_parallel_mode
@@ -304,6 +305,7 @@ class Matmul_AB_2D(torch.autograd.Function):
                 output_grad,
                 B,
                 ctx.summa_dim,
+                ctx.parallel_context,
                 ctx.A_shape,
                 ctx.row_rank,
                 ctx.col_rank,
@@ -318,6 +320,7 @@ class Matmul_AB_2D(torch.autograd.Function):
                 A,
                 output_grad,
                 ctx.summa_dim,
+                ctx.parallel_context,
                 ctx.B_shape,
                 ctx.row_rank,
                 ctx.col_rank,
@@ -442,6 +445,7 @@ class Matmul_ABT_2D(torch.autograd.Function):
 
         if ctx:
             ctx.summa_dim = summa_dim
+            ctx.parallel_context = parallel_context
             ctx.row_rank = row_rank
             ctx.col_rank = col_rank
             ctx.row_parallel_mode = row_parallel_mode
@@ -465,6 +469,7 @@ class Matmul_ABT_2D(torch.autograd.Function):
                 output_grad,
                 B,
                 ctx.summa_dim,
+                ctx.parallel_context,
                 ctx.A_shape,
                 ctx.row_rank,
                 ctx.col_rank,
@@ -479,6 +484,7 @@ class Matmul_ABT_2D(torch.autograd.Function):
                 output_grad,
                 A,
                 ctx.summa_dim,
+                ctx.parallel_context,
                 ctx.B_shape,
                 ctx.row_rank,
                 ctx.col_rank,
