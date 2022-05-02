@@ -56,7 +56,7 @@ from oslo.torch.nn.parallel.data_parallel.auto_wrap import (
 from oslo.torch.nn.parallel.data_parallel._flatten_params_wrapper import (
     FlattenParamsWrapper,
 )
-from oslo.torch.nn.parallel.utils import ParallelWrapper
+from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
 from oslo.torch.nn.parallel.data_parallel._containers import apply_to_tensors
 from oslo.torch.nn.parallel.data_parallel._parallel import (
     ProcessGroupName,
@@ -331,7 +331,7 @@ class FullyShardedDataParallel(ParallelWrapper):
     def __init__(
         self,
         module: nn.Module,
-        parallel_context: ParallelContext,
+        parallel_context: Optional[ParallelContext] = None,
         # The type for the process_group_reduce_scatter only can be either ProcessGroup or ProcessGroupName
         process_group_reduce_scatter: Any = ProcessGroupName.reduce_scatter,
         reshard_after_forward: bool = True,
@@ -364,6 +364,7 @@ class FullyShardedDataParallel(ParallelWrapper):
 
         init_start = time.time()
         super().__init__()
+        self.parallel_context = get_parallel_context(module, parallel_context)
         self.process_group = parallel_context.get_group(ParallelMode.DATA)
         # If ProcessGroupName.default is passed in, the reduce_scatter will use the same process group with
         # the rest of operations. The overlap feature in the backward propagation is disabled.

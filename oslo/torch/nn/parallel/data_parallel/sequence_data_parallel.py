@@ -1,9 +1,11 @@
+from typing import Optional
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.utils import ParallelWrapper
+from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
 
 
 class _SequenceDataParallelState(object):
@@ -30,7 +32,7 @@ class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
     def __init__(
         self,
         module,
-        parallel_context: ParallelContext,
+        parallel_context: Optional[ParallelContext] = None,
         device_ids=None,
         output_device=None,
         dim=0,
@@ -40,10 +42,10 @@ class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
         check_reduction=False,
         gradient_as_bucket_view=False,
     ):
-        self._parallel_context = parallel_context
+        self.parallel_context = get_parallel_context(module, parallel_context)
         super(SequenceDataParallel, self).__init__(
             module,
-            process_group=self._parallel_context.get_group(ParallelMode.SEQUENCE_DP),
+            process_group=self.parallel_context.get_group(ParallelMode.SEQUENCE_DP),
             device_ids=device_ids,
             output_device=output_device,
             dim=dim,
@@ -55,6 +57,6 @@ class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
         )
 
         self.register_comm_hook(
-            state=_SequenceDataParallelState(self._parallel_context),
+            state=_SequenceDataParallelState(self.parallel_context),
             hook=_sequence_data_parallel_hook,
         )
