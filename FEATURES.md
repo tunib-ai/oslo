@@ -68,7 +68,7 @@ We also support 2D, 2.5D, and 3D tensor partitioning which make tensor parallel 
 </div>
 
 **Pipeline Model Parallelism** partitions model parameters and pipelines GPU computations by splitting mini-batches into micro-batches.
-With OSLO, you don't need to implement the model as nn.Sequential with OSLO because we support whole new partitioning method called inter-module partitioning,
+With OSLO, you don't need to implement the model as nn.Sequential because we support whole new partitioning method called inter-module partitioning,
 and we also support various scheduling strategies such as Pipedream Flush and GPipe.
 
 #### References
