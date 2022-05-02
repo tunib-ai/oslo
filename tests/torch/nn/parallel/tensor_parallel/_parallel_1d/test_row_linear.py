@@ -24,12 +24,12 @@ if parallel_context.get_global_rank() == 0:
 
 dist.barrier()
 
-# split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
+# split input_ into 0:[0], 1:[1], 2:[2], 3:[3]
 input_ = input_.chunk(world_size, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
 ]
 
-# split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
+# split weight into 0:[0], 1:[1], 2:[2], 3:[3]
 w = linear.weight.data.chunk(world_size, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
 ]
