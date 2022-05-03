@@ -46,7 +46,7 @@ logits = torch.nn.MSELoss()(out, target)
 logits.backward()
 optimizer.step()
 
-w = gather_1d(parallel_context, w, world_size, dim=0)
+w = gather_1d(parallel_context, vocab_embedding_1d.weight.data, world_size, dim=0)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{out}\n")
