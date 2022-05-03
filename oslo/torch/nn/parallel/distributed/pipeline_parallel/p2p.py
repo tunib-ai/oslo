@@ -24,11 +24,14 @@ def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent):
             request = dist.isend(tensor=input_, dst=module_rank)
             print(f"C1b, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
         elif module_rank == rank: # if the module rank is our rank we receive input_
-            input_ = torch.empty(input_.shape, device=rank)
+            print(f"C2a, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
+            #input_ = torch.empty(input_.shape, device=rank) # TO DO: Check buffer preallocation!
+            input_buffer = torch.empty(8,8, device=rank)
             request = dist.irecv(tensor=input_buffer, src=input_.device.index)
-            print(f"C2, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
+            print(f"C2b, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
         request.wait()
-        return input_
+        if module_rank == rank: # if the module rank is our rank we receive input_
+            return input_buffer
     else: # input_ and module are on the same rank
         print(f"D, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
         return input_
@@ -43,7 +46,8 @@ def _pp_post_bwd_p2p_com(input_grad, module_rank, module_rank_parent):
             input_grad = torch.empty(input_grad.shape, device=rank)
             request = dist.irecv(tensor=input_grad_buffer, src=module_rank)
         request.wait()
-        return input_grad
+        if module_rank_parent == rank: # if the parent rank is our rank we receive output
+            return input_grad
     else: # data_out and module are on the same rank
         return input_grad
 
@@ -64,6 +68,10 @@ class PPPreFwdP2PCom(torch.autograd.Function):
                 )
         print("A")
         return _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent)
+    #def forward(ctx, input_):
+        #data, module_rank, module_rank_parent = input_
+        #ctx.save_for_backward(module_rank, module_rank_parent)
+        #return _pp_pre_fwd_p2p_com(input_, self.module_rank, self.module_rank_parent)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -82,7 +90,8 @@ def _pp_post_fwd_p2p_com(output_, module_rank, module_rank_parent):
             output_ = torch.empty(output_.shape, device=rank)
             request = dist.irecv(tensor=output_buffer, src=module_rank)
         request.wait()
-        return output_
+        if module_rank_parent == rank: # if the parent rank is our rank we receive output_
+            return output_
     else: # data_out and module are on the same rank
         return output_
 
@@ -96,7 +105,8 @@ def _pp_pre_bwd_p2p_com(output_grad, module_rank, module_rank_parent):
             output_grad = torch.empty(output_grad.shape, device=rank)
             request = dist.irecv(tensor=output_grad_buffer, src=output_grad.device.index)
         request.wait()
-        return data_out_grad
+        if module_rank == rank: # if the module rank is our rank we receive output_grad
+            return data_out_grad
     else: # data_out_grad and module are on the same rank
         return output_grad
 
@@ -112,6 +122,10 @@ class PPPostFwdP2PCom(torch.autograd.Function):
                 )
         print("PPPostFwdP2PCom", input_.device.index, module_rank, module_rank_parent)
         return _pp_post_fwd_p2p_com(input_, module_rank, module_rank_parent)
+    #def forward(ctx, input_):
+        #data, module_rank, module_rank_parent = input_
+        #ctx.save_for_backward(module_rank, module_rank_parent)
+        #return _pp_post_fwd_p2p_com(input_, self.module_rank, self.module_rank_parent)
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -134,11 +148,14 @@ class PPModuleWrapper(nn.Module):
         self.post_com = PPPostFwdP2PCom(self.rank, self.rank_parent).apply
         
     def forward(self, x):
-        print("fwd", self.rank, self.rank_parent)
+        #print(self.module)
+        print("fwd0", dist.get_rank(), self.rank, self.rank_parent, type(x))
         x = self.pre_com((x, self.rank, self.rank_parent))
-        print(self.module)
+        print("fwd1", dist.get_rank(), self.rank, self.rank_parent, type(x))
         x = self.module(x)
+        print("fwd2", dist.get_rank(), self.rank, self.rank_parent, type(x))
         x = self.post_com((x, self.rank, self.rank_parent))
+        print("fwd3", dist.get_rank(), self.rank, self.rank_parent, type(x))
         return x
 
 
