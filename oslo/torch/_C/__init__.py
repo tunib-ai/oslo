@@ -106,11 +106,3 @@ class Binder(object):
             additional_flags.append(f"-maxrregcount={maxrregcount}")
 
         return nvcc_flags + additional_flags
-
-class SoftmaxBinder(Binder):
-    @property
-    def name(self):
-        return "oslo_softmax"
-    
-    def sources(self):
-        return ["scaled_masked_softmax.cu", "scaled_upper_triang_masked_softmax.cu", "SoftmaxBinder.cpp"]
