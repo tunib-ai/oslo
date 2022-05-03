@@ -14,8 +14,8 @@ class _SequenceDataParallelState(object):
 
 
 def _sequence_data_parallel_hook(
-    state: _SequenceDataParallelState, bucket: dist._GradBucket
-) -> torch.futures.Future:
+    state: _SequenceDataParallelState, bucket: dist.GradBucket
+) -> torch.futures.Future[torch.Tensor]:
     parallel_context = state.parallel_context
     group_to_use = parallel_context.get_group(ParallelMode.SEQUENCE_DP)
     div_factor = parallel_context.get_world_size(ParallelMode.DATA)
