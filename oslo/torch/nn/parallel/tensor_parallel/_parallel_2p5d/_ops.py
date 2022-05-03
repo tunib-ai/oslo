@@ -218,18 +218,18 @@ class Matmul_AB_2p5D(torch.autograd.Function):
 
         A_list[0].copy_(A)
         B_list[0].copy_(B)
-        opa[0] = dist.broadcast(A_list[0], src=src_a, group=row_group, async_op=True)
-        opb[0] = dist.broadcast(B_list[0], src=src_b, group=col_group, async_op=True)
+        opa[0] = dist.broadcast(A_list[0], src=src_a, group=col_group, async_op=True)
+        opb[0] = dist.broadcast(B_list[0], src=src_b, group=row_group, async_op=True)
         cur = 0
 
         for i in range(tesseract_dim):
             if i != tesseract_dim - 1:
                 A_list[1 - cur].copy_(A)
-                opa[1 - cur] = dist.broadcast(A_list[1 - cur], src=src_a + 1, group=row_group, async_op=True)
+                opa[1 - cur] = dist.broadcast(A_list[1 - cur], src=src_a + 1, group=col_group, async_op=True)
                 B_list[1 - cur].copy_(B)
                 opb[1 - cur] = dist.broadcast(B_list[1 - cur],
                                               src=src_b + tesseract_dim,
-                                              group=col_group,
+                                              group=row_group,
                                               async_op=True)
 
             if opa[cur] is not None:
@@ -328,7 +328,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
         opr = [None] * 2
 
         B_list[0].copy_(B)
-        opb[0] = dist.broadcast(B_list[0], src=src_b, group=col_group, async_op=True)
+        opb[0] = dist.broadcast(B_list[0], src=src_b, group=row_group, async_op=True)
         cur = 0
 
         for i in range(tesseract_dim):
@@ -336,7 +336,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 B_list[1 - cur].copy_(B)
                 opb[1 - cur] = dist.broadcast(B_list[1 - cur],
                                               src=src_b + tesseract_dim,
-                                              group=col_group,
+                                              group=row_group,
                                               async_op=True)
 
             if opr[cur] is not None:
@@ -348,7 +348,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 opb[cur].wait()
 
             torch.matmul(A, B_list[cur].transpose(0, 1), out=C_list[cur])
-            opr[cur] = dist.reduce(C_list[cur], dst=src_c, group=row_group, async_op=True)
+            opr[cur] = dist.reduce(C_list[cur], dst=src_c, group=col_group, async_op=True)
             cur = 1 - cur
             src_b += tesseract_dim
             src_c += 1
@@ -447,13 +447,13 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
         opr = [None] * 2
 
         A_list[0].copy_(A)
-        opa[0] = dist.broadcast(A_list[0], src=src_a, group=row_group, async_op=True)
+        opa[0] = dist.broadcast(A_list[0], src=src_a, group=col_group, async_op=True)
         cur = 0
 
         for i in range(tesseract_dim):
             if i != tesseract_dim - 1:
                 A_list[1 - cur].copy_(A)
-                opa[1 - cur] = dist.broadcast(A_list[1 - cur], src=src_a + 1, group=row_group, async_op=True)
+                opa[1 - cur] = dist.broadcast(A_list[1 - cur], src=src_a + 1, group=col_group, async_op=True)
 
             if opr[cur] is not None:
                 opr[cur].wait()
@@ -464,7 +464,7 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
                 opa[cur].wait()
 
             torch.matmul(A_list[cur].transpose(0, 1), B, out=C_list[cur])
-            opr[cur] = dist.reduce(C_list[cur], dst=src_c, group=col_group, async_op=True)
+            opr[cur] = dist.reduce(C_list[cur], dst=src_c, group=row_group, async_op=True)
             cur = 1 - cur
             src_a += 1
             src_c += tesseract_dim
