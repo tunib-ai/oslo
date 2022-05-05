@@ -1,4 +1,4 @@
-from oslo.torch.nn import get_softmax_kernel
+from oslo.torch._C import get_softmax_kernel
 
 _SOFTMAX_KERNEL = None
 

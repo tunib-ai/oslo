@@ -16,7 +16,7 @@ from torch.nn.functional import (
 
 from oslo.torch.distributed.nn.functional import ring_av, ring_qk
 from oslo.torch.nn.modules.linear import Linear
-from oslo.torch.nn.modules import get_softmax_kernel
+from oslo.torch._C import get_softmax_kernel
 
 """
 Autograd Functions
@@ -87,7 +87,7 @@ class _FusedBiasGeLUFunction(torch.autograd.Function):
         return tmp, tmp
 
 
-class _ScaledUpperTriangMaskedSoftmaxFunction(torch.autograd.Function):
+class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, scale):
         scale_t = torch.tensor([scale])
@@ -110,7 +110,7 @@ class _ScaledUpperTriangMaskedSoftmaxFunction(torch.autograd.Function):
         return input_grads, None
 
 
-class _ScaledMaskedSoftmaxFunction(torch.autograd.Function):
+class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, mask, scale):
         from oslo.torch._C import SoftmaxBinder
@@ -167,7 +167,7 @@ def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
     return q_out + q_bias, k_out + k_bias, v_out + v_bias
 
 
-def _fused_scale_mask_softmax_is_available(
+def _is_fused_scale_mask_softmax_available(
     scale, dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
 ):
     if scale and not softmax_in_fp32:
@@ -218,26 +218,26 @@ def _fused_scale_mask_softmax_cuda(
     if use_triang_mask:
         if pad_mask is not None:
             input = input + pad_mask
-        return _ScaledUpperTriangMaskedSoftmaxFunction.apply(
+        return _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
             input.view(-1, sq, sk), scale
         ).view(bsz, np, sq, sk)
 
     if pad_mask is None:
         pad_mask = torch.zeros(1, 1, sq, sk, device=input.device, dtype=input.dtype)
-        return _ScaledMaskedSoftmaxFunction.apply(input, pad_mask.bool(), scale)
+        return _FusedScaleMaskSoftmaxFunction.apply(input, pad_mask.bool(), scale)
 
     else:
-        return _ScaledMaskedSoftmaxFunction.apply(
+        return _FusedScaleMaskSoftmaxFunction.apply(
             input, pad_mask.repeat(1, 1, sq, 1).bool(), scale
         )
 
 
-def scale_mask_softmax(
+def fused_scale_mask_softmax(
     input, scale, use_triang_mask, softmax_in_fp32=True, pad_mask=None
 ):
     scale = scale if scale is not None else 1.0
     bsz, np, sq, sk = input.size()
-    if _fused_scale_mask_softmax_is_available(
+    if _is_fused_scale_mask_softmax_available(
         scale, input.dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
     ):
         return _fused_scale_mask_softmax_cuda(

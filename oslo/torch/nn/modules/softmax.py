@@ -15,9 +15,8 @@
 import torch
 import torch.nn as nn
 from typing import Optional
-from .functional import scale_mask_softmax
-from oslo.torch._C import SoftmaxBinder
-from oslo.torch.nn.modules import get_softmax_kernel
+from .functional import fused_scale_mask_softmax
+from oslo.torch._C import SoftmaxBinder, get_softmax_kernel
 
 
 class FusedScaleMaskSoftmax(nn.Module):
@@ -38,6 +37,6 @@ class FusedScaleMaskSoftmax(nn.Module):
         super(FusedScaleMaskSoftmax, self).__init__()
 
     def forward(self, input):
-        return scale_mask_softmax(
+        return fused_scale_mask_softmax(
             input, self.scale, self.use_triang_mask, self.softmax_in_fp32, self.pad_mask
         )
