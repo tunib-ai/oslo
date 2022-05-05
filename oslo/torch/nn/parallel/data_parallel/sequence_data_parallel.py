@@ -13,6 +13,8 @@ class _SequenceDataParallelState(object):
         self.parallel_context = parallel_context
 
 
+# based on `allreduce_hook` in
+# torch.distributed.algorithm.ddp_comm_hooks.default_hooks
 def _sequence_data_parallel_hook(
     state: _SequenceDataParallelState, bucket: dist.GradBucket
 ) -> torch.futures.Future[torch.Tensor]:
@@ -21,11 +23,12 @@ def _sequence_data_parallel_hook(
     div_factor = parallel_context.get_world_size(ParallelMode.DATA)
 
     # divide the tensor with DP size
-    tensor = bucket.get_tensors()[0]
+    tensor = bucket.buffer()
     tensor.div_(div_factor)
 
     fut = dist.all_reduce(tensor, group=group_to_use, async_op=True).get_future()
-    return fut
+
+    return fut.then(lambda x: x.value()[0])
 
 
 class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
