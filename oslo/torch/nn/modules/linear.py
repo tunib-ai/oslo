@@ -244,8 +244,8 @@ class Linear2D(Linear):
             out_features % (self.summa_dim**2) == 0
         ), "out_features must be divisible by summa dim^2."
 
-        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+        self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+        self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         self.data_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.DATA
         )

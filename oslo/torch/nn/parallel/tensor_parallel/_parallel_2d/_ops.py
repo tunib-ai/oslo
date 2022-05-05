@@ -21,9 +21,9 @@ def matmul_2d(
     col_parallel_mode=ParallelMode.TENSOR_2D_COL,
 ):
     if row_rank is None:
-        row_rank = parallel_context.get_local_rank(col_parallel_mode)
+        row_rank = parallel_context.get_local_rank(row_parallel_mode)
     if col_rank is None:
-        col_rank = parallel_context.get_local_rank(row_parallel_mode)
+        col_rank = parallel_context.get_local_rank(col_parallel_mode)
 
     data_parallel_rank = (
         0
@@ -236,12 +236,12 @@ class Matmul_AB_2D(torch.autograd.Function):
         col_group = parallel_context.get_group(col_parallel_mode)
 
         src_a = (
-            summa_dim * row_rank
+            summa_dim * col_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
         src_b = (
-            col_rank
+            row_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
@@ -391,12 +391,12 @@ class Matmul_ABT_2D(torch.autograd.Function):
         col_group = parallel_context.get_group(col_parallel_mode)
 
         src_b = (
-            col_rank
+            row_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
         src_c = (
-            summa_dim * row_rank
+            summa_dim * col_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
@@ -420,7 +420,7 @@ class Matmul_ABT_2D(torch.autograd.Function):
 
             if opr[cur] is not None:
                 opr[cur].wait()
-                if i - 2 == col_rank:
+                if i - 2 == row_rank:
                     C.copy_(C_list[cur])
 
             if opb[cur] is not None:
@@ -437,9 +437,9 @@ class Matmul_ABT_2D(torch.autograd.Function):
         for op in opr:
             op.wait()
 
-        if summa_dim - 2 == col_rank:
+        if summa_dim - 2 == row_rank:
             C.copy_(C_list[cur])
-        if summa_dim - 1 == col_rank:
+        if summa_dim - 1 == row_rank:
             C.copy_(C_list[1 - cur])
         out = C.reshape(out_shape)
 
@@ -555,12 +555,12 @@ class Matmul_ATB_2D(torch.autograd.Function):
         col_group = parallel_context.get_group(col_parallel_mode)
 
         src_a = (
-            summa_dim * row_rank
+            summa_dim * col_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
         src_c = (
-            col_rank
+            row_rank
             + data_parallel_rank * pipeline_parallel_size * tensor_parallel_size
             + pipeline_parallel_rank * tensor_parallel_size
         )
@@ -581,7 +581,7 @@ class Matmul_ATB_2D(torch.autograd.Function):
 
             if opr[cur] is not None:
                 opr[cur].wait()
-                if i - 2 == row_rank:
+                if i - 2 == col_rank:
                     C.copy_(C_list[cur])
 
             if opa[cur] is not None:
@@ -598,9 +598,9 @@ class Matmul_ATB_2D(torch.autograd.Function):
         for op in opr:
             op.wait()
 
-        if summa_dim - 2 == row_rank:
+        if summa_dim - 2 == col_rank:
             C.copy_(C_list[cur])
-        if summa_dim - 1 == row_rank:
+        if summa_dim - 1 == col_rank:
             C.copy_(C_list[1 - cur])
         out = C.reshape(out_shape)
 
