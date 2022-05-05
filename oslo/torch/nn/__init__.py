@@ -5,9 +5,11 @@ from oslo.torch.nn.modules.dropout import (
 )
 from oslo.torch.nn.modules.embedding import (
     Embedding2D,
+    Embedding2p5D,
     LazyEmbedding,
     VocabParallelEmbedding1D,
     VocabParallelEmbedding2D,
+    VocabParallelEmbedding2p5D,
 )
 from oslo.torch.nn.modules.functional import (
     fused_bias_dropout,
@@ -16,11 +18,12 @@ from oslo.torch.nn.modules.functional import (
     fused_gelu,
     multi_head_attention_forward,
 )
-from oslo.torch.nn.modules.layer_norm import LayerNorm2D
+from oslo.torch.nn.modules.layer_norm import LayerNorm2D, LayerNorm2p5D
 from oslo.torch.nn.modules.linear import (
     ColumnParallelLinear,
     LazyLinear,
     Linear,
     Linear2D,
+    Linear2p5D,
     RowParallelLinear,
 )

@@ -4,8 +4,8 @@ from contextlib import contextmanager
 import torch.cuda
 from torch import Tensor
 
-from oslo.torch.distributed.parallel_mode import ParallelMode
 from oslo.torch.distributed._seed.seed_manager import SeedManager
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 _SEED_MANAGER = SeedManager()
 
