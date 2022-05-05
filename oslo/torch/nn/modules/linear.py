@@ -353,7 +353,7 @@ class Linear2p5D(Linear):
             dtype: torch.dtype = torch.float32,
             skip_bias_add: bool = False,
     ):
-        self.paralle_context = parallel_context
+        self.parallel_context = parallel_context
         self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
         assert self.tesseract_dim > 0, 'TESSERACT_DIM must be larger than zero'
         assert (
@@ -384,18 +384,19 @@ class Linear2p5D(Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         # input: [m/dq, n/q, k/q]
         # output: [m/dq, n/q, h/q]
-        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             all_reduce,
             Matmul_AB_2p5D,
+            Matmul_ABT_2p5D,
             add_bias_2p5d
         )
         out_shape = input.shape[:-1] + (self.out_features, )
 
-        output = Matmul_AB_2p5D.apply(
+        output = Matmul_ABT_2p5D.apply(
             input,
             self.weight,
             self.tesseract_dim,
-            self.paralle_context,
+            self.parallel_context,
             out_shape,
             self.row_rank,
             self.col_rank,

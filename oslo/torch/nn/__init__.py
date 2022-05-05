@@ -22,5 +22,6 @@ from oslo.torch.nn.modules.linear import (
     LazyLinear,
     Linear,
     Linear2D,
+    Linear2p5D,
     RowParallelLinear,
 )
