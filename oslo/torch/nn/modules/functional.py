@@ -16,6 +16,7 @@ from torch.nn.functional import (
 
 from oslo.torch.distributed.nn.functional import ring_av, ring_qk
 from oslo.torch.nn.modules.linear import Linear
+from oslo.torch.nn.modules import get_softmax_kernel
 
 """
 Autograd Functions
@@ -86,6 +87,54 @@ class _FusedBiasGeLUFunction(torch.autograd.Function):
         return tmp, tmp
 
 
+class _ScaledUpperTriangMaskedSoftmaxFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inputs, scale):
+        scale_t = torch.tensor([scale])
+        softmax_results = (
+            get_softmax_kernel().scaled_upper_triang_masked_softmax_forward(
+                inputs, scale_t[0]
+            )
+        )
+
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        softmax_results, scale_t = ctx.saved_tensors
+        input_grads = get_softmax_kernel().scaled_upper_triang_masked_softmax_backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+
+        return input_grads, None
+
+
+class _ScaledMaskedSoftmaxFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inputs, mask, scale):
+        from oslo.torch._C import SoftmaxBinder
+
+        scale_t = torch.tensor([scale])
+
+        softmax_results = get_softmax_kernel().scaled_masked_softmax_forward(
+            inputs, mask, scale_t[0]
+        )
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        from oslo.torch._C import SoftmaxBinder
+
+        softmax_results, scale_t = ctx.saved_tensors
+
+        input_grads = get_softmax_kernel().scaled_masked_softmax_backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+        return input_grads, None, None
+
+
 """
 User Functions
 """
@@ -116,6 +165,88 @@ def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
     # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tuple[Tensor, Tensor, Tensor]
     # References: `AIB` in https://arxiv.org/abs/2007.00072
     return q_out + q_bias, k_out + k_bias, v_out + v_bias
+
+
+def _fused_scale_mask_softmax_is_available(
+    scale, dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
+):
+    if scale and not softmax_in_fp32:
+        warnings.warn("fused softmax should be in fp32 when scaled")
+        return False
+
+    if sk > 2048 or sk <= 0:
+        return False
+
+    bsz_per_block = get_softmax_kernel().get_batch_per_block(sq, sk, bsz, np)
+
+    if use_triang_mask:
+        if sq == sk and (sk <= 64 or sk % 4 == 0) and (bsz * np) % bsz_per_block == 0:
+            return True
+
+    else:
+        if sq > 1 and sq % bsz_per_block == 0:
+            return True
+
+    return False
+
+
+def _fused_scale_mask_softmax_torch(
+    input, scale, use_triang_mask, softmax_in_fp32, pad_mask
+):
+    if input.dtype != torch.float32 and softmax_in_fp32:
+        input = input.float()
+
+    input = input * scale
+    mask_output = (
+        input.masked_fill_(pad_mask, -10000.0) if pad_mask is not None else input
+    )
+    probs = torch.nn.Softmax(dim=-1)(mask_output)
+
+    if input.dtype != torch.float32 and softmax_in_fp32:
+        if input.dtype == torch.float16:
+            probs = probs.half()
+        else:
+            probs = probs.bfloat16()
+
+    return probs
+
+
+def _fused_scale_mask_softmax_cuda(
+    input, scale, use_triang_mask, softmax_in_fp32, pad_mask
+):
+    bsz, np, sq, sk = input.size()
+    if use_triang_mask:
+        if pad_mask is not None:
+            input = input + pad_mask
+        return _ScaledUpperTriangMaskedSoftmaxFunction.apply(
+            input.view(-1, sq, sk), scale
+        ).view(bsz, np, sq, sk)
+
+    if pad_mask is None:
+        pad_mask = torch.zeros(1, 1, sq, sk, device=input.device, dtype=input.dtype)
+        return _ScaledMaskedSoftmaxFunction.apply(input, pad_mask.bool(), scale)
+
+    else:
+        return _ScaledMaskedSoftmaxFunction.apply(
+            input, pad_mask.repeat(1, 1, sq, 1).bool(), scale
+        )
+
+
+def scale_mask_softmax(
+    input, scale, use_triang_mask, softmax_in_fp32=True, pad_mask=None
+):
+    scale = scale if scale is not None else 1.0
+    bsz, np, sq, sk = input.size()
+    if _fused_scale_mask_softmax_is_available(
+        scale, input.dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
+    ):
+        return _fused_scale_mask_softmax_cuda(
+            input, scale, use_triang_mask, softmax_in_fp32, pad_mask
+        )
+    else:
+        return _fused_scale_mask_softmax_torch(
+            input, scale, use_triang_mask, softmax_in_fp32, pad_mask
+        )
 
 
 def multi_head_attention_forward(

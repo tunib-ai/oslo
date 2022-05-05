@@ -15,6 +15,7 @@ from oslo.torch.nn.modules.functional import (
     fused_bias_gelu,
     fused_gelu,
     multi_head_attention_forward,
+    scale_mask_softmax,
 )
 from oslo.torch.nn.modules.layer_norm import LayerNorm2D
 from oslo.torch.nn.modules.linear import (
@@ -24,3 +25,6 @@ from oslo.torch.nn.modules.linear import (
     Linear2D,
     RowParallelLinear,
 )
+
+from oslo.torch.nn.modules.softmax import FusedScaleMaskSoftmax
+from oslo.torch.nn.modules import get_softmax_kernel
