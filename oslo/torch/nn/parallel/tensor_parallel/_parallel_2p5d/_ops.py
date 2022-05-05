@@ -644,7 +644,6 @@ class _Layernorm2p5D(torch.autograd.Function):
 
 
 class _AllGatherTensor2p5D(torch.autograd.Function):
-
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
     def forward(

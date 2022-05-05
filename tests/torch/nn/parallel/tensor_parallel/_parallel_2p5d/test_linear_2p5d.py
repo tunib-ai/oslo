@@ -4,8 +4,8 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2p5D
 
-tp_size = 4
-tp_depth = 4
+tp_size = 8
+tp_depth = 2
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,

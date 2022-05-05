@@ -286,15 +286,23 @@ class Embedding2p5D(nn.Embedding):
         )
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             all_gather_tensor_2p5d,
             split_batch_2p5d
         )
         input_ = split_batch_2p5d(input_, 0, self.parallel_context)
         weight = all_gather_tensor_2p5d(self.weight, -1, ParallelMode.TENSOR_2P5D_COL, self.parallel_context)
 
-        output = F.embedding(input_, weight, self.padding_idx, *self.embed_args, **self.embed_kwargs)
-
+        # output = F.embedding(input_, weight, self.padding_idx, *self.embed_args, **self.embed_kwargs)
+        output = F.embedding(
+            input_,
+            weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
         return output
 
 
@@ -306,8 +314,8 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
             embedding_dim: int,
             parallel_context: ParallelContext,
     ):
-        self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
         self.parallel_context = parallel_context
+        self.tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         (
@@ -322,35 +330,27 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        from oslo.torch.nn.parallel.tensor_parallel.parallel_2p5d._ops import (
-            Matmul_ABT_2p5D,
-            add_bias_2p5d
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+            reduce_scatter_tensor_2p5d,
         )
-        # input: [m/dq, n/q, k/q]
-        # output: [m/dq, n/q, h/q]
-        out_shape = x.shape[:-1] + (self.hidden_size_per_partition, )
+        # Build the mask.
+        input_mask = (x < self.vocab_start_index) | (x >= self.vocab_end_index)
+        # Mask the input.
+        masked_input = x.clone() - self.vocab_start_index
+        masked_input[input_mask] = 0
 
-        output = Matmul_ABT_2p5D.apply(
-            x,
+        output_parallel = F.embedding(
+            masked_input,
             self.weight,
-            self.tesseract_dim,
-            out_shape,
-            self.row_rank,
-            self.col_rank,
-            self.dep_rank,
-            self.parallel_context,
-            ParallelMode.TENSOR_2P5D_ROW,
-            ParallelMode.TENSOR_2P5D_COL,
-            self.data_parallel_rank,
-            self.pipeline_parallel_rank,
-            self.pipeline_parallel_size,
-            self.tensor_parallel_size,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
         )
 
-        if self.bias is not None:
-            output = add_bias_2p5d(
-                output, self.bias, self.hidden_size_per_partition, self.tesseract_dim, self.row_rank,
-                self.col_rank, self.dep_rank, self.parallel_context,ParallelMode.TENSOR_2P5D_COL, False,
-                self.data_parallel_rank, self.pipeline_parallel_rank, self.pipeline_parallel_size,
-                self.tensor_parallel_size)
+        # Mask the output embedding.
+        output_parallel[input_mask, :] = 0.
+        # Reduce across all the model parallel GPUs.
+        output = reduce_scatter_tensor_2p5d(output_parallel, 0, ParallelMode.TENSOR_2P5D_COL, self.parallel_context)
         return output
