@@ -23,6 +23,7 @@ def _sequence_data_parallel_hook(
     div_factor = parallel_context.get_world_size(ParallelMode.DATA)
 
     # divide the tensor with DP size
+    # tensor = bucket.get_tensor()
     tensor = bucket.buffer()
     tensor.div_(div_factor)
 
