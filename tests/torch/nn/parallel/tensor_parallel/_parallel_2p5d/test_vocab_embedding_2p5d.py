@@ -12,7 +12,7 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode="2.5d",
-    tensor_parallel_depth=tp_depth
+    tensor_parallel_depth=tp_depth,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -33,7 +33,9 @@ dist.barrier()
 w = vocab_embedding.weight.data.chunk(tesseract_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
 ]
-w = w.chunk(tesseract_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)]
+w = w.chunk(tesseract_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+]
 
 vocab_embedding_2p5d = VocabParallelEmbedding2p5D(10, 8, parallel_context)
 vocab_embedding_2p5d.weight.data = w
@@ -48,4 +50,4 @@ out = torch.cat(out_list, dim=0)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{out}\n")
-    print(f"differnce: \n{(out - o_out)}\n")
+    print(f"difference: \n{(out - o_out)}\n")

@@ -12,7 +12,7 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode="2.5d",
-    tensor_parallel_depth=tp_depth
+    tensor_parallel_depth=tp_depth,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -46,7 +46,9 @@ input_ = torch.chunk(input_, tp_depth, dim=0)[
 w = linear.weight.data.chunk(tesseract_dim, dim=1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
 ]
-w = w.chunk(tesseract_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)]
+w = w.chunk(tesseract_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+]
 
 # split bias into 0,4:[0], 2,6:[1]
 # input shape: (k/q)
