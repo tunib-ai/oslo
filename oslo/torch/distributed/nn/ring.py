@@ -130,8 +130,8 @@ class _RingQK(torch.autograd.Function):
         ) = ctx.saved_tensors
         parallel_context = ctx.parallel_context
 
-        local_rank = parallel_context.local_rank
-        local_world_size = parallel_context.local_world_size
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
         len_sub_k = sub_k.size(1)
 
         # calculate local gradient of sub_k
@@ -235,8 +235,8 @@ class _RingAV(torch.autograd.Function):
         sub_attn, sub_v = ctx.saved_tensors
         parallel_context = ctx.parallel_context
 
-        local_rank = parallel_context.local_rank
-        local_world_size = parallel_context.local_world_size
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
         len_sub_v = sub_v.size(1)
 
         # calculate local gradient of v
