@@ -1,4 +1,7 @@
+import time
+
 import torch
+import torch.nn.functional as F
 from torch.nn.modules.activation import MultiheadAttention as torchMHA
 
 from oslo.torch.distributed import ParallelContext
@@ -72,6 +75,12 @@ torch_mha_output, torch_mha_output_weights = torch_mha(
     average_attn_weights=False,
 )
 
+# Just use some random loss.
+# If we use mean loss, need to divide oslo loss with
+# the SP world size... and this is tiresome.
+torch_mha_loss = F.mse_loss(torch_mha_output, dummy_tensor, reduction="sum")
+torch_mha_loss.backward()
+
 # retrieve sub tensor
 sub_seq_length = sequence_length // parallel_context.get_world_size(ParallelMode.SEQUENCE)
 start_idx = parallel_context.get_local_rank(ParallelMode.SEQUENCE) * sub_seq_length
@@ -82,6 +91,8 @@ oslo_mha_output, oslo_mha_output_weights = oslo_mha_wrapped(
     dummy_tensor, dummy_tensor, dummy_tensor
 )
 
+oslo_mha_loss = F.mse_loss(oslo_mha_output, dummy_tensor, reduction="sum")
+oslo_mha_loss.backward()
 
 def print_rank(s):
     print(f"rank{parallel_context.get_global_rank()} {s}")
@@ -90,3 +101,10 @@ def print_rank(s):
 # forward pass test
 print_rank(f"mha_output: {torch.allclose(torch_mha_output[start_idx:end_idx], oslo_mha_output)}")
 print_rank(f"mha_weights: {torch.allclose(torch_mha_output_weights[:, :, start_idx:end_idx], oslo_mha_output_weights)}")
+
+
+# backward pass test
+time.sleep(1)   # need time for async op to be finished
+for (name, torch_m), (name_, oslo_m) in zip(torch_mha.named_parameters(), oslo_mha_wrapped.module.named_parameters()):
+    assert name == name_, (name, name_)
+    print_rank(f"{name} grad: {torch.allclose(torch_m.grad, oslo_m.grad)}")
