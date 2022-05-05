@@ -58,7 +58,6 @@ oslo_mha = osloMHA(
 ).double()
 
 # copy weight data
-# oslo_mha.in_proj_weight.data.copy_(torch_mha.in_proj_weight.data.copy_)
 oslo_mha.load_state_dict(torch_mha.state_dict())
 
 # to cuda
@@ -69,7 +68,7 @@ oslo_mha.cuda()
 oslo_mha_wrapped = SequenceDataParallel(oslo_mha, parallel_context)
 
 torch_mha_output, torch_mha_output_weights = torch_mha(
-    dummy_tensor.detach(), dummy_tensor.detach(), dummy_tensor.detach(),
+    dummy_tensor, dummy_tensor, dummy_tensor,
     average_attn_weights=False,
 )
 
@@ -80,7 +79,7 @@ end_idx = start_idx + sub_seq_length
 dummy_tensor = dummy_tensor[start_idx:end_idx]
 
 oslo_mha_output, oslo_mha_output_weights = oslo_mha_wrapped(
-    dummy_tensor.detach(), dummy_tensor.detach(), dummy_tensor.detach()
+    dummy_tensor, dummy_tensor, dummy_tensor
 )
 
 
