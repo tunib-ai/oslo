@@ -412,7 +412,7 @@ def multi_head_attention_forward(
         )
 
         # attention_scores /= math.sqrt(embed_dim)
-        attention_scores /= math.sqrt(head_dim)     # native torch divides by head_dim
+        attention_scores /= math.sqrt(head_dim)  # native torch divides by head_dim
 
         # TODO: need this?
         # change view to [batch_size, num_heads, sub_seq_len, seq_len]
@@ -481,8 +481,12 @@ def multi_head_attention_forward(
         #
         # (deep breath) calculate attention and out projection
         #
-        attn_output, attn_output_weights = _scaled_dot_product_attention(q, k, v, attn_mask, dropout_p)
-        attn_output = attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+        attn_output, attn_output_weights = _scaled_dot_product_attention(
+            q, k, v, attn_mask, dropout_p
+        )
+        attn_output = (
+            attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
+        )
         attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
         if need_weights:

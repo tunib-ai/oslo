@@ -4,7 +4,9 @@ import torch.nn.functional as F
 from torch.optim import SGD
 
 from oslo.torch.nn.modules.activation import MultiheadAttention
-from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import SequenceDataParallel
+from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
+    SequenceDataParallel,
+)
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
@@ -15,13 +17,13 @@ def print_rank(s):
 # define simple model
 class TesterLayer(nn.Module):
     def __init__(
-            self,
-            hidden_size,
-            num_attention_heads,
-            mlp_ratio,
-            use_sequence_parallel,
-            batch_first,
-            parallel_context,
+        self,
+        hidden_size,
+        num_attention_heads,
+        mlp_ratio,
+        use_sequence_parallel,
+        batch_first,
+        parallel_context,
     ):
         super().__init__()
         # Layernorm on the input data.
@@ -65,14 +67,14 @@ class TesterLayer(nn.Module):
 
 class TesterModel(nn.Module):
     def __init__(
-            self,
-            vocab_size,
-            hidden_size,
-            num_attention_heads,
-            mlp_ratio,
-            batch_first,
-            use_sequence_parallel,
-            parallel_context,
+        self,
+        vocab_size,
+        hidden_size,
+        num_attention_heads,
+        mlp_ratio,
+        batch_first,
+        use_sequence_parallel,
+        parallel_context,
     ):
         super().__init__()
         self.emb = nn.Embedding(
@@ -167,16 +169,19 @@ multi_model_optim = SGD(multi_model.parameters(), lr=lr)
 # wrap sequence data parallel
 multi_model = SequenceDataParallel(multi_model, parallel_context)
 
-
 for i in range(1000):
     dummy_input = torch.randint(vocab_size, (batch_size, sequence_length)).long().cuda()
-    dummy_output = torch.randint(vocab_size, (batch_size, sequence_length)).long().cuda()
+    dummy_output = (
+        torch.randint(vocab_size, (batch_size, sequence_length)).long().cuda()
+    )
 
     single_model_input = dummy_input.detach()
     single_model_target = dummy_output.detach()
     single_model_output = single_model(single_model_input)
     single_model_output_reshaped = single_model_output.reshape(-1, vocab_size)
-    single_model_loss = loss_fn(single_model_output_reshaped, single_model_target.reshape(-1))
+    single_model_loss = loss_fn(
+        single_model_output_reshaped, single_model_target.reshape(-1)
+    )
     single_model_loss /= batch_size
     single_model_optim.zero_grad()
     single_model_loss.backward()
@@ -186,28 +191,38 @@ for i in range(1000):
     sub_batch_size = batch_size // parallel_context.get_world_size(ParallelMode.DATA)
     batch_start = parallel_context.get_local_rank(ParallelMode.DATA) * sub_batch_size
     batch_end = batch_start + sub_batch_size
-    sub_seq_length = sequence_length // parallel_context.get_world_size(ParallelMode.SEQUENCE)
+    sub_seq_length = sequence_length // parallel_context.get_world_size(
+        ParallelMode.SEQUENCE
+    )
     start_idx = parallel_context.get_local_rank(ParallelMode.SEQUENCE) * sub_seq_length
     end_idx = start_idx + sub_seq_length
     multi_model_input = dummy_input.detach()[batch_start:batch_end, start_idx:end_idx]
     multi_model_target = dummy_output.detach()[batch_start:batch_end, start_idx:end_idx]
     multi_model_output = multi_model(multi_model_input)
     multi_model_output_reshaped = multi_model_output.reshape(-1, vocab_size)
-    multi_model_loss = loss_fn(multi_model_output_reshaped, multi_model_target.reshape(-1))
-    multi_model_loss /= sub_batch_size      # average by batch size since comm. hook deals with this
+    multi_model_loss = loss_fn(
+        multi_model_output_reshaped, multi_model_target.reshape(-1)
+    )
+    multi_model_loss /= (
+        sub_batch_size  # average by batch size since comm. hook deals with this
+    )
     multi_model_optim.zero_grad()
     multi_model_loss.backward()
     multi_model_optim.step()
 
     # forward pass test
-    assert torch.allclose(single_model_output[batch_start:batch_end, start_idx:end_idx], multi_model_output, atol=5e-7)
+    assert torch.allclose(
+        single_model_output[batch_start:batch_end, start_idx:end_idx],
+        multi_model_output,
+        atol=5e-7,
+    )
 
     # backward pass test
-    for (name, torch_m), (name_, oslo_m) in zip(single_model.named_parameters(),
-                                                multi_model.module.named_parameters()):
+    for (name, torch_m), (name_, oslo_m) in zip(
+        single_model.named_parameters(), multi_model.module.named_parameters()
+    ):
         assert name == name_, (name, name_)
         assert torch.allclose(torch_m.grad, oslo_m.grad, atol=5e-7)
-
 
 # clean up ?
 torch.distributed.barrier()

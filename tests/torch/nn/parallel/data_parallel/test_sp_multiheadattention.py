@@ -4,9 +4,10 @@ import torch
 import torch.nn.functional as F
 from torch.nn.modules.activation import MultiheadAttention as torchMHA
 
-from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.modules.activation import MultiheadAttention as osloMHA
-from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import SequenceDataParallel
+from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
+    SequenceDataParallel,
+)
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 parallel_context = ParallelContext.from_torch(
@@ -15,7 +16,6 @@ parallel_context = ParallelContext.from_torch(
     tensor_parallel_size=2,
     tensor_parallel_mode="sequence",
 )
-
 
 d_model = 512
 nhead = 4
@@ -48,7 +48,6 @@ torch_mha = osloMHA(
     parallel_context=parallel_context,
 ).double()
 
-
 # oslo
 oslo_mha = osloMHA(
     d_model,
@@ -71,7 +70,9 @@ oslo_mha.cuda()
 oslo_mha_wrapped = SequenceDataParallel(oslo_mha, parallel_context)
 
 torch_mha_output, torch_mha_output_weights = torch_mha(
-    dummy_tensor, dummy_tensor, dummy_tensor,
+    dummy_tensor,
+    dummy_tensor,
+    dummy_tensor,
     average_attn_weights=False,
 )
 
@@ -82,7 +83,9 @@ torch_mha_loss = F.mse_loss(torch_mha_output, dummy_tensor, reduction="sum")
 torch_mha_loss.backward()
 
 # retrieve sub tensor
-sub_seq_length = sequence_length // parallel_context.get_world_size(ParallelMode.SEQUENCE)
+sub_seq_length = sequence_length // parallel_context.get_world_size(
+    ParallelMode.SEQUENCE
+)
 start_idx = parallel_context.get_local_rank(ParallelMode.SEQUENCE) * sub_seq_length
 end_idx = start_idx + sub_seq_length
 dummy_tensor = dummy_tensor[start_idx:end_idx]
@@ -94,17 +97,23 @@ oslo_mha_output, oslo_mha_output_weights = oslo_mha_wrapped(
 oslo_mha_loss = F.mse_loss(oslo_mha_output, dummy_tensor, reduction="sum")
 oslo_mha_loss.backward()
 
+
 def print_rank(s):
     print(f"rank{parallel_context.get_global_rank()} {s}")
 
 
 # forward pass test
-print_rank(f"mha_output: {torch.allclose(torch_mha_output[start_idx:end_idx], oslo_mha_output)}")
-print_rank(f"mha_weights: {torch.allclose(torch_mha_output_weights[:, :, start_idx:end_idx], oslo_mha_output_weights)}")
-
+print_rank(
+    f"mha_output: {torch.allclose(torch_mha_output[start_idx:end_idx], oslo_mha_output)}"
+)
+print_rank(
+    f"mha_weights: {torch.allclose(torch_mha_output_weights[:, :, start_idx:end_idx], oslo_mha_output_weights)}"
+)
 
 # backward pass test
-time.sleep(1)   # need time for async op to be finished
-for (name, torch_m), (name_, oslo_m) in zip(torch_mha.named_parameters(), oslo_mha_wrapped.module.named_parameters()):
+time.sleep(1)  # need time for async op to be finished
+for (name, torch_m), (name_, oslo_m) in zip(
+    torch_mha.named_parameters(), oslo_mha_wrapped.module.named_parameters()
+):
     assert name == name_, (name, name_)
     print_rank(f"{name} grad: {torch.allclose(torch_m.grad, oslo_m.grad)}")
