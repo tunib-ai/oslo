@@ -50,7 +50,7 @@ def send_forward_recv_forward(
     ops.append(recv_prev_op)
 
     # TODO; need this ? ColossalAI implementation uses this
-    # current_rank = gpc.get_global_rank()
+    # current_rank = parallel_context.get_global_rank()
     # if current_rank % 2 == 0:
     #     ops = ops[::-1]
 
@@ -105,6 +105,8 @@ class _RingQK(torch.autograd.Function):
         end_idx = (local_rank + 1) * len_sub_k
         sub_attn[:, :, start_idx:end_idx] = sub_attn_part
 
+        # to send/recv in proper order
+        sub_k = sub_k.contiguous()
         # compute QK^T in ring-all-reduce style
         for i in range(local_world_size - 1):
             sub_k = send_forward_recv_forward(
@@ -128,8 +130,8 @@ class _RingQK(torch.autograd.Function):
         ) = ctx.saved_tensors
         parallel_context = ctx.parallel_context
 
-        local_rank = parallel_context.local_rank
-        local_world_size = parallel_context.local_world_size
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
         len_sub_k = sub_k.size(1)
 
         # calculate local gradient of sub_k
@@ -155,6 +157,8 @@ class _RingQK(torch.autograd.Function):
             "b q k, b k d -> b q d", grad_output[:, :, start_idx:end_idx], sub_k
         )
 
+        # to send/recv in proper order
+        sub_k = sub_k.contiguous()
         # compute (dL/dZ)K in ring-all-reduce style
         for i in range(local_world_size - 1):
             sub_k = send_forward_recv_forward(
@@ -207,6 +211,8 @@ class _RingAV(torch.autograd.Function):
             "b q k, b k d -> b q d", sub_attn[:, :, start_idx:end_idx], sub_v
         )
 
+        # to send/recv in proper order
+        sub_v = sub_v.contiguous()
         # compute AV in ring - all - reduce style
         for i in range(local_world_size - 1):
             sub_v = send_forward_recv_forward(
@@ -229,8 +235,8 @@ class _RingAV(torch.autograd.Function):
         sub_attn, sub_v = ctx.saved_tensors
         parallel_context = ctx.parallel_context
 
-        local_rank = parallel_context.local_rank
-        local_world_size = parallel_context.local_world_size
+        local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+        local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
         len_sub_v = sub_v.size(1)
 
         # calculate local gradient of v
@@ -254,6 +260,8 @@ class _RingAV(torch.autograd.Function):
             "b q d, b k d -> b q k", grad_output, sub_v
         )
 
+        # to send/recv in proper order
+        sub_v = sub_v.contiguous()
         # compute (dL/dZ)V^T in ring-all-reduce style
         for i in range(local_world_size - 1):
             sub_v = send_forward_recv_forward(

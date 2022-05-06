@@ -402,52 +402,55 @@ def multi_head_attention_forward(
 
     # SP
     if use_sequence_parallel:
+        #
+        # q, k, v reshaping have done above
+        #
         attention_scores = ring_qk(
-            sub_q=q.transpose(0, 1).contiguous(),
-            sub_k=k.transpose(0, 1).contiguous(),
+            sub_q=q,
+            sub_k=k,
             parallel_context=parallel_context,
         )
 
-        attention_scores /= math.sqrt(embed_dim)
+        # attention_scores /= math.sqrt(embed_dim)
+        attention_scores /= math.sqrt(head_dim)  # native torch divides by head_dim
 
-        # context layer shape: [batch_size, num_heads, sub_seq_len, head_size]
-        output_size = (v.size(1), v.size(2), q.size(0), v.size(3))
-
+        # TODO: need this?
         # change view to [batch_size, num_heads, sub_seq_len, seq_len]
-        attention_scores = attention_scores.view(*output_size)
+        # update tgt_len and src_len since they are for sub-sequences currently.
+        tgt_len = attention_scores.size(-2)
+        src_len = attention_scores.size(-1)
+        new_attn_shape = (bsz, num_heads, tgt_len, src_len)
+        # attention_scores = attention_scores.view(*new_attn_shape)
 
         # TODO: apply ScaleMaskSoftmax
         # change shape to [batch_size, num_heads, sub_seq_len, seq_len]
         # attention_probs = FusedScaleMaskSoftmax(attention_scores, attn_mask)
-
-        attention_probs = attention_scores
+        attention_probs = torch.softmax(attention_scores, dim=-1)
         # Remove this: I added to avoid black formatting (kevin.ko)
 
+        # TODO:
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
         # with seed(ParallelMode.TENSOR):
         #     attention_probs = attention_dropout(attention_probs)
-        attention_probs = nn.Dropout(dropout_p)(attention_probs)
+        # attention_probs = nn.Dropout(dropout_p)(attention_probs)
 
-        # change view [sub_seq_len, batch_size * num_heads, head_size]
-        v = v.contiguous().view(v.size(0), output_size[0] * output_size[1], -1)
+        # change view [b * num_heads, sub_seq_len, seq_len]
+        # attention_probs = attention_probs.view(
+        #     attention_probs.size(0) * attention_probs.size(1),
+        #     attention_probs.size(2),
+        #     attention_probs.size(3),
+        # )
 
-        # # change view [b * num_heads, sub_seq_len, seq_len]
-        attention_probs = attention_probs.view(
-            attention_probs.size(0) * attention_probs.size(1),
-            attention_probs.size(2),
-            attention_probs.size(3),
-        )
-
-        # matmul: [batch_size * num_heads, sub_seq_len, head_size]
-        # context_layer = RingAV.apply(
         context_layer = ring_av(
             sub_attn=attention_probs,
-            sub_v=v.transpose(0, 1).contiguous(),
+            sub_v=v,
             parallel_context=parallel_context,
         )
 
+        # TODO; make variable names same with native torch
         # change view [batch_size, num_heads, sub_seq_len, head_size]
+        output_size = (bsz, num_heads, tgt_len, head_dim)
         context_layer = context_layer.view(*output_size)
 
         # [batch_size, num_heads, sub_seq_len, head_size] -> [sub_seq_len, batch_size, num_heads, head_size]
@@ -457,14 +460,22 @@ def multi_head_attention_forward(
         new_context_layer_shape = context_layer.size()[:-2] + (head_dim * num_heads,)
         context_layer = context_layer.view(*new_context_layer_shape)
 
-        dense = Linear(
-            in_features=embed_dim, out_features=embed_dim, bias=True, skip_bias_add=True
-        )
-        output, bias = dense(context_layer)
+        # linear projection
+        context_layer = F.linear(context_layer, out_proj_weight, out_proj_bias)
 
-        torch.distributed.barrier()
+        # TODO; what is this Linear layer creation for in the forward pass?
+        # dense = Linear(
+        #     in_features=embed_dim, out_features=embed_dim, bias=True, skip_bias_add=True
+        # )
+        # output, bias = dense(context_layer)
+        #
+        # return output, bias
 
-        return output, bias
+        # roll back attn shape
+        attention_probs = attention_probs.view(*new_attn_shape)
+
+        # TODO; make the returns same with native torch
+        return context_layer, attention_probs
 
     else:
         #
@@ -476,9 +487,7 @@ def multi_head_attention_forward(
         attn_output = (
             attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
         )
-        attn_output = F.linear(
-            in_features=attn_output, out_features=out_proj_weight, bias=out_proj_bias
-        )
+        attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
         if need_weights:
             # optionally average attention weights over heads
