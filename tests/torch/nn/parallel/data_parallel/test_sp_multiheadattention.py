@@ -2,19 +2,17 @@ import time
 
 import torch
 import torch.nn.functional as F
-from torch.nn.modules.activation import MultiheadAttention as torchMHA
 
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.activation import MultiheadAttention as osloMHA
 from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
     SequenceDataParallel,
 )
-from oslo.torch.distributed import ParallelContext, ParallelMode
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=2,
-    tensor_parallel_mode="sequence",
+    sequence_parallel_size=2,
 )
 
 d_model = 512

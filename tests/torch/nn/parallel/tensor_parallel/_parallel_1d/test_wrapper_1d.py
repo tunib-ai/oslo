@@ -5,7 +5,7 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
-from oslo.torch.distributed import ParallelContext
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
@@ -14,6 +14,7 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=4,
+    tensor_parallel_mode=ParallelMode.TENSOR_1D,
 )
 
 # 토크나이저 생성
