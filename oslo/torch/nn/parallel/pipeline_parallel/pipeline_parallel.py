@@ -40,7 +40,6 @@ class PipelineParallel(nn.Module):
         parallel_context: ParallelContext,
         memory_computation_balance: float = 1.0,
         tracing_inputs: Dict[str, Any] = None,
-        scheduler: Scheduler = PipeDreamScheduler,
     ):
         super().__init__()
         self.module = module
