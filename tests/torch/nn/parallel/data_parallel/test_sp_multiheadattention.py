@@ -72,6 +72,7 @@ torch_mha_output, torch_mha_output_weights = torch_mha(
     dummy_tensor,
     dummy_tensor,
     average_attn_weights=False,
+    # attn_mask=torch.tril(torch.ones((sequence_length, sequence_length))).cuda(),
 )
 
 # Just use some random loss.
@@ -89,7 +90,10 @@ end_idx = start_idx + sub_seq_length
 dummy_tensor = dummy_tensor[start_idx:end_idx]
 
 oslo_mha_output, oslo_mha_output_weights = oslo_mha_wrapped(
-    dummy_tensor, dummy_tensor, dummy_tensor
+    dummy_tensor,
+    dummy_tensor,
+    dummy_tensor,
+    # attn_mask=torch.tril(torch.ones((sub_seq_length, sub_seq_length))).cuda()
 )
 
 oslo_mha_loss = F.mse_loss(oslo_mha_output, dummy_tensor, reduction="sum")
