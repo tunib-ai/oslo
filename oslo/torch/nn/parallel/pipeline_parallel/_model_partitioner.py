@@ -5,6 +5,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from anytree import Node
 
+from oslo.torch.distributed import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
@@ -42,6 +43,18 @@ class ModelPartitioner(object):
         self.bfs = {}
         self.partition_memoization = {}
 
+    @staticmethod
+    def _set_attribute(element, node):
+        if hasattr(element, "oslo_parallel"):
+            element.oslo_parallel[ParallelMode.PIPELINE] = node.device
+        else:
+            element.oslo_parallel = {ParallelMode.PIPELINE: node.device}
+
+        if node.parent is None:
+            setattr(element, "parent_pp_rank", node.device)
+        else:
+            setattr(element, "parent_pp_rank", node.parent.device)
+
     def partition(self):
         # 1. construct tree
         self.root_node = Node(
@@ -67,27 +80,12 @@ class ModelPartitioner(object):
 
         # 4. set device to parameters and buffers
         for node in dfs(self.root_node):
-            for parameter in node.modules[0].parameters():
-                setattr(parameter, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(parameter, "pp_rank_parent", node.device)
-                else:
-                    setattr(parameter, "pp_rank_parent", node.parent.device)
+            for name, parameter in node.modules[0].named_parameters():
+                self._set_attribute(parameter, node=node)
             for buffer in node.modules[0].buffers():
-                setattr(buffer, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(buffer, "pp_rank_parent", node.device)
-                else:
-                    setattr(buffer, "pp_rank_parent", node.parent.device)
+                self._set_attribute(buffer, node=node)
             for module in node.modules:
-                setattr(module, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(module, "pp_rank_parent", node.device)
-                else:
-                    setattr(module, "pp_rank_parent", node.parent.device)
+                self._set_attribute(module, node=node)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
@@ -122,20 +120,20 @@ class ModelPartitioner(object):
         n = len(sequence)
         if k >= n:
             return [[node] for node in sequence]
-        sum = [0] * (n + 1)
+        _sum = [0] * (n + 1)
         dp = [[0 for _ in range(n + 1)] for _ in range(2)]
         tb = [[[] for _ in range(n + 1)] for _ in range(2)]
 
         for a in range(0, n):
-            sum[a + 1] = sequence[a].cost + sum[a]
+            _sum[a + 1] = sequence[a].cost + _sum[a]
             dp[0][a + 1] = float("inf")
             dp[1][a + 1] = float("inf")
 
         for a in range(1, k + 1):
             for b in range(a + 1, n + 1):
                 for c in range(a - 1, b):
-                    if max(dp[(a - 1) % 2][c], sum[b] - sum[c]) < dp[a % 2][b]:
-                        dp[a % 2][b] = max(dp[(a - 1) % 2][c], sum[b] - sum[c])
+                    if max(dp[(a - 1) % 2][c], _sum[b] - _sum[c]) < dp[a % 2][b]:
+                        dp[a % 2][b] = max(dp[(a - 1) % 2][c], _sum[b] - _sum[c])
                         tb[a % 2][b] = tb[(a - 1) % 2][c] + [c]
 
         starts = tb[k % 2][n]
@@ -209,7 +207,7 @@ class ModelPartitioner(object):
         for p in p_n:
             k = max(Q, key=Q.get)
             P[k].append(p)
-            if n_children[k] <= sqrt_mean_children:
+            if n_children[k] < sqrt_mean_children:
                 # This part is different from the paper. For a small model,
                 # the embedding layer will have a significantly large size
                 # Therefore, too many devices are allocated for embedding.

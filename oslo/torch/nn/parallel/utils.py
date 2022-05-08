@@ -69,12 +69,17 @@ def allocate_params(model, parallel_context):
     for name, parameter in model.named_parameters():
         if hasattr(parameter, "oslo_parallel"):
             device = parallel_context.ranks2device(parameter.oslo_parallel)
-            parameter.data = parameter.to(f"cuda:{device}")
+            if device is not None:
+                parameter.data = parameter.to(f"cuda:{device}")
         else:
             parameter.data = parameter.to(torch.cuda.current_device())
 
     for name, buffer in model.named_buffers():
-        if not hasattr(buffer, "oslo_parallel"):
+        if hasattr(buffer, "oslo_parallel"):
+            device = parallel_context.ranks2device(buffer.oslo_parallel)
+            if device is not None:
+                buffer.data = buffer.to(f"cuda:{device}")
+        else:
             buffer.data = buffer.to(torch.cuda.current_device())
 
 

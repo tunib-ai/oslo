@@ -872,7 +872,7 @@ class ParallelContext(object):
         Examples:
             ranks:
                 {
-                    <ParallelMode.TENSOR: 'tensor_1d'>: 1
+                    <ParallelMode.TENSOR: 'tensor'>: 1
                     <ParallelMode.DATA: 'data'>: 0
                 }
 
@@ -903,7 +903,12 @@ class ParallelContext(object):
             else:
                 ranks_key[mode] = self.get_local_rank(mode)
 
-        return self._ranks_to_device[tuple(ranks_key.items())]
+        ranks_key = tuple(ranks_key.items())
+
+        if ranks_key in self._ranks_to_device:
+            return self._ranks_to_device[ranks_key]
+        else:
+            return None
 
     def is_initialized(self, parallel_mode: ParallelMode):
         """
