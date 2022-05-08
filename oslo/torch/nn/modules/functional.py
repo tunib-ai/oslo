@@ -16,6 +16,8 @@ from torch.nn.functional import (
 
 from oslo.torch.distributed.nn.functional import ring_av, ring_qk
 from oslo.torch.nn.modules.linear import Linear
+from oslo.torch.distributed.parallel_mode import ParallelMode
+from oslo.torch.distributed._seed.helper import seed
 
 """
 Autograd Functions
@@ -402,81 +404,48 @@ def multi_head_attention_forward(
 
     # SP
     if use_sequence_parallel:
-        #
-        # q, k, v reshaping have done above
-        #
-        attention_scores = ring_qk(
+
+        # [batch_size, num_heads, sub_seq_len, seq_len]
+        attn_scores = ring_qk(
             sub_q=q,
             sub_k=k,
             parallel_context=parallel_context,
         )
 
-        # attention_scores /= math.sqrt(embed_dim)
-        attention_scores /= math.sqrt(head_dim)  # native torch divides by head_dim
-
-        # TODO: need this?
-        # change view to [batch_size, num_heads, sub_seq_len, seq_len]
-        # update tgt_len and src_len since they are for sub-sequences currently.
-        tgt_len = attention_scores.size(-2)
-        src_len = attention_scores.size(-1)
-        new_attn_shape = (bsz, num_heads, tgt_len, src_len)
-        # attention_scores = attention_scores.view(*new_attn_shape)
+        attn_scores /= math.sqrt(head_dim)
 
         # TODO: apply ScaleMaskSoftmax
-        # change shape to [batch_size, num_heads, sub_seq_len, seq_len]
-        # attention_probs = FusedScaleMaskSoftmax(attention_scores, attn_mask)
-        attention_probs = torch.softmax(attention_scores, dim=-1)
-        # Remove this: I added to avoid black formatting (kevin.ko)
+        # TODO: test attn_mask
+        # attn_output_weights = FusedScaleMaskSoftmax(attn_scores, attn_mask)
+        attn_output_weights = torch.softmax(attn_scores, dim=-1)
 
-        # TODO:
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        # with seed(ParallelMode.TENSOR):
-        #     attention_probs = attention_dropout(attention_probs)
-        # attention_probs = nn.Dropout(dropout_p)(attention_probs)
+        with seed(ParallelMode.TENSOR):
+            attn_output_weights = F.dropout(attn_output_weights, p=dropout_p)
 
-        # change view [b * num_heads, sub_seq_len, seq_len]
-        # attention_probs = attention_probs.view(
-        #     attention_probs.size(0) * attention_probs.size(1),
-        #     attention_probs.size(2),
-        #     attention_probs.size(3),
-        # )
-
-        context_layer = ring_av(
-            sub_attn=attention_probs,
+        attn_output = ring_av(
+            sub_attn=attn_output_weights,
             sub_v=v,
             parallel_context=parallel_context,
         )
 
-        # TODO; make variable names same with native torch
         # change view [batch_size, num_heads, sub_seq_len, head_size]
         output_size = (bsz, num_heads, tgt_len, head_dim)
-        context_layer = context_layer.view(*output_size)
+        attn_output = attn_output.view(*output_size)
 
         # [batch_size, num_heads, sub_seq_len, head_size] -> [sub_seq_len, batch_size, num_heads, head_size]
-        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
+        attn_output = attn_output.permute(2, 0, 1, 3).contiguous()
 
         # [sub_seq_len, batch_size, num_heads, head_size] -> [sub_seq_len, batch_size, hidden_size]
-        new_context_layer_shape = context_layer.size()[:-2] + (head_dim * num_heads,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        new_attn_output_shape = attn_output.size()[:-2] + (head_dim * num_heads,)
+        attn_output = attn_output.view(*new_attn_output_shape)
 
         # linear projection
-        context_layer = F.linear(context_layer, out_proj_weight, out_proj_bias)
+        attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-        # TODO; what is this Linear layer creation for in the forward pass?
-        # dense = Linear(
-        #     in_features=embed_dim, out_features=embed_dim, bias=True, skip_bias_add=True
-        # )
-        # output, bias = dense(context_layer)
-        #
-        # return output, bias
-
-        # roll back attn shape
-        attention_probs = attention_probs.view(*new_attn_shape)
-
-        # TODO; make the returns same with native torch
-        return context_layer, attention_probs
-
+        # change target length "query.shape[0]" to "sub_seq_len"
+        tgt_len = attn_scores.size(-2)
+        # change target length "k.size(1)" to "seq_len"
+        src_len = attn_scores.size(-1)
     else:
         #
         # (deep breath) calculate attention and out projection
@@ -489,21 +458,19 @@ def multi_head_attention_forward(
         )
         attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-        if need_weights:
-            # optionally average attention weights over heads
-            attn_output_weights = attn_output_weights.view(
-                bsz, num_heads, tgt_len, src_len
-            )
-            if average_attn_weights:
-                attn_output_weights = attn_output_weights.sum(dim=1) / num_heads
+    if need_weights:
+        # optionally average attention weights over heads
+        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        if average_attn_weights and not use_sequence_parallel:
+            attn_output_weights = attn_output_weights.sum(dim=1) / num_heads
 
-            if not is_batched:
-                # squeeze the output if input was unbatched
-                attn_output = attn_output.squeeze(1)
-                attn_output_weights = attn_output_weights.squeeze(0)
-            return attn_output, attn_output_weights
-        else:
-            if not is_batched:
-                # squeeze the output if input was unbatched
-                attn_output = attn_output.squeeze(1)
-            return attn_output, None
+        if not is_batched:
+            # squeeze the output if input was unbatched
+            attn_output = attn_output.squeeze(1)
+            attn_output_weights = attn_output_weights.squeeze(0)
+        return attn_output, attn_output_weights
+    else:
+        if not is_batched:
+            # squeeze the output if input was unbatched
+            attn_output = attn_output.squeeze(1)
+        return attn_output, None
