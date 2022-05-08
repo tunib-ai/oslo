@@ -10,7 +10,7 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=4,
-    tensor_parallel_mode="2d",
+    tensor_parallel_mode=ParallelMode.TENSOR_2D,
 )
 
 torch.set_printoptions(sci_mode=False)

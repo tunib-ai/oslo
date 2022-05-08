@@ -1,4 +1,3 @@
-import torch.distributed as dist
 import torch.nn as nn
 
 from oslo.torch.distributed.parallel_context import ParallelContext
@@ -11,7 +10,8 @@ class ExpertParallel(ParallelWrapper):
         self,
         model: nn.Module,
         parallel_context: ParallelContext,
-        max_ep_size=dist.get_world_size(),
+        use_kernel_optim=True,
     ):
         super().__init__()
-        self.ep_context = ExpertParallelContext(parallel_context, max_ep_size)
+        self.ep_context = ExpertParallelContext(parallel_context, use_kernel_optim)
+        self.ep_context.setup(parallel_context.seed)

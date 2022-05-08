@@ -46,7 +46,7 @@ class TensorParallel(ParallelWrapper):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
         orig_vocab_size, module = self._add_embeddings(module, self.parallel_context)
-        if self.parallel_context.tensor_parallel_mode == "1d":
+        if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(module, self.parallel_context)
         else:
             raise ValueError("currently, only 1d tensor parallelism is supported.")
