@@ -5,12 +5,6 @@ import torch.nn as nn
 from oslo.torch.distributed.parallel_context import ParallelContext
 from oslo.torch.distributed.parallel_mode import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
-from oslo.torch.nn.parallel.pipeline_parallel._schedulers.pipedream import (
-    PipeDreamScheduler,
-)
-from oslo.torch.nn.parallel.pipeline_parallel._schedulers.scheduler import (
-    Scheduler,
-)
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
 
