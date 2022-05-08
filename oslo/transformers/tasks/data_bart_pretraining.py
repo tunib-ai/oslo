@@ -2,7 +2,7 @@ import random
 import numpy as np
 from typing import Any, Dict, List, Optional
 from datasets.arrow_dataset import Batch
-from data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor
 
 
 class ProcessorForBartPretraining(BaseProcessor):
@@ -73,7 +73,7 @@ class ProcessorForBartPretraining(BaseProcessor):
 
 class DataCollatorForBartPretraining:
     """
-    Processing training examples to mini-batch for Bart (mask_infilling, sentence_premutation).
+    Processing training examples to mini-batch for Bart (mask_infilling, sentence_permutation).
     """
 
     def __init__(
