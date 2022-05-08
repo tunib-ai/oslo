@@ -69,8 +69,25 @@ class ModelPartitioner(object):
         for node in dfs(self.root_node):
             for parameter in node.modules[0].parameters():
                 setattr(parameter, "pp_rank", node.device)
+                if node.parent is None:
+                    # if node doesn't have a parent we use the same device to not use p2p com.
+                    setattr(parameter, "pp_rank_parent", node.device)
+                else:
+                    setattr(parameter, "pp_rank_parent", node.parent.device)
             for buffer in node.modules[0].buffers():
                 setattr(buffer, "pp_rank", node.device)
+                if node.parent is None:
+                    # if node doesn't have a parent we use the same device to not use p2p com.
+                    setattr(buffer, "pp_rank_parent", node.device)
+                else:
+                    setattr(buffer, "pp_rank_parent", node.parent.device)
+            for module in node.modules:
+                setattr(module, "pp_rank", node.device)
+                if node.parent is None:
+                    # if node doesn't have a parent we use the same device to not use p2p com.
+                    setattr(module, "pp_rank_parent", node.device)
+                else:
+                    setattr(module, "pp_rank_parent", node.parent.device)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
