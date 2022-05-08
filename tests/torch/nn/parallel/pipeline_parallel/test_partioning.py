@@ -1,17 +1,15 @@
 import torch
 import torch.distributed as dist
-from transformers import GPT2LMHeadModel
+from transformers import T5ForConditionalGeneration
 
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel import PipelineParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
-parallel_context = ParallelContext.from_torch(pipeline_parallel_size=4)
-model = GPT2LMHeadModel.from_pretrained("gpt2")
+parallel_context = ParallelContext.from_torch(pipeline_parallel_size=8)
+model = T5ForConditionalGeneration.from_pretrained("t5-large")
 
-wrapper_pp = PipelineParallel(
-    model, parallel_context=parallel_context, memory_computation_balance=0.5
-)
+wrapper_pp = PipelineParallel(model, parallel_context=parallel_context)
 allocate_params(wrapper_pp, parallel_context)
 
 for rank in range(dist.get_world_size()):
@@ -24,4 +22,3 @@ for rank in range(dist.get_world_size()):
                 num_params += param.numel()
         print(f"RANK {rank} params: {num_params}")
     dist.barrier()
-    print()
