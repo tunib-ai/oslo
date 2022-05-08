@@ -2,11 +2,11 @@ from typing import Any, Tuple
 
 import torch
 import torch.distributed as dist
-from oslo.torch.distributed import ParallelMode, ParallelContext
-from oslo.torch.distributed._ops import all_reduce, reduce_scatter, all_gather
-
 from torch import Tensor
 from torch.cuda.amp import custom_bwd, custom_fwd
+
+from oslo.torch.distributed import ParallelMode, ParallelContext
+from oslo.torch.distributed.nn.functional import all_reduce, reduce_scatter, all_gather
 
 
 def classifier_2p5d(

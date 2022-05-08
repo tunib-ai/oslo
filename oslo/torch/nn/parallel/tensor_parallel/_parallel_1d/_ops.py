@@ -1,7 +1,7 @@
 import torch
 
 from oslo.torch.distributed import ParallelMode
-from oslo.torch.distributed._ops import all_gather, all_reduce, scatter
+from oslo.torch.distributed.nn.functional import all_gather, all_reduce, scatter
 
 
 class _Broadcast1D(torch.autograd.Function):
