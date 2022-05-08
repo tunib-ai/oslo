@@ -5,6 +5,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from anytree import Node
 
+from oslo.torch.distributed import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
@@ -16,7 +17,7 @@ class ModelPartitioner(object):
     Model Partitioner (Inter-module partitioning)
 
     Args:
-        model (nn.Module): PyTorch module
+        module (nn.Module): PyTorch module
         process_group (dist.ProcessGroup): process group object
         tracing_inputs (Dict[str, Any]): tracing input dictionary, will be input as **kwargs to model.
         memory_computation_balance (float): memory computation balance factor
@@ -28,12 +29,12 @@ class ModelPartitioner(object):
 
     def __init__(
         self,
-        model: nn.Module,
+        module: nn.Module,
         process_group: dist.ProcessGroup,
         tracing_inputs: Dict[str, Any] = None,
         memory_computation_balance: float = 1.0,
     ):
-        self.model = model
+        self.module = module
         self.process_group = process_group
         self.tracing_inputs = tracing_inputs
         self.memory_computation_balance = memory_computation_balance
@@ -42,13 +43,25 @@ class ModelPartitioner(object):
         self.bfs = {}
         self.partition_memoization = {}
 
+    @staticmethod
+    def _set_attribute(element, node):
+        if hasattr(element, "oslo_parallel"):
+            element.oslo_parallel[ParallelMode.PIPELINE] = node.device
+        else:
+            element.oslo_parallel = {ParallelMode.PIPELINE: node.device}
+
+        if node.parent is None:
+            setattr(element, "oslo_pp_parent_rank", node.device)
+        else:
+            setattr(element, "oslo_pp_parent_rank", node.parent.device)
+
     def partition(self):
         # 1. construct tree
         self.root_node = Node(
-            name=self.model.__class__.__qualname__,
+            name=self.module.__class__.__qualname__,
             parent=None,
-            modules=[self.model],
-            parameters=self._get_parameters(self.model),
+            modules=[self.module],
+            parameters=self._get_parameters(self.module),
             execution_order=0,
             cost=1.0,
         )
@@ -67,27 +80,13 @@ class ModelPartitioner(object):
 
         # 4. set device to parameters and buffers
         for node in dfs(self.root_node):
-            for parameter in node.modules[0].parameters():
-                setattr(parameter, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(parameter, "pp_rank_parent", node.device)
-                else:
-                    setattr(parameter, "pp_rank_parent", node.parent.device)
-            for buffer in node.modules[0].buffers():
-                setattr(buffer, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(buffer, "pp_rank_parent", node.device)
-                else:
-                    setattr(buffer, "pp_rank_parent", node.parent.device)
-            for module in node.modules:
-                setattr(module, "pp_rank", node.device)
-                if node.parent is None:
-                    # if node doesn't have a parent we use the same device to not use p2p com.
-                    setattr(module, "pp_rank_parent", node.device)
-                else:
-                    setattr(module, "pp_rank_parent", node.parent.device)
+            if all([not hasattr(child, "device") for child in node.children]):
+                module = node.modules[0]
+                self._set_attribute(module, node)
+                for param in node.parameters:
+                    self._set_attribute(param, node)
+                for buffer in module.buffers():
+                    self._set_attribute(buffer, node)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
@@ -96,46 +95,52 @@ class ModelPartitioner(object):
         return parameters
 
     def _construct_tree(self, node, parent_name):
-        for name, child in node.modules[0].named_children():
-            name = f"{parent_name}.{name}" if parent_name != "ROOT" else name
-            parameters = self._get_parameters(child, to_list=False)
+        for module in node.modules:
+            for name, child in module.named_children():
+                name = (
+                    f"{parent_name}.{name}"
+                    if parent_name != self.module.__class__.__qualname__
+                    else name
+                )
+                parameters = self._get_parameters(child, to_list=False)
 
-            if len(parameters) != 0:
-                visited_node = self.visited.get(parameters, None)
-                if visited_node and parent_name not in visited_node.name:
-                    child_node = self.visited[parameters]
-                    child_node.modules.append(child)
-                    child_node.name = ",".join([child_node.name, name])
-                    setattr(parameters, "tied_parameters", True)
-                else:
-                    child_node = Node(
-                        name=name,
-                        parent=node,
-                        modules=[child],
-                        parameters=list(parameters),
-                    )
-                    self.visited[parameters] = child_node
-                self._construct_tree(child_node, name)
+                if len(parameters) != 0:
+                    visited_node = self.visited.get(parameters, None)
+                    if visited_node and parent_name not in visited_node.name.split(","):
+                        child_node = self.visited[parameters]
+                        child_node.modules.append(child)
+                        child_node.name = ",".join([child_node.name, name])
+                        child_node.tied = True
+                    else:
+                        child_node = Node(
+                            name=name,
+                            parent=node,
+                            modules=[child],
+                            parameters=list(parameters),
+                            tied=False,
+                        )
+                        self.visited[parameters] = child_node
+                    self._construct_tree(child_node, name)
 
     @staticmethod
     def _partition_segments(sequence, k):
         n = len(sequence)
         if k >= n:
             return [[node] for node in sequence]
-        sum = [0] * (n + 1)
+        _sum = [0] * (n + 1)
         dp = [[0 for _ in range(n + 1)] for _ in range(2)]
         tb = [[[] for _ in range(n + 1)] for _ in range(2)]
 
         for a in range(0, n):
-            sum[a + 1] = sequence[a].cost + sum[a]
+            _sum[a + 1] = sequence[a].cost + _sum[a]
             dp[0][a + 1] = float("inf")
             dp[1][a + 1] = float("inf")
 
         for a in range(1, k + 1):
             for b in range(a + 1, n + 1):
                 for c in range(a - 1, b):
-                    if max(dp[(a - 1) % 2][c], sum[b] - sum[c]) < dp[a % 2][b]:
-                        dp[a % 2][b] = max(dp[(a - 1) % 2][c], sum[b] - sum[c])
+                    if max(dp[(a - 1) % 2][c], _sum[b] - _sum[c]) < dp[a % 2][b]:
+                        dp[a % 2][b] = max(dp[(a - 1) % 2][c], _sum[b] - _sum[c])
                         tb[a % 2][b] = tb[(a - 1) % 2][c] + [c]
 
         starts = tb[k % 2][n]
@@ -209,7 +214,7 @@ class ModelPartitioner(object):
         for p in p_n:
             k = max(Q, key=Q.get)
             P[k].append(p)
-            if n_children[k] <= sqrt_mean_children:
+            if n_children[k] < sqrt_mean_children:
                 # This part is different from the paper. For a small model,
                 # the embedding layer will have a significantly large size
                 # Therefore, too many devices are allocated for embedding.
