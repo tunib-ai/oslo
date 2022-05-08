@@ -83,6 +83,13 @@ Thanks so much to all of our amazing contributors!
 </tr>
 <tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/MicPie>
+            <img src=https://avatars.githubusercontent.com/u/36303596?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Michael Pieler/>
+            <br />
+            <sub style="font-size:14px"><b>Michael Pieler</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/hmy831004>
             <img src=https://avatars.githubusercontent.com/u/41275943?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=hmy831004/>
             <br />
@@ -117,6 +124,8 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>Tae-Kyun Kim</b></sub>
         </a>
     </td>
+</tr>
+<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/Mistobaan>
             <img src=https://avatars.githubusercontent.com/u/112599?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Fabrizio Milo/>
@@ -124,8 +133,6 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>Fabrizio Milo</b></sub>
         </a>
     </td>
-</tr>
-<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/jinmang2>
             <img src=https://avatars.githubusercontent.com/u/37775784?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=MyungHoon Jin/>
