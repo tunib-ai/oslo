@@ -106,3 +106,12 @@ class Binder(object):
             additional_flags.append(f"-maxrregcount={maxrregcount}")
 
         return nvcc_flags + additional_flags
+
+
+class FusedLayerNormBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_fused_layer_norm"
+
+    def sources(self):
+        return ["fused_layer_norm.cu", "FusedLayerNormBinder.cpp"]
