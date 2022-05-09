@@ -141,6 +141,13 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/Quentin-Anthony>
+            <img src=https://avatars.githubusercontent.com/u/10281105?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Quentin Anthony/>
+            <br />
+            <sub style="font-size:14px"><b>Quentin Anthony</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/sooftware>
             <img src=https://avatars.githubusercontent.com/u/42150335?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Soohwan Kim/>
             <br />
