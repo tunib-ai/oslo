@@ -20,6 +20,16 @@ from oslo.torch.nn.modules.linear import Linear
 """
 Autograd Functions
 """
+global fused_layer_norm_cuda
+fused_layer_norm_cuda = None
+
+
+# Utils from apex
+def _cast_if_autocast_enabled(*args):
+    if not torch.is_autocast_enabled():
+        return args
+    else:
+        return torch.cuda.amp.autocast_mode._cast(args, torch.get_autocast_gpu_dtype())
 
 
 @torch.jit.script
@@ -265,6 +275,44 @@ class _FusedRMSNormFunction(torch.autograd.Function):
 """
 User Functions
 """
+
+
+def fused_layer_norm_affine(input, weight, bias, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, bias, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormAffineFunction.apply(*args)
+
+
+def fused_layer_norm(input, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormFunction.apply(*args)
+
+
+def mixed_dtype_fused_layer_norm_affine(
+    input, weight, bias, normalized_shape, eps=1e-6
+):
+    args = _cast_if_autocast_enabled(input, weight, bias, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormAffineMixedDtypesFunction.apply(*args)
+
+
+def fused_rms_norm_affine(input, weight, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormAffineFunction.apply(*args)
+
+
+def fused_rms_norm(input, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormFunction.apply(*args)
+
+
+def mixed_dtype_fused_rms_norm_affine(input, weight, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormAffineMixedDtypesFunction.apply(*args)
 
 
 def fused_gelu(x):
