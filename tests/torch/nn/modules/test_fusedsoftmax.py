@@ -1,16 +1,10 @@
-from oslo.torch._C import get_softmax_kernel
+from oslo.torch.nn import FusedScaleMaskSoftmax
+import torch
 
-_SOFTMAX_KERNEL = None
+softmax = FusedScaleMaskSoftmax(scale=1.1, use_triang_mask=True).cuda()
+inputs = torch.randn(10, 10, 10, 10).half().cuda()
 
-
-def test_get_softmax_kernels():
-    CUDA = get_softmax_kernel()
-    CUDA.scaled_masked_softmax_forward
-    CUDA.scaled_masked_softmax_backward
-    CUDA.get_batch_per_block
-    CUDA.scaled_upper_triang_masked_softmax_forward
-    CUDA.scaled_upper_triang_masked_softmax_backward
-    print("test_get_kernels passed")
+out = softmax(inputs)
+print(out)
 
 
-test_get_softmax_kernels()

@@ -24,6 +24,7 @@
 #include <cuda_profiler_api.h>
 #include <cuda_runtime.h>
 #include <torch/extension.h>
+#include <torch/torch.h>
 
 namespace multihead_attn {
 namespace fused_softmax {

@@ -30,9 +30,6 @@ class FusedScaleMaskSoftmax(nn.Module):
         self.scale = scale
         self.use_triang_mask = use_triang_mask
         self.pad_mask = pad_mask
-        assert (
-            self.scale is None or softmax_in_fp32
-        ), "softmax should be in fp32 when scaled"
         self.softmax_in_fp32 = softmax_in_fp32
         super(FusedScaleMaskSoftmax, self).__init__()
 

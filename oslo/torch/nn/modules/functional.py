@@ -169,11 +169,20 @@ def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
     return q_out + q_bias, k_out + k_bias, v_out + v_bias
 
 
+def _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32):
+    assert input.dim() == 4, "input must be be `(batch, nhead, len_q, len_k)`."
+    assert scale is not None, "scale must not be None."
+    assert scale == 1.0 or softmax_in_fp32, "softmax should be in fp32 when scaled"
+
+
 def _is_fused_scale_mask_softmax_available(
-    scale, dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
+    input, scale, softmax_in_fp32, use_triang_mask
 ):
-    if scale and not softmax_in_fp32:
-        warnings.warn("fused softmax should be in fp32 when scaled")
+    bsz, np, sq, sk = input.size()
+    dtype = input.dtype
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32)
+
+    if dtype != torch.float16 and dtype != torch.bfloat16:
         return False
 
     if sk > 2048 or sk <= 0:
@@ -184,7 +193,6 @@ def _is_fused_scale_mask_softmax_available(
     if use_triang_mask:
         if sq == sk and (sk <= 64 or sk % 4 == 0) and (bsz * np) % bsz_per_block == 0:
             return True
-
     else:
         if sq > 1 and sq % bsz_per_block == 0:
             return True
@@ -192,20 +200,19 @@ def _is_fused_scale_mask_softmax_available(
     return False
 
 
-def _fused_scale_mask_softmax_torch(
-    input, scale, use_triang_mask, softmax_in_fp32, pad_mask
-):
-    if input.dtype != torch.float32 and softmax_in_fp32:
+def _fused_scale_mask_softmax_torch(input, scale, softmax_in_fp32, mask):
+    original_input_dtype = input.dtype
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32)
+
+    if softmax_in_fp32 and original_input_dtype != torch.float32:
         input = input.float()
 
     input = input * scale
-    mask_output = (
-        input.masked_fill_(pad_mask, -10000.0) if pad_mask is not None else input
-    )
+    mask_output = input.masked_fill_(mask, -10000.0) if mask is not None else input
     probs = torch.nn.Softmax(dim=-1)(mask_output)
 
-    if input.dtype != torch.float32 and softmax_in_fp32:
-        if input.dtype == torch.float16:
+    if softmax_in_fp32 and original_input_dtype != torch.float32:
+        if original_input_dtype == torch.float16:
             probs = probs.half()
         else:
             probs = probs.bfloat16()
@@ -213,42 +220,44 @@ def _fused_scale_mask_softmax_torch(
     return probs
 
 
-def _fused_scale_mask_softmax_cuda(
-    input, scale, use_triang_mask, softmax_in_fp32, pad_mask
-):
+def _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask):
     bsz, np, sq, sk = input.size()
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32=False)
+
     if use_triang_mask:
         if pad_mask is not None:
-            input = input + pad_mask
-        return _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
-            input.view(-1, sq, sk), scale
-        ).view(bsz, np, sq, sk)
-
-    if pad_mask is None:
-        pad_mask = torch.zeros(1, 1, sq, sk, device=input.device, dtype=input.dtype)
-        return _FusedScaleMaskSoftmaxFunction.apply(input, pad_mask.bool(), scale)
-
-    else:
-        return _FusedScaleMaskSoftmaxFunction.apply(
-            input, pad_mask.repeat(1, 1, sq, 1).bool(), scale
+            input += pad_mask
+        output = _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
+            input.view(-1, sq, sk),
+            scale,
         )
+        return output.view(bsz, np, sq, sk)
+    else:
+        if pad_mask is not None:
+            return _FusedScaleMaskSoftmaxFunction.apply(
+                input,
+                pad_mask.repeat(1, 1, sq, 1).bool(),
+                scale,
+            )
+        else:
+            pad_mask = torch.zeros(1, 1, sq, sk, device=input.device, dtype=input.dtype)
+            return _FusedScaleMaskSoftmaxFunction.apply(
+                input,
+                pad_mask.bool(),
+                scale,
+            )
 
 
 def fused_scale_mask_softmax(
-    input, scale, use_triang_mask, softmax_in_fp32=True, pad_mask=None
+    input, scale, use_triang_mask, softmax_in_fp32, pad_mask=None
 ):
     scale = scale if scale is not None else 1.0
-    bsz, np, sq, sk = input.size()
     if _is_fused_scale_mask_softmax_available(
-        scale, input.dtype, bsz, np, sq, sk, softmax_in_fp32, use_triang_mask
+        input, scale, softmax_in_fp32, use_triang_mask
     ):
-        return _fused_scale_mask_softmax_cuda(
-            input, scale, use_triang_mask, softmax_in_fp32, pad_mask
-        )
+        return _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask)
     else:
-        return _fused_scale_mask_softmax_torch(
-            input, scale, use_triang_mask, softmax_in_fp32, pad_mask
-        )
+        return _fused_scale_mask_softmax_torch(input, scale, softmax_in_fp32, pad_mask)
 
 
 def multi_head_attention_forward(

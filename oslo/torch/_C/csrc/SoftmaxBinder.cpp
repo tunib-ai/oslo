@@ -18,7 +18,6 @@
 #include <cassert>
 #include <compat.h>
 #include <cuda_fp16.h>
-#include <stdio.h>
 #include <torch/extension.h>
 #include <torch/torch.h>
 #include <vector>
