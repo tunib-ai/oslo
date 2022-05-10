@@ -2535,7 +2535,7 @@ class FullyShardedDataParallel(ParallelWrapper):
         # tensor. We convert it back here. Otherwise, the step counter will be treated
         # like a singleton tensor and comparison with original state dict would fail.
         for _, bufs in osd["state"].items():
-            if "step" in bufs.keys():
+            if "step" in bufs.parallel_keys():
                 assert type(bufs["step"]) is int or ou.is_singleton_tensor(bufs["step"])
                 if ou.is_singleton_tensor(bufs["step"]):
                     bufs["step"] = bufs["step"].item()

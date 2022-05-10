@@ -142,10 +142,10 @@ class DataCollatorForTokenClassification:
         self.padding = padding
 
     def __call__(self, features):
-        label_name = "label" if "label" in features[0].keys() else "labels"
+        label_name = "label" if "label" in features[0].parallel_keys() else "labels"
         labels = (
             [feature[label_name] for feature in features]
-            if label_name in features[0].keys()
+            if label_name in features[0].parallel_keys()
             else None
         )
         batch = self.tokenizer.pad(

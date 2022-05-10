@@ -1,8 +1,6 @@
-import math
-from typing import Callable, List, Optional
+from typing import List, Optional
 
 import torch
-from torch.utils.data import default_collate
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
@@ -10,35 +8,53 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 class SequenceDataParallelCollator:
     def __init__(
         self,
+        parallel_keys: List[str],
         parallel_context: ParallelContext,
-        parallelize_keys: List[str],
-        batch_first: bool = True,
+        dim: int = 1,
         pad_token_id: Optional[int] = 0,
-        collate_fn: Optional[Callable] = None,
     ):
-        self.parallelize_keys = parallelize_keys
-        self.batch_index = 0 if batch_first else 1
-        self.seq_index = 1 if batch_first else 0
+        self.parallel_keys = parallel_keys
+        self.dim = dim
         self.pad_token_id = pad_token_id
         self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
-        self.collate_fn = collate_fn if collate_fn is not None else default_collate
 
-    def __call__(self, **kwargs):
-        features = self.collate_fn(**kwargs)
-        for key in self.parallelize_keys:
+    def __call__(self, **features):
+        for key in self.parallel_keys:
+            assert (
+                key in features
+            ), f"The {key} must be in the input of `SequenceDataParallelCollator`."
+
             value = features[key]
-            batch_size = value.size(self.batch_index)
-            seq_length = value.size(self.seq_index)
-            remainder = seq_length % self.local_world_size
-            if remainder > 0:
-                pads = torch.ones(
-                    size=(batch_size, remainder), dtype=value.dtype, device=value.device
+            value_size = value.size()
+            seq_length = value_size[self.dim]
+
+            new_seq_length = seq_length
+            while new_seq_length % self.local_world_size != 0:
+                new_seq_length += 1
+            num_pads = new_seq_length - seq_length
+
+            if num_pads > 0:
+                pad_size = list(value_size)
+                pad_size[self.dim] = num_pads
+                pads = (
+                    torch.ones(
+                        pad_size,
+                        dtype=value.dtype,
+                        device=value.device,
+                    )
+                    * self.pad_token_id
                 )
-                value = torch.hstack((value, pads))
-            sub_seq_length = math.ceil(seq_length / self.local_world_size)
-            start_idx = self.local_rank * sub_seq_length
-            end_idx = (self.local_rank + 1) * sub_seq_length
-            features[key] = value[:, start_idx:end_idx]
+                value = torch.cat([value, pads], dim=self.dim)
+
+            value = value.chunk(
+                self.local_world_size,
+                dim=self.dim,
+            )[self.local_rank]
+
+            if not value.is_contiguous():
+                value = value.contiguous()
+
+            features[key] = value
 
         return features

@@ -488,7 +488,7 @@ class ZeroRedundancyOptimizer(Optimizer):
 
                 for local_param_index in local_pg["params"]:
                     # Update the state, if any
-                    if local_param_index in s["state"].keys():
+                    if local_param_index in s["state"].parallel_keys():
                         global_id = self._param_to_index[
                             local_index_to_param_id[local_param_index]
                         ]
