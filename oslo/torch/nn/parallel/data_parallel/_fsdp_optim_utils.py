@@ -172,7 +172,7 @@ def _unflatten_optim_state(
         if l is None:
             del unflat_state[g]
 
-    if non_tensor_state[0].parallel_keys() == combined_state[0].keys():
+    if non_tensor_state[0].keys() == combined_state[0].keys():
         # Early return if there is no tensors in the state dict.
         return unflat_state, global_to_local_id
 

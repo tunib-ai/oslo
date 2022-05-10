@@ -47,7 +47,7 @@ class ProcessorForCausalLM(BaseProcessor):
                     add_special_tokens=False,
                 )
 
-                for key in training_example.parallel_keys():
+                for key in training_example.keys():
                     if key not in dict_of_training_examples:
                         dict_of_training_examples.setdefault(key, [])
                     dict_of_training_examples[key].append(training_example[key])
