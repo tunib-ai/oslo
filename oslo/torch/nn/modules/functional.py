@@ -3,7 +3,6 @@ import warnings
 from typing import Optional, Tuple
 
 import torch
-import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.functional import (
@@ -14,11 +13,10 @@ from torch.nn.functional import (
     pad,
 )
 
-from oslo.torch.distributed.nn.functional import ring_av, ring_qk
-from oslo.torch.nn.modules.linear import Linear
-from oslo.torch.distributed.parallel_mode import ParallelMode
-from oslo.torch.distributed._seed.helper import seed
 from oslo.torch._C import get_softmax_kernel
+from oslo.torch.distributed._seed.helper import seed
+from oslo.torch.distributed.nn.functional import ring_av, ring_qk
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 """
 Autograd Functions
@@ -115,8 +113,6 @@ class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
 class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, mask, scale):
-        from oslo.torch._C import SoftmaxBinder
-
         scale_t = torch.tensor([scale])
 
         softmax_results = get_softmax_kernel().scaled_masked_softmax_forward(
@@ -127,8 +123,6 @@ class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, output_grads):
-        from oslo.torch._C import SoftmaxBinder
-
         softmax_results, scale_t = ctx.saved_tensors
 
         input_grads = get_softmax_kernel().scaled_masked_softmax_backward(
@@ -186,6 +180,9 @@ def _is_fused_scale_mask_softmax_available(
         return False
 
     if sk > 2048 or sk <= 0:
+        return False
+
+    if softmax_in_fp32 is True:
         return False
 
     bsz_per_block = get_softmax_kernel().get_batch_per_block(sq, sk, bsz, np)
