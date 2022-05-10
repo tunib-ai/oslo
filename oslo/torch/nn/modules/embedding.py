@@ -269,3 +269,100 @@ class VocabParallelEmbedding2D(nn.Embedding):
             output_parallel, 0, ParallelMode.TENSOR_2D_COL, self.parallel_context
         )
         return output
+
+
+class Embedding2p5D(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        parallel_context: ParallelContext,
+    ):
+        self.parallel_context = parallel_context
+        self.tesseract_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2P5D_COL
+        )
+        super().__init__(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim // (self.tesseract_dim**2),
+        )
+
+    def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+            all_gather_tensor_2p5d,
+            split_batch_2p5d,
+        )
+
+        input_ = split_batch_2p5d(input_, 0, self.parallel_context)
+        weight = all_gather_tensor_2p5d(
+            self.weight, -1, ParallelMode.TENSOR_2P5D_COL, self.parallel_context
+        )
+
+        # output = F.embedding(input_, weight, self.padding_idx, *self.embed_args, **self.embed_kwargs)
+        output = F.embedding(
+            input_,
+            weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+        return output
+
+
+# TODO: Implement this class.
+class VocabParallelEmbedding2p5D(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        parallel_context: ParallelContext,
+    ):
+        self.parallel_context = parallel_context
+        self.tesseract_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2P5D_COL
+        )
+
+        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        (
+            self.vocab_start_index,
+            self.vocab_end_index,
+        ) = VocabUtility.vocab_range_from_global_vocab_size(
+            num_embeddings,
+            rank,
+            self.tesseract_dim,
+        )
+        super().__init__(
+            num_embeddings=num_embeddings // self.tesseract_dim,
+            embedding_dim=embedding_dim // self.tesseract_dim,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+            reduce_scatter_tensor_2p5d,
+        )
+
+        # Build the mask.
+        input_mask = (x < self.vocab_start_index) | (x >= self.vocab_end_index)
+        # Mask the input.
+        masked_input = x.clone() - self.vocab_start_index
+        masked_input[input_mask] = 0
+
+        output_parallel = F.embedding(
+            masked_input,
+            self.weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+
+        # Mask the output embedding.
+        output_parallel[input_mask, :] = 0.0
+        # Reduce across all the model parallel GPUs.
+        output = reduce_scatter_tensor_2p5d(
+            output_parallel, 0, ParallelMode.TENSOR_2P5D_COL, self.parallel_context
+        )
+        return output
