@@ -133,3 +133,6 @@ class ExpertParallelContext(object):
 
     def get_loss(self):
         return self.aux_loss
+
+    def get_world_size(self):
+        return self.world_size
