@@ -449,6 +449,11 @@ void dispatch_scaled_masked_softmax_forward(output_t *dst, const input_t *src,
           <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
               dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
       break;
+    case 12: // 4096
+      scaled_masked_softmax_warp_forward<input_t, output_t, acc_t, 12>
+          <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
+              dst, src, mask, scale, batch_count, key_seq_len, pad_batches);
+      break;
     default:
       break;
     }
@@ -545,6 +550,11 @@ void dispatch_scaled_masked_softmax_backward(output_t *grad_input,
       break;
     case 11: // 2048
       scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 11>
+          <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
+              grad_input, grad, output, scale, batch_count, key_seq_len);
+      break;
+    case 12: // 4096
+      scaled_masked_softmax_warp_backward<input_t, output_t, acc_t, 12>
           <<<blocks, threads, 0, at::cuda::getCurrentCUDAStream()>>>(
               grad_input, grad, output, scale, batch_count, key_seq_len);
       break;
