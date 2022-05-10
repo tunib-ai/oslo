@@ -4,6 +4,26 @@ from pathlib import Path
 
 import torch
 from torch.utils import cpp_extension
+from oslo.torch.jit._utils import _set_jit_fusion_options
+
+_SOFTMAX_KERNEL = None
+
+
+def get_softmax_kernel():
+    global _SOFTMAX_KERNEL
+
+    try:
+        if _SOFTMAX_KERNEL is None:
+            _set_jit_fusion_options()
+            _SOFTMAX_KERNEL = SoftmaxBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _SOFTMAX_KERNEL
+
 
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
     os.path.expanduser("~"),
@@ -106,3 +126,16 @@ class Binder(object):
             additional_flags.append(f"-maxrregcount={maxrregcount}")
 
         return nvcc_flags + additional_flags
+
+
+class SoftmaxBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_softmax"
+
+    def sources(self):
+        return [
+            "scaled_masked_softmax.cu",
+            "scaled_upper_triang_masked_softmax.cu",
+            "SoftmaxBinder.cpp",
+        ]
