@@ -1,43 +1,99 @@
-import copy
+#include <torch/extension.h>
 
-    class ExpertParallelInfo(object) :def __init__(self, * name) :self.name = name
+torch::Tensor moe_dispatch_cuda_forward(int s, int ec, int h,
+                                        torch::Tensor batch_tokens,
+                                        torch::Tensor mask,
+                                        torch::Tensor dest_idx);
 
-                                                   def __str__(self) : return f "{self.__class__.__qualname__}({self.name})"
+torch::Tensor moe_dispatch_cuda_backward(int s, int ec, int h,
+                                         torch::Tensor expert_grad,
+                                         torch::Tensor mask,
+                                         torch::Tensor dest_idx);
 
-                                                   def __repr__(self) : return self.__str__()
+torch::Tensor moe_combine_cuda_forward(int s, int e, int c, int h,
+                                       torch::Tensor expert_tokens,
+                                       torch::Tensor logits, torch::Tensor mask,
+                                       torch::Tensor dest_idx);
 
-                                                                    Front = type("Front", (ExpertParallelInfo, ), {}) Behind = type("Behind", (ExpertParallelInfo, ), {})
+std::vector<torch::Tensor>
+moe_combine_cuda_backward(int s, int e, int c, int h, torch::Tensor tokens_grad,
+                          torch::Tensor expert_tokens, torch::Tensor logits,
+                          torch::Tensor mask, torch::Tensor dest_idx);
 
-                                                                                                                                                  class ExpertParallelMapping(object) :__MAPPING__ = {}
+torch::Tensor cumsum_sub_one_in_dim0(torch::Tensor mask);
 
-                                                                                                                                    def __init__(self, ep_mapping = None) : if isinstance (ep_mapping, dict) :self.__MAPPING__.update(ep_mapping) elif ep_mapping is not None:raise ValueError("The argument `ep_mapping` must be None or dict")
+#define CHECK_CUDA(x)                                                          \
+  TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x)                                                    \
+  TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x)                                                         \
+  CHECK_CUDA(x);                                                               \
+  CHECK_CONTIGUOUS(x)
 
-                                                                                                                                                                                                           cache_mapping = {} for cls, mapping in self.__MAPPING__.items() :cache_mapping[cls] =[]
+torch::Tensor moe_dispatch_forward(int s, int ec, int h,
+                                   torch::Tensor batch_tokens,
+                                   torch::Tensor mask, torch::Tensor dest_idx) {
 
-                                                                                                                                                                                                                                                                                                 for elem in mapping: for name in elem.name:copy_elem = copy.deepcopy(elem) copy_elem.name = name cache_mapping[cls].append(copy_elem)
+  CHECK_INPUT(batch_tokens);
+  CHECK_CUDA(mask);
+  CHECK_CUDA(dest_idx);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                self.__MAPPING__ = {cls: {} for cls in cache_mapping }
+  return moe_dispatch_cuda_forward(s, ec, h, batch_tokens, mask, dest_idx);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                    for cls, mapping in cache_mapping.items() : for elem in mapping: if elem.__class__.__qualname__ in self.__MAPPING__[cls] :self.__MAPPING__[cls][elem.__class__.__qualname__].append(elem) else :self.__MAPPING__[cls][elem.__class__.__qualname__] =[elem]
+torch::Tensor moe_dispatch_backward(int s, int ec, int h,
+                                    torch::Tensor expert_grad,
+                                    torch::Tensor mask,
+                                    torch::Tensor dest_idx) {
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          def get_mapping(self, model) :
+  CHECK_INPUT(expert_grad);
+  CHECK_CUDA(mask);
+  CHECK_CUDA(dest_idx);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          mapping_by_model = None for cls, mapping in self.__MAPPING__.items() : if isinstance (model, cls) :mapping_by_model = mapping
+  return moe_dispatch_cuda_backward(s, ec, h, expert_grad, mask, dest_idx);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                assert mapping_by_model is not None, (f "Currently, {model.__class__.__qualname__} is not supported. " f "The current supported models are {list(self.__MAPPING__.keys())}")
+torch::Tensor moe_combine_forward(int s, int e, int c, int h,
+                                  torch::Tensor expert_tokens,
+                                  torch::Tensor logits, torch::Tensor mask,
+                                  torch::Tensor dest_idx) {
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         return mapping_by_model
+  CHECK_INPUT(expert_tokens);
+  CHECK_INPUT(logits);
+  CHECK_CUDA(mask);
+  CHECK_CUDA(dest_idx);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                def search(self, model, param_name) :
+  return moe_combine_cuda_forward(s, e, c, h, expert_tokens, logits, mask,
+                                  dest_idx);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           mapping = self.get_mapping(model) count_contain_elem_in_param = 0 param_split = param_name.split(".") first_check =[]
+std::vector<torch::Tensor>
+moe_combine_backward(int s, int e, int c, int h, torch::Tensor tokens_grad,
+                     torch::Tensor expert_tokens, torch::Tensor logits,
+                     torch::Tensor mask, torch::Tensor dest_idx) {
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               for elems in mapping.values() : for elem in elems: if elem.name in param_name:first_check.append(elem)
+  CHECK_INPUT(tokens_grad);
+  CHECK_INPUT(logits);
+  CHECK_CUDA(mask);
+  CHECK_CUDA(dest_idx);
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    for elem in first_check:elem_split = elem.name.split(".") for split in elem_split: if split in param_split:count_contain_elem_in_param += 1 if count_contain_elem_in_param == len(elem_split) : return elem
+  return moe_combine_cuda_backward(s, e, c, h, tokens_grad, expert_tokens,
+                                   logits, mask, dest_idx);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                return None
+torch::Tensor moe_cumsum(torch::Tensor mask) {
+  CHECK_INPUT(mask);
+  return cumsum_sub_one_in_dim0(mask);
+}
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                def is_front_parallel(self, model, param_name) :elem = self.search(model, param_name) if elem is not None: return isinstance(elem, Front)
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 def is_behind_parallel(self, model, param_name) :elem = self.search(model, param_name) if elem is not None: return isinstance(elem, Behind)
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("cumsum_sub_one", &moe_cumsum, "Fast cumsum operation in dim0");
+  m.def("dispatch_forward", &moe_dispatch_forward,
+        "Forward operation in MoE dispatch function");
+  m.def("dispatch_backward", &moe_dispatch_backward,
+        "Backward operation in MoE dispatch function");
+  m.def("combine_forward", &moe_combine_forward,
+        "Combine operation in MoE combine function");
+  m.def("combine_backward", &moe_combine_backward,
+        "Combine operation in MoE combine function");
+}
