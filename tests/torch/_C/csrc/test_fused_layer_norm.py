@@ -10,8 +10,8 @@ class TestFusedLayerNorm(unittest.TestCase):
     elementwise_affine = False
     normalized_shape = [32, 16]
     rtol, atol = None, None
-    fwd_thresholds = dict(rtol=None, atol=None) # rtol=1, atol=1 to pass the test
-    bwd_thresholds = dict(rtol=None, atol=None) # rtol=1, atol=1 to pass the test
+    fwd_thresholds = dict(rtol=None, atol=None)  # rtol=1, atol=1 to pass the test
+    bwd_thresholds = dict(rtol=None, atol=None)  # rtol=1, atol=1 to pass the test
     mixed_fused = False
 
     def setUp(self) -> None:
@@ -132,6 +132,7 @@ class TestFusedLayerNormElemWiseBFloat16(TestFusedLayerNormElemWise):
 
     def test_large_batch(self):
         self.skipTest("Skip to save time")
+
 
 # Test FusedRMSNorm
 class TestFusedRMSNorm(unittest.TestCase):
