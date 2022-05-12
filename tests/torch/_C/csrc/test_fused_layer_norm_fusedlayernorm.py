@@ -4,6 +4,7 @@ import itertools
 
 import oslo.torch.nn as onn
 
+
 # Test FusedLayerNorm
 class TestFusedLayerNorm(unittest.TestCase):
     dtype = torch.float
