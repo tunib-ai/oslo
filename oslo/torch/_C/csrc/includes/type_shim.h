@@ -1,7 +1,7 @@
 #include <ATen/ATen.h>
 #include "compat.h"
 
-// Forward/backward compatiblity hack around
+// Forward/backward compatibility hack around
 // https://github.com/pytorch/pytorch/commit/3aeb78079bcd68282fe9117088e138b77318e288
 // pending more future-proof guidance from upstream.
 // struct TypeShim
