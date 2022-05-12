@@ -9,7 +9,6 @@ from torch.nn import functional as F
 from oslo.torch import nn as onn
 
 
-
 # Reference implementation from Huggingface
 def manual_rms_norm(input, normalized_shape, weight, eps):
     # layer norm should always be calculated in float32
