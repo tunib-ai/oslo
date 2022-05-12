@@ -21,29 +21,28 @@ from packaging import version
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
+from .data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 
 
-if is_in_notebook():
-    from .utils.notebook import NotebookProgressCallback
+from .training_args import ParallelMode, TrainingArguments
+from .trainer_utils import set_seed
+from .trainer_callback import (
+    # CallbackHandler,
+    DefaultFlowCallback,
+    # PrinterCallback,
+    # ProgressCallback,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+)
+from .utils import (logging)
 
-    DEFAULT_PROGRESS_CALLBACK = NotebookProgressCallback
-
-# TODO apex available
-# if is_apex_available():
-#     from apex import amp
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
     _is_torch_generator_available = True
     _is_native_amp_available = True
     from torch.cuda.amp import autocast
 
-if is_datasets_available():
-    import datasets
-
-if is_torch_tpu_available():
-    import torch_xla.core.xla_model as xm
-    import torch_xla.debug.metrics as met
-    import torch_xla.distributed.parallel_loader as pl
 
 if TYPE_CHECKING:
     import optuna
@@ -57,6 +56,8 @@ OPTIMIZER_NAME = "optimizer.pt"
 SCHEDULER_NAME = "scheduler.pt"
 SCALER_NAME = "scaler.pt"
 
+DEFAULT_CALLBACKS = [DefaultFlowCallback]
+
 
 class Trainer:
 
@@ -68,14 +69,13 @@ class Trainer:
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
-        model_init: Callable[[], PreTrainedModel] = None,
+        # model_init: Callable[[], PreTrainedModel] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
         preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
     ):
 
-        # TODO - Task A: Crate TrainingArguments
         if args is None:
             # No Arguments passed
             output_dir = "tmp_trainer"
@@ -102,19 +102,19 @@ class Trainer:
         # force device and distributed setup init explicitly
         args._setup_devices
 
-        # TODO - Task B Create self.call_model_init()
-        if model is None:
-            if model_init is not None:
-                self.model_init = model_init
-                model = self.call_model_init()
-        else:
-            if model_init is not None:
-                warnings.warn(
-                    "`Trainer` requires either a `model` or `model_init` argument, but not both. "
-                    "`model_init` will overwrite your model when calling the `train` method. This will become a fatal error in the next release.",
-                    FutureWarning,
-                )
-            self.model_init = model_init
+        # # TODO - Task B Create self.call_model_init() => out
+        # if model is None:
+        #     if model_init is not None:
+        #         self.model_init = model_init
+        #         model = self.call_model_init()
+        # else:
+        #     if model_init is not None:
+        #         warnings.warn(
+        #             "`Trainer` requires either a `model` or `model_init` argument, but not both. "
+        #             "`model_init` will overwrite your model when calling the `train` method. This will become a fatal error in the next release.",
+        #             FutureWarning,
+        #         )
+        #     self.model_init = model_init
 
         if hasattr(model, "is_parallelizable") and model.is_parallelizable and model.model_parallel:
             self.is_model_parallel = True
@@ -150,7 +150,7 @@ class Trainer:
         self.place_model_on_device = args.place_model_on_device # GPU에 올릴 것인지 말건지
         if (
             self.is_model_parallel
-            or args.deepspeed
+            # or args.deepspeed
             or ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
             # TODO; or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
         ):
@@ -164,8 +164,8 @@ class Trainer:
         self.tokenizer = tokenizer
 
         # TODO - Task E: Create self._move_model_to_device
-        if self.place_model_on_device:
-            self._move_model_to_device(model, args.device)
+        # if self.place_model_on_device:
+        #     self._move_model_to_device(model, args.device)
 
         # Force n_gpu to 1 to avoid DataParallel as MP will manage the GPUs
         if self.is_model_parallel:
@@ -179,11 +179,11 @@ class Trainer:
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
         self.optimizer, self.lr_scheduler = optimizers
 
-        if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
-            raise RuntimeError(
-                "Passing a `model_init` is incompatible with providing the `optimizers` argument. "
-                "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
-            )
+        # if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
+        #     raise RuntimeError(
+        #         "Passing a `model_init` is incompatible with providing the `optimizers` argument. "
+        #         "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
+        #     )
 
         # TODO - Task F: Create all CALLBACKS functions (includes TrainerCallback)
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
@@ -231,23 +231,15 @@ class Trainer:
                         args.half_precision_backend = "apex"
             logger.info(f"Using {args.half_precision_backend} half precision backend")
 
-            if args.half_precision_backend == "amp":
-                self.use_amp = True
-                self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
-                self.do_grad_scaling = True
-                if self.sharded_ddp is not None:
-                    self.scaler = ShardedGradScaler()
-                elif is_torch_tpu_available():
-                    from torch_xla.amp import GradScaler
-                    self.scaler = GradScaler()
-                else:
-                    self.scaler = torch.cuda.amp.GradScaler()
+            self.use_amp = True
+            self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
+            self.do_grad_scaling = True
+            if self.sharded_ddp is not None:
+                self.scaler = ShardedGradScaler()
+
             else:
-                if not is_apex_available():
-                    raise ImportError(
-                        "Using FP16 with APEX but APEX is not installed, please refer to https://www.github.com/nvidia/apex."
-                    )
-                self.use_apex = True
+                self.scaler = torch.cuda.amp.GradScaler()
+
 
         # TODO - Task H: LabelSmoother
         if self.args.label_smoothing_factor != 0:
@@ -285,6 +277,19 @@ class Trainer:
     def predict(self):
         pass
 
+    # def call_model_init(self, trial=None):
+    #     model_init_argcount = number_of_arguments(self.model_init)
+    #     if model_init_argcount == 0:
+    #         model = self.model_init()
+    #     elif model_init_argcount == 1:
+    #         model = self.model_init(trial)
+    #     else:
+    #         raise RuntimeError("model_init should have 0 or 1 argument.")
+    #
+    #     if model is None:
+    #         raise RuntimeError("model_init should not return None.")
+    #
+    #     return model
 
 
 
