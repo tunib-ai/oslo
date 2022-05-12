@@ -250,3 +250,55 @@ class DataCollatorForBERTstylePretraining:
             raise ValueError("Length of covered_indexes is not equal to length of masked_lms.")
         mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
         return mask_labels
+
+
+class ProcessorForMASSstylePretraining(ProcessorForBERTstylePretraining):
+    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+        super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
+
+
+class DataCollatorForMASSstylePretraining(DataCollatorForBERTstylePretraining):
+    """
+    Processing training examples to mini-batch for T5 MASS_style masking language modeling (mlm+wwm).
+    """
+
+    def __init__(
+        self,
+        processor: ProcessorForMASSstylePretraining,
+        mlm_probability: float,
+        pad_to_multiple_of: Optional[int] = None,
+    ):
+        super().__init__(processor=processor, mlm_probability=mlm_probability, pad_to_multiple_of=pad_to_multiple_of)
+
+    
+    def torch_mask_tokens(self, inputs: Any, mask_labels: Any) -> Tuple[Any, Any]:
+        """
+        Prepare masked tokens inputs/labels for masked language modeling: 90% MASK, 10% random. Set
+        'mask_labels' means we use whole word mask (wwm), we directly mask idxs according to it's ref.
+        """
+
+        if self.mask_token is None:
+            raise ValueError(
+                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
+            )
+        labels = inputs.clone()
+        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+
+        probability_matrix = mask_labels
+
+        special_tokens_mask = [
+            self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
+        ]
+        probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
+        if self.tokenizer._pad_token is not None:
+            padding_mask = labels.eq(self.tokenizer.pad_token_id)
+            probability_matrix.masked_fill_(padding_mask, value=0.0)
+
+        masked_indices = probability_matrix.bool()
+        labels[~masked_indices] = -100  # We only compute loss on masked tokens
+
+        # 100% of the time, we replace masked input tokens with mask_token
+        indices_replaced = torch.bernoulli(torch.full(labels.shape, 1.0)).bool() & masked_indices
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.mask_token)
+
+        return inputs
