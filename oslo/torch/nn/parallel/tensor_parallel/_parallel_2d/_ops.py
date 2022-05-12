@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.cuda.amp import custom_bwd, custom_fwd
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.distributed._ops import all_gather, all_reduce, reduce_scatter
+from oslo.torch.distributed.nn.functional import all_gather, all_reduce, reduce_scatter
 
 
 def matmul_2d(

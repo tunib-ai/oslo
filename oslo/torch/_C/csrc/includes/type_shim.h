@@ -169,9 +169,6 @@
     case at::ScalarType::BFloat16:                                             \
     {                                                                          \
       using scalar_t_out = at::BFloat16;                                       \
-      __VA_ARGS__;                                                             \
-      break;                                                                   \
-    }                                                                          \
     default:                                                                   \
       AT_ERROR(#NAME, " not implemented for '", toString(TYPEOUT), "'");       \
     }                                                                          \

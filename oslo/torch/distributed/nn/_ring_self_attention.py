@@ -1,11 +1,12 @@
 import torch
 import torch.distributed as dist
-from torch.cuda.amp import custom_bwd, custom_fwd
+from torch.cuda.amp import custom_fwd, custom_bwd
 
-from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.distributed.parallel_context import ParallelContext
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
-def send_forward_recv_forward(
+def _send_forward_recv_forward(
     tensor_send_next: torch.Tensor,
     parallel_context: ParallelContext,
     parallel_mode: ParallelMode,
@@ -16,10 +17,12 @@ def send_forward_recv_forward(
     This function assumes that the receiving tensor has the same shape with the sending tensor.
 
     This function is based on the `send_forward_recv_forward` implementation of Megatron-LM.
+
     Args:
         tensor_send_next: Tensor sent to next member
         parallel_context: ParallelContext holding process group information
         parallel_mode: Parallel group mode used in this communication
+
     Returns:
         :class:`torch.Tensor`: The tensor received from the previous.
     """
@@ -109,7 +112,7 @@ class _RingQK(torch.autograd.Function):
         sub_k = sub_k.contiguous()
         # compute QK^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(
+            sub_k = _send_forward_recv_forward(
                 sub_k, parallel_context, ParallelMode.SEQUENCE
             )
             sub_attn_part = torch.einsum("b q d, b k d -> b q k", sub_q, sub_k)
@@ -161,7 +164,7 @@ class _RingQK(torch.autograd.Function):
         sub_k = sub_k.contiguous()
         # compute (dL/dZ)K in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_k = send_forward_recv_forward(
+            sub_k = _send_forward_recv_forward(
                 sub_k, parallel_context, ParallelMode.SEQUENCE
             )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
@@ -215,7 +218,7 @@ class _RingAV(torch.autograd.Function):
         sub_v = sub_v.contiguous()
         # compute AV in ring - all - reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(
+            sub_v = _send_forward_recv_forward(
                 sub_v, parallel_context, ParallelMode.SEQUENCE
             )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
@@ -264,7 +267,7 @@ class _RingAV(torch.autograd.Function):
         sub_v = sub_v.contiguous()
         # compute (dL/dZ)V^T in ring-all-reduce style
         for i in range(local_world_size - 1):
-            sub_v = send_forward_recv_forward(
+            sub_v = _send_forward_recv_forward(
                 sub_v, parallel_context, ParallelMode.SEQUENCE
             )
             sender_local_rank = (local_rank - 1 - i) % local_world_size
