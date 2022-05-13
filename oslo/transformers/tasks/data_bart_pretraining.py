@@ -30,7 +30,7 @@ class ProcessorForBartPretraining(BaseProcessor):
 
         dict_of_training_examples: Dict[str, List[int]] = {
             "input_ids": [],
-            "mask_infilling_labels": []
+            "text_infilling_labels": []
         }
 
         list_of_input_ids: List[List[int]] = self._tokenizer(
@@ -48,10 +48,10 @@ class ProcessorForBartPretraining(BaseProcessor):
             mask_span_length = np.random.poisson(lam=3)
             while len(self._buffer) >= self._chunk_size + mask_span_length:
                 chunk_ids = self._buffer[: self._chunk_size + mask_span_length]
-                mask_chunk_ids = self._prepare_mask_infilling(chunk_ids, mask_span_length)
+                mask_chunk_ids = self._prepare_text_infilling(chunk_ids, mask_span_length)
 
                 dict_of_training_examples["input_ids"].append(mask_chunk_ids)
-                dict_of_training_examples["mask_infilling_labels"].append(mask_span_length)
+                dict_of_training_examples["text_infilling_labels"].append(mask_span_length)
 
                 self._buffer = self._buffer[self._chunk_size + mask_span_length :]
 
@@ -70,7 +70,7 @@ class ProcessorForBartPretraining(BaseProcessor):
                 
         return splited_texts
     
-    def _prepare_mask_infilling(self, chunk_ids: List[int], mask_span_length: int) -> List[int]:
+    def _prepare_text_infilling(self, chunk_ids: List[int], mask_span_length: int) -> List[int]:
         seq_length = len(chunk_ids)
         start_position, end_position = 0, seq_length
         while self._tokenizer.sep_token_id in chunk_ids[start_position : end_position]:
@@ -83,7 +83,7 @@ class ProcessorForBartPretraining(BaseProcessor):
 
 class DataCollatorForBartPretraining:
     """
-    Processing training examples to mini-batch for Bart (mask_infilling, sentence_permutation).
+    Processing training examples to mini-batch for Bart (text_infilling, sentence_permutation).
     """
 
     def __init__(
@@ -127,7 +127,7 @@ class DataCollatorForBartPretraining:
                 {
                     "input_ids": input_ids,
                     "sentence_permutation_labels": chunk_ids,
-                    "mask_infilling_labels": example["mask_infilling_labels"],
+                    "text_infilling_labels": example["text_infilling_labels"],
                 }
             )
             
