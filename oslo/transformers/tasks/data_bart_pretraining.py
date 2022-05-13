@@ -26,7 +26,7 @@ class ProcessorForBartPretraining(BaseProcessor):
             "text" in column_names
         ), "The name of dataset column that you want to tokenize must be 'text'"
 
-        examples["text"] = self._split_by_full_stops(examples["text"])
+        examples["text"] = self._split_by_full_stop(examples["text"])
 
         dict_of_training_examples: Dict[str, List[int]] = {
             "input_ids": [],
@@ -57,7 +57,7 @@ class ProcessorForBartPretraining(BaseProcessor):
 
         return dict_of_training_examples
     
-    def _split_by_full_stops(self, texts: List[str]) -> List[str]:
+    def _split_by_full_stop(self, texts: List[str]) -> List[str]:
         splited_texts = []
         for text in texts:
             splited_sentences = ""

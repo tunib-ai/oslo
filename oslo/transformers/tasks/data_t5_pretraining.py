@@ -7,6 +7,7 @@ from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 try:
     from transformers import (
+        AutoTokenizer,
         T5Tokenizer,
         T5TokenizerFast,
     )
@@ -15,7 +16,166 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 
-class ProcessorForT5PrefixLanguageModeling(BaseProcessor):
+class ProcessorForT5Pretraining(BaseProcessor):
+    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+        self._tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, model_max_length=max_length)
+
+    def __call__(self, examples: Batch) -> Dict[str, List[int]]:
+        column_names = [k for k, v in examples.items()]
+        assert (
+            "text" in column_names
+        ), "The name of dataset column that you want to tokenize must be 'text'"
+
+        dict_of_training_examples: Dict[str, List[int]] = {"input_ids": []}
+
+        list_of_input_ids: List[List[int]] = self._tokenizer(
+            examples["text"],
+            padding=False,
+            truncation=True,
+            return_attention_mask=False,
+            return_special_tokens_mask=False,
+            verbose=False,
+        )["input_ids"]
+
+        dict_of_training_examples["input_ids"] = list_of_input_ids
+
+        return dict_of_training_examples
+
+
+class DataCollatorForT5Pretraining:
+    """
+    Processing training examples to mini-batch for T5 baseline pretraining (replace spans).
+    """
+
+    def __init__(
+        self,
+        processor: ProcessorForT5Pretraining,
+        mlm_probability: float,
+        pad_to_multiple_of: Optional[int] = None,
+    ):
+        self.tokenizer = processor._tokenizer
+        self.mlm_probability = mlm_probability
+        self.pad_to_multiple_of = pad_to_multiple_of
+        self.mask_token_ids = self.tokenizer.additional_special_tokens_ids[::-1]
+    
+    def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
+        examples = self._prepare_replace_span_from_examples(examples)
+        input_ids = [example["input_ids"] for example in examples]
+        labels = [example["labels"] for example in examples]
+
+        batch = {
+            "input_ids": _torch_collate_batch(
+                input_ids,
+                tokenizer=self.tokenizer,
+                pad_to_multiple_of=self.pad_to_multiple_of,
+            ),
+            "labels": _torch_collate_batch(
+                labels,
+                tokenizer=self.tokenizer,
+                pad_to_multiple_of=self.pad_to_multiple_of,
+            ),
+        }
+        return batch
+    
+    def _prepare_replace_span_from_examples(self, examples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        output_examples = []
+        for example in examples:
+            input_ids = example["input_ids"]
+            ref_tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
+            mask_labels = self._whole_word_mask(ref_tokens)
+            masked_inputs_ids = self.replace_span(input_ids, self.mask_token_ids, mask_labels)
+            labels = self.replace_span(input_ids, self.mask_token_ids, mask_labels, labels=True)
+            # labels.append(self.tokenizer.eos_token_id)
+
+            output_examples.append(
+                {
+                    "input_ids": masked_inputs_ids,
+                    "labels": labels,
+                }
+            )
+        return output_examples
+    
+    def _whole_word_mask(self, input_tokens: List[str], max_predictions=512):
+        """
+        Get 0/1 labels for masked tokens with whole word mask proxy
+        """
+        if not isinstance(self.tokenizer, (T5Tokenizer, T5TokenizerFast)):
+            warnings.warn(
+                "DataCollatorForBartTokenMasking is only suitable for T5Tokenizer-like tokenizers. "
+            )
+
+        cand_indexes = []
+        for (i, token) in enumerate(input_tokens):
+            if token == "</s>":
+                continue
+            
+            if not cand_indexes:
+                cand_indexes.append([i])
+            elif token.startswith("▁"):
+                cand_indexes.append([i])
+            else:
+                cand_indexes[-1].append(i)
+
+        random.shuffle(cand_indexes)
+        num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * self.mlm_probability))))
+        masked_lms = []
+        covered_indexes = set()
+        for index_set in cand_indexes:
+            if len(masked_lms) >= num_to_predict:
+                break
+            # If adding a whole-word mask would exceed the maximum number of
+            # predictions, then just skip this candidate.
+            if len(masked_lms) + len(index_set) > num_to_predict:
+                continue
+            is_any_index_covered = False
+            for index in index_set:
+                if index in covered_indexes:
+                    is_any_index_covered = True
+                    break
+            if is_any_index_covered:
+                continue
+            for index in index_set:
+                covered_indexes.add(index)
+                masked_lms.append(index)
+
+        if len(covered_indexes) != len(masked_lms):
+            raise ValueError("Length of covered_indexes is not equal to length of masked_lms.")
+        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
+        return mask_labels
+
+    def replace_span(
+        self, 
+        inputs: List[int], 
+        mask_token_ids: List[int], 
+        mask_labels: List[int], 
+        labels: bool=False
+    ) -> List[int]:
+
+        if labels:
+            mask_labels = [0 if mask_label == 1 else 1 for mask_label in mask_labels]
+        
+        mask_token_ids = mask_token_ids[:]
+        prev_mask_label, prev_masked_idx, masked_inputs = 0, 0, []
+
+        for idx, mask_label in enumerate(mask_labels):
+            if prev_mask_label == mask_label:
+                continue
+            else:
+                if mask_label == 1:
+                    mask_token_id = mask_token_ids.pop()
+                    masked_inputs.extend( inputs[prev_masked_idx : idx] + [mask_token_id] )
+                    prev_mask_label = mask_label
+                else:
+                    prev_masked_idx = idx
+                    prev_mask_label = mask_label
+
+        if mask_labels[-1] == 0:
+            masked_inputs.extend(inputs[prev_masked_idx:])
+
+        return masked_inputs
+
+
+class ProcessorForPrefixLanguageModeling(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
 
@@ -60,14 +220,14 @@ class ProcessorForT5PrefixLanguageModeling(BaseProcessor):
         return inputs, targets
 
 
-class DataCollatorForT5PrefixLanguageModeling:
+class DataCollatorForPrefixLanguageModeling:
     """
     Processing training examples to mini-batch for T5 (prefix language modeling).
     """
 
     def __init__(
         self,
-        processor: ProcessorForT5PrefixLanguageModeling,
+        processor: ProcessorForPrefixLanguageModeling,
         pad_to_multiple_of: Optional[int] = None,
     ):
         self.tokenizer = processor._tokenizer
@@ -126,7 +286,7 @@ class ProcessorForBERTstylePretraining(BaseProcessor):
         return dict_of_training_examples
 
 
-class DataCollatorForBERTstylePretraining:
+class DataCollatorForBERTstylePretraining(DataCollatorForT5Pretraining):
     """
     Processing training examples to mini-batch for T5 BERT_style masking language modeling (mlm+wwm).
     """
@@ -197,60 +357,12 @@ class DataCollatorForBERTstylePretraining:
         inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.mask_token)
 
         # 10% of the time, we replace masked input tokens with random word
-        indices_random = torch.bernoulli(torch.full(labels.shape, 1.0)).bool() & masked_indices & ~indices_replaced
+        indices_random = masked_indices & ~indices_replaced
         random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
         inputs[indices_random] = random_words[indices_random]
 
         return inputs
     
-    def _whole_word_mask(self, input_tokens: List[str], max_predictions=512):
-        """
-        Get 0/1 labels for masked tokens with whole word mask proxy
-        """
-        if not isinstance(self.tokenizer, (T5Tokenizer, T5TokenizerFast)):
-            warnings.warn(
-                "DataCollatorForBartTokenMasking is only suitable for T5Tokenizer-like tokenizers. "
-            )
-
-        cand_indexes = []
-        for (i, token) in enumerate(input_tokens):
-            if token == "</s>":
-                continue
-            
-            if not cand_indexes:
-                cand_indexes.append([i])
-            elif token.startswith("▁"):
-                cand_indexes.append([i])
-            else:
-                cand_indexes[-1].append(i)
-
-        random.shuffle(cand_indexes)
-        num_to_predict = min(max_predictions, max(1, int(round(len(input_tokens) * self.mlm_probability))))
-        masked_lms = []
-        covered_indexes = set()
-        for index_set in cand_indexes:
-            if len(masked_lms) >= num_to_predict:
-                break
-            # If adding a whole-word mask would exceed the maximum number of
-            # predictions, then just skip this candidate.
-            if len(masked_lms) + len(index_set) > num_to_predict:
-                continue
-            is_any_index_covered = False
-            for index in index_set:
-                if index in covered_indexes:
-                    is_any_index_covered = True
-                    break
-            if is_any_index_covered:
-                continue
-            for index in index_set:
-                covered_indexes.add(index)
-                masked_lms.append(index)
-
-        if len(covered_indexes) != len(masked_lms):
-            raise ValueError("Length of covered_indexes is not equal to length of masked_lms.")
-        mask_labels = [1 if i in covered_indexes else 0 for i in range(len(input_tokens))]
-        return mask_labels
-
 
 class ProcessorForMASSstylePretraining(ProcessorForBERTstylePretraining):
     def __init__(self, model_name_or_path: str, max_length: int) -> None:
@@ -273,8 +385,8 @@ class DataCollatorForMASSstylePretraining(DataCollatorForBERTstylePretraining):
     
     def torch_mask_tokens(self, inputs: Any, mask_labels: Any) -> Tuple[Any, Any]:
         """
-        Prepare masked tokens inputs/labels for masked language modeling: 90% MASK, 10% random. Set
-        'mask_labels' means we use whole word mask (wwm), we directly mask idxs according to it's ref.
+        Prepare masked tokens inputs/labels for masked language modeling: 100% MASK.
+        Set 'mask_labels' means we use whole word mask (wwm), we directly mask idxs according to it's ref.
         """
 
         if self.mask_token is None:
@@ -298,7 +410,6 @@ class DataCollatorForMASSstylePretraining(DataCollatorForBERTstylePretraining):
         labels[~masked_indices] = -100  # We only compute loss on masked tokens
 
         # 100% of the time, we replace masked input tokens with mask_token
-        indices_replaced = torch.bernoulli(torch.full(labels.shape, 1.0)).bool() & masked_indices
-        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.mask_token)
+        inputs[masked_indices] = self.tokenizer.convert_tokens_to_ids(self.mask_token)
 
         return inputs
