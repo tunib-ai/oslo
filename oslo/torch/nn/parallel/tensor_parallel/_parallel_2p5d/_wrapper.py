@@ -60,7 +60,11 @@ class _TensorParallel2p5D(ParallelWrapper):
         self._parallelize()
 
     def _parallelize(self):
-        pass
+        self._update_mp_arguments()
+        self._parallelize_embedding()
+        self._parallelize_modules()
+        _update_module_arguments(self.module, parallel_context=self.parallel_context)
+
 
     def _update_mp_arguments(self):
         for module in self.module.modules():
@@ -84,34 +88,44 @@ class _TensorParallel2p5D(ParallelWrapper):
 
         # world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW) * tesseract_dim + \
-            self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         embedding = module.get_input_embeddings()
 
         (
             vocab_start_index,
             vocab_end_index,
         ) = VocabUtility.vocab_range_from_global_vocab_size(
-            embedding.num_embeddings, rank, tesseract_dim
+            embedding.num_embeddings, col_rank, tesseract_dim
         )
         if isinstance(embedding, LazyModuleMixin):
             assert hasattr(embedding, "weight"), "embedding must has `weight`."
             embedding.initialize_parameters()
 
         # linear - 2p5d, embedding - 1d
-        weight_list = embedding.weight.chunk(tesseract_dim**2, dim=1)
+        # split weight into 0,4:[0], 1,5:[2], 2,6:[1], 3,7:[3]
+        w = embedding.weight.data.chunk(tesseract_dim, dim=1)[
+            self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        ]
+        w = w.chunk(tesseract_dim, dim=1)[
+            self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        ]
 
         if isinstance(embedding, LazyModuleMixin):
-            new_tensor = weight_list[rank].clone()
-            del weight_list, embedding.weight
+            new_tensor = w.clone()
+            del w, embedding.weight
             embedding.weight = nn.Parameter(new_tensor.contiguous())
         else:
-            embedding.weight.data = weight_list[rank].contiguous()
+            embedding.weight.data = w.contiguous()
 
             if hasattr(embedding.weight, "oslo_parallel"):
-                embedding.weight.oslo_parallel[ParallelMode.TENSOR] = rank
+                embedding.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                embedding.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
             else:
-                embedding.weight.oslo_parallel = {ParallelMode.TENSOR: rank}
+                embedding.weight.oslo_parallel = {
+                    ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                    ParallelMode.TENSOR_2P5D_COL: col_rank,
+                }
 
         _update_module_arguments(
             module=embedding,
@@ -144,7 +158,6 @@ class _TensorParallel2p5D(ParallelWrapper):
                     _module.__class__ = Linear2p5D
                 else:
                     raise RuntimeError("Classifier layer must be `nn.Linear` class")
-        pass
 
     def _parallelize_modules(self):
         for param_name, module in self.module.named_modules():
