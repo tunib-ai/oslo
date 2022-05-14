@@ -59,13 +59,14 @@ class _TensorParallel2p5D(ParallelWrapper):
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 
+    @torch.no_grad()
     def _parallelize(self):
-        self._update_mp_arguments()
+        # self._update_mp_arguments()
         self._parallelize_embedding()
         self._parallelize_modules()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
-
+    # TODO: erase?
     def _update_mp_arguments(self):
         for module in self.module.modules():
             for elem in self.tensor_parallel_mapping.update_attrs(self.module):
