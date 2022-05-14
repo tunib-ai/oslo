@@ -21,28 +21,38 @@ from packaging import version
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
+from transformers import PreTrainedTokenizerBase
+
+# from .modeling_utils import PreTrainedModel, unwrap_model
 from .data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
-
-
 from .training_args import ParallelMode, TrainingArguments
-from .trainer_utils import set_seed
+from .trainer_utils import (
+    set_seed,
+    has_length,
+    EvalPrediction,
+)
 from .trainer_callback import (
-    # CallbackHandler,
+    CallbackHandler,
     DefaultFlowCallback,
     # PrinterCallback,
-    # ProgressCallback,
+    ProgressCallback,
     TrainerCallback,
     TrainerControl,
     TrainerState,
 )
-from .utils import (logging)
-
+from .trainer_pt_utils import (
+    LabelSmoother,)
+from .integrations import (  # isort: split
+    get_reporting_integration_callbacks)
+from .utils import (
+    logging,
+    find_labels,
+)
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
     _is_torch_generator_available = True
     _is_native_amp_available = True
     from torch.cuda.amp import autocast
-
 
 if TYPE_CHECKING:
     import optuna
@@ -57,13 +67,14 @@ SCHEDULER_NAME = "scheduler.pt"
 SCALER_NAME = "scaler.pt"
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
+DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 
 class Trainer:
 
     def __init__(
         self,
-        model: Union[PreTrainedModel, nn.Module] = None,
+        model: nn.Module = None,
         args: TrainingArguments = None,
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
@@ -72,20 +83,23 @@ class Trainer:
         # model_init: Callable[[], PreTrainedModel] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-        preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
+        optimizers: Tuple[torch.optim.Optimizer,
+                          torch.optim.lr_scheduler.LambdaLR] = (None, None),
+        preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor],
+                                                torch.Tensor] = None,
     ):
 
         if args is None:
             # No Arguments passed
             output_dir = "tmp_trainer"
-            logger.info(f"No `TrainingArguments` passed, using `output_dir={output_dir}`.")
+            logger.info(
+                f"No `TrainingArguments` passed, using `output_dir={output_dir}`."
+            )
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
         set_seed(self.args.seed)
         self.hp_name = None  # TODO ?
-        self.deepspeed = None  # TODO ?
         self.is_in_train = False  # TODO ?
 
         # TODO check - should we support memory tracker?
@@ -102,7 +116,7 @@ class Trainer:
         # force device and distributed setup init explicitly
         args._setup_devices
 
-        # # TODO - Task B Create self.call_model_init() => out
+        # # Removed
         # if model is None:
         #     if model_init is not None:
         #         self.model_init = model_init
@@ -116,7 +130,8 @@ class Trainer:
         #         )
         #     self.model_init = model_init
 
-        if hasattr(model, "is_parallelizable") and model.is_parallelizable and model.model_parallel:
+        if hasattr(model, "is_parallelizable"
+                  ) and model.is_parallelizable and model.model_parallel:
             self.is_model_parallel = True
         else:
             self.is_model_parallel = False
@@ -147,17 +162,18 @@ class Trainer:
         #    and we only use deepspeed for training at the moment
         # 3. full bf16 or fp16 eval - since the model needs to be cast to the right dtype first
         # 4. Sharded DDP - same as MP
-        self.place_model_on_device = args.place_model_on_device # GPU에 올릴 것인지 말건지
-        if (
-            self.is_model_parallel
-            # or args.deepspeed
-            or ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
-            # TODO; or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
-        ):
+        self.place_model_on_device = args.place_model_on_device  # GPU에 올릴 것인지 말건지
+        if (self.is_model_parallel
+                # or args.deepspeed
+                or
+            ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
+                # TODO; or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
+           ):
             self.place_model_on_device = False
 
         # TODO - Task D: Create src/transformers/data related to Trainer
-        default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
+        default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(
+            tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
@@ -186,29 +202,39 @@ class Trainer:
         #     )
 
         # TODO - Task F: Create all CALLBACKS functions (includes TrainerCallback)
-        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(self.args.report_to)
+        default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(
+            self.args.report_to)
         callbacks = default_callbacks if callbacks is None else default_callbacks + callbacks
-        self.callback_handler = CallbackHandler(
-            callbacks, self.model, self.tokenizer, self.optimizer, self.lr_scheduler
-        )
-        self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
+        self.callback_handler = CallbackHandler(callbacks, self.model,
+                                                self.tokenizer, self.optimizer,
+                                                self.lr_scheduler)
+        # self.add_callback(PrinterCallback if self.args.disable_tqdm else DEFAULT_PROGRESS_CALLBACK)
+        self.callback_handler.add_callback(DEFAULT_PROGRESS_CALLBACK)
 
         # Will be set to True by `self._setup_loggers()` on first call to `self.log()`.
-        self._loggers_initialized = False # TODO check 어디에 쓰이는거지...?
+        self._loggers_initialized = False  # TODO check 어디에 쓰이는거지...?
 
         # remove push to hub
 
         if self.args.should_save:
             os.makedirs(self.args.output_dir, exist_ok=True)
 
-        if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
-            raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
+        if not callable(self.data_collator) and callable(
+                getattr(self.data_collator, "collate_batch", None)):
+            raise ValueError(
+                "The `data_collator` should be a simple callable (function, class with `__call__`)."
+            )
 
         if args.max_steps > 0:
-            logger.info("max_steps is given, it will override any value given in num_train_epochs")
+            logger.info(
+                "max_steps is given, it will override any value given in num_train_epochs"
+            )
 
-        if train_dataset is not None and not has_length(train_dataset) and args.max_steps <= 0:
-            raise ValueError("train_dataset does not implement __len__, max_steps has to be specified")
+        if train_dataset is not None and not has_length(
+                train_dataset) and args.max_steps <= 0:
+            raise ValueError(
+                "train_dataset does not implement __len__, max_steps has to be specified"
+            )
 
         # remove group_by_length
 
@@ -226,24 +252,28 @@ class Trainer:
                     args.half_precision_backend = "amp"
                 else:
                     if args.bf16:
-                        raise ValueError("Tried to use `bf16` but native amp is not available")
+                        raise ValueError(
+                            "Tried to use `bf16` but native amp is not available"
+                        )
                     else:
                         args.half_precision_backend = "apex"
-            logger.info(f"Using {args.half_precision_backend} half precision backend")
+            logger.info(
+                f"Using {args.half_precision_backend} half precision backend")
 
             self.use_amp = True
             self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
             self.do_grad_scaling = True
-            if self.sharded_ddp is not None:
-                self.scaler = ShardedGradScaler()
-
-            else:
-                self.scaler = torch.cuda.amp.GradScaler()
-
+            # TODO
+            # if self.sharded_ddp is not None:
+            #     self.scaler = ShardedGradScaler()
+            #
+            # else:
+            #     self.scaler = torch.cuda.amp.GradScaler()
 
         # TODO - Task H: LabelSmoother
         if self.args.label_smoothing_factor != 0:
-            self.label_smoother = LabelSmoother(epsilon=self.args.label_smoothing_factor)
+            self.label_smoother = LabelSmoother(
+                epsilon=self.args.label_smoothing_factor)
         else:
             self.label_smoother = None
 
@@ -263,19 +293,31 @@ class Trainer:
 
         default_label_names = find_labels(self.model.__class__)
         self.label_names = default_label_names if self.args.label_names is None else self.args.label_names
-        self.control = self.callback_handler.on_init_end(self.args, self.state, self.control)
-
+        self.control = self.callback_handler.on_init_end(
+            self.args, self.state, self.control)
 
     def train(self):
         pass
 
-
     def evaluate(self):
         pass
 
-
     def predict(self):
         pass
+
+    def is_local_process_zero(self) -> bool:
+        """
+        Whether or not this process is the local (e.g., on one machine if training in a distributed fashion on several
+        machines) main process.
+        """
+        return self.args.local_process_index == 0
+
+    def is_world_process_zero(self) -> bool:
+        """
+        Whether or not this process is the global main process (when training in a distributed fashion on several
+        machines, this is only going to be `True` for one process).
+        """
+        return self.args.process_index == 0
 
     # def call_model_init(self, trial=None):
     #     model_init_argcount = number_of_arguments(self.model_init)
@@ -290,11 +332,3 @@ class Trainer:
     #         raise RuntimeError("model_init should not return None.")
     #
     #     return model
-
-
-
-
-
-
-
-

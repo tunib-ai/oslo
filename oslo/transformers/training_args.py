@@ -844,23 +844,22 @@ class TrainingArguments:
                 if is_torch_tf32_available():
                     torch.backends.cuda.matmul.allow_tf32 = False
                 # no need to assert on else
-        # TODO
-        # if self.report_to is None:
-        #     logger.info(
-        #         "The default value for the training argument `--report_to` will change in v5 (from all installed "
-        #         "integrations to none). In v5, you will need to use `--report_to all` to get the same behavior as "
-        #         "now. You should start updating your code and make this info disappear :-)."
-        #     )
-        #     self.report_to = "all"
-        # if self.report_to == "all" or self.report_to == ["all"]:
-        #     # Import at runtime to avoid a circular import.
-        #     from .integrations import get_available_reporting_integrations
-        #
-        #     self.report_to = get_available_reporting_integrations()
-        # elif self.report_to == "none" or self.report_to == ["none"]:
-        #     self.report_to = []
-        # elif not isinstance(self.report_to, list):
-        #     self.report_to = [self.report_to]
+        if self.report_to is None:
+            logger.info(
+                "The default value for the training argument `--report_to` will change in v5 (from all installed "
+                "integrations to none). In v5, you will need to use `--report_to all` to get the same behavior as "
+                "now. You should start updating your code and make this info disappear :-)."
+            )
+            self.report_to = "all"
+        if self.report_to == "all" or self.report_to == ["all"]:
+            # Import at runtime to avoid a circular import.
+            from .integrations import get_available_reporting_integrations
+
+            self.report_to = get_available_reporting_integrations()
+        elif self.report_to == "none" or self.report_to == ["none"]:
+            self.report_to = []
+        elif not isinstance(self.report_to, list):
+            self.report_to = [self.report_to]
 
         if self.warmup_ratio < 0 or self.warmup_ratio > 1:
             raise ValueError("warmup_ratio must lie in range [0,1]")

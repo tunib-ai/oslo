@@ -8,6 +8,8 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 _torch_version = "N/A"
 
+ENV_VARS_TRUE_VALUES = {"1", "ON", "YES", "TRUE"}
+
 _torch_available = importlib.util.find_spec("torch") is not None
 if _torch_available:
     try:
