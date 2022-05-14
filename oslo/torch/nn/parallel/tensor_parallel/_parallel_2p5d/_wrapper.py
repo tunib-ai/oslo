@@ -1,3 +1,5 @@
+from typing import Dict
+
 import torch
 import torch.nn as nn
 
@@ -146,32 +148,24 @@ class _TensorParallel2p5D(ParallelWrapper):
 
     def _parallelize_modules(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
-                self._column_slice(
-                    module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
-                        self.module, param_name
-                    ),
-                    fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
-                        self.module, param_name, module
-                    ),
-                )
-                module.__class__ = ColumnParallelLinear
+            self._slice(
+                module=module,
+                reversed=self.tensor_parallel_mapping.is_reversed_param(
+                    self.module, param_name
+                ),
+                fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
+                    self.module, param_name, module
+                ),
+                slice_bias=True
+            )
+            module.__class__ = Linear2p5D
 
-            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
-                self._row_slice(
-                    module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
-                        self.module, param_name
-                    ),
-                    fusion_degree=1,
-                )
-                module.__class__ = RowParallelLinear
+    def _slice(self, module, reversed, fusion_degree, slice_bias):
+        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
 
-    def _slice(self, module, reversed, fusion_degree, slice_bias, dim):
-        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-        dim = dim if not reversed else abs(dim - 1)
+        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 
         _update_module_arguments(
             module=module,
@@ -190,25 +184,38 @@ class _TensorParallel2p5D(ParallelWrapper):
                 if isinstance(module, LazyModuleMixin):
                     module.initialize_parameters()
 
-                # TODO: 2p5d parallelization
-                weight_list = module.weight.chunk(fusion_degree * world_size, dim=dim)
+                # TODO: how to deal with fusion degree?
+                # if fusion_degree > 1:
+                #     weight_list = self._deconstruct_combined_qkv(
+                #         weight_list, world_size
+                #     )
 
-                if fusion_degree > 1:
-                    weight_list = self._deconstruct_combined_qkv(
-                        weight_list, world_size
-                    )
+                # split weight into 0,4:[0, 0], 1,5:[1, 0], 2,6:[0, 1], 3,7:[1, 1]
+                # input shape: (n/q, k/q)
+                w = module.weight.chunk(tesseract_dim, dim=1)[
+                    self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+                ]
+                w = w.chunk(tesseract_dim, dim=0)[
+                    self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+                ]
 
                 if isinstance(module, LazyModuleMixin):
-                    new_tensor = weight_list[rank].clone()
-                    del weight_list, module.weight
+                    new_tensor = w.clone()
+                    del w, module.weight
                     module.weight = nn.Parameter(new_tensor.contiguous())
                 else:
-                    module.weight.data = weight_list[rank].contiguous()
+                    module.weight.data = w.contiguous()
 
                 if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
                 else:
-                    module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+                    module.weight.oslo_parallel = {
+                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
+                        ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+                    }
 
             _update_module_arguments(
                 module=module,
@@ -218,21 +225,26 @@ class _TensorParallel2p5D(ParallelWrapper):
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(fusion_degree * world_size, dim=0)
-
-                if fusion_degree > 1:
-                    bias_list = self._deconstruct_combined_qkv(bias_list, world_size)
+                # TODO: how to deal with fusion degree?
+                # bias_list = module.bias.chunk(fusion_degree * world_size, dim=0)
+                # split bias into 0,4:[0], 2,6:[1]
+                # input shape: (k/q)
+                b = module.bias.chunk(tesseract_dim, dim=0)[
+                    self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+                ]
+                # if fusion_degree > 1:
+                #     bias_list = self._deconstruct_combined_qkv(bias_list, world_size)
 
                 if isinstance(module, LazyModuleMixin):
-                    new_tensor = bias_list[rank].clone()
-                    del bias_list, module.bias
+                    new_tensor = b.clone()
+                    del b, module.bias
                     module.bias = nn.Parameter(new_tensor.contiguous())
                 else:
-                    module.bias.data = bias_list[rank].contiguous()
+                    module.bias.data = b.contiguous()
 
                 if hasattr(module.bias, "oslo_parallel"):
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
                 else:
-                    module.bias.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+                    module.bias.oslo_parallel = {ParallelMode.TENSOR_2P5D_ROW: row_rank}
 
         return module
