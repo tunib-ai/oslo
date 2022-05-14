@@ -1,19 +1,34 @@
 import torch
 import torch.nn as nn
 
-from oslo.torch.distributed import ParallelContext
+import copy
+
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
-from oslo.torch.nn.parallel.utils import ParallelWrapper, is_huggingface_model
+from oslo.torch.nn.modules.embedding import (
+    VocabParallelEmbedding2p5D,
+    VocabUtility,
+)
+from oslo.torch.nn.modules.lazy import LazyModuleMixin
+from oslo.torch.nn.modules.linear import (
+    Linear2p5D,
+)
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
+from oslo.torch.nn.parallel.utils import (
+    ParallelWrapper,
+    _update_module_arguments,
+    is_huggingface_model,
+    is_oslo_model,
+)
 
 
-class _TensorParallel2D(ParallelWrapper):
+class _TensorParallel2p5D(ParallelWrapper):
     """
-    PyTorch module for 2D tensor parallelism
+    PyTorch module for 2.5D tensor parallelism
 
     Args:
         module (nn.Module): model object
@@ -46,10 +61,178 @@ class _TensorParallel2D(ParallelWrapper):
         pass
 
     def _update_mp_arguments(self):
-        pass
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    world_size = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_1D
+                    )
+                    reduced_arg = getattr(module, elem.name) // world_size
+                    setattr(module, elem.name, reduced_arg)
 
     def _parallelize_embedding(self):
+        module = self.module
+        while isinstance(module, ParallelWrapper):
+            module = module.module
+
+        assert hasattr(module, "get_input_embeddings"), (
+            "model object must have `get_input_embeddings` and "
+            "`get_output_embeddings` method."
+        )
+
+        # world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
+        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW) * tesseract_dim + \
+            self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        embedding = module.get_input_embeddings()
+
+        (
+            vocab_start_index,
+            vocab_end_index,
+        ) = VocabUtility.vocab_range_from_global_vocab_size(
+            embedding.num_embeddings, rank, tesseract_dim
+        )
+        if isinstance(embedding, LazyModuleMixin):
+            assert hasattr(embedding, "weight"), "embedding must has `weight`."
+            embedding.initialize_parameters()
+
+        # linear - 2p5d, embedding - 1d
+        weight_list = embedding.weight.chunk(tesseract_dim**2, dim=1)
+
+        if isinstance(embedding, LazyModuleMixin):
+            new_tensor = weight_list[rank].clone()
+            del weight_list, embedding.weight
+            embedding.weight = nn.Parameter(new_tensor.contiguous())
+        else:
+            embedding.weight.data = weight_list[rank].contiguous()
+
+            if hasattr(embedding.weight, "oslo_parallel"):
+                embedding.weight.oslo_parallel[ParallelMode.TENSOR] = rank
+            else:
+                embedding.weight.oslo_parallel = {ParallelMode.TENSOR: rank}
+
+        _update_module_arguments(
+            module=embedding,
+            vocab_start_index=vocab_start_index,
+            vocab_end_index=vocab_end_index,
+            parallel_context=self.parallel_context,
+            num_embeddings=embedding.weight.size()[0],
+            orig_module=copy.deepcopy(embedding.__class__),
+        )
+
+        if isinstance(embedding, nn.Embedding):
+            embedding.__class__ = VocabParallelEmbedding2p5D
+
+        for name, _module in module.named_modules():
+            if (
+                    hasattr(_module, "weight")
+                    and _module.weight is embedding.weight
+                    and not isinstance(_module, nn.Embedding)
+            ):
+                _update_module_arguments(
+                    module=_module,
+                    parallel_context=self.parallel_context,
+                    fusion_degree=1,
+                    orig_module=copy.deepcopy(_module.__class__),
+                    out_features=embedding.weight.size()[0],
+                )
+
+                # Embedding : 1d parallel, Linear : 2.5d parallel
+                if isinstance(_module, nn.Linear):
+                    _module.__class__ = Linear2p5D
+                else:
+                    raise RuntimeError("Classifier layer must be `nn.Linear` class")
         pass
 
     def _parallelize_modules(self):
-        pass
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
+                self._column_slice(
+                    module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                        self.module, param_name
+                    ),
+                    fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
+                        self.module, param_name, module
+                    ),
+                )
+                module.__class__ = ColumnParallelLinear
+
+            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._row_slice(
+                    module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                        self.module, param_name
+                    ),
+                    fusion_degree=1,
+                )
+                module.__class__ = RowParallelLinear
+
+    def _slice(self, module, reversed, fusion_degree, slice_bias, dim):
+        rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        dim = dim if not reversed else abs(dim - 1)
+
+        _update_module_arguments(
+            module=module,
+            parallel_context=self.parallel_context,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            orig_module=copy.deepcopy(module.__class__),
+            gather_output=False,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
+        if hasattr(module, "weight") and module.weight is not None:
+            if module.weight.dim() >= 1:
+                if isinstance(module, LazyModuleMixin):
+                    module.initialize_parameters()
+
+                # TODO: 2p5d parallelization
+                weight_list = module.weight.chunk(fusion_degree * world_size, dim=dim)
+
+                if fusion_degree > 1:
+                    weight_list = self._deconstruct_combined_qkv(
+                        weight_list, world_size
+                    )
+
+                if isinstance(module, LazyModuleMixin):
+                    new_tensor = weight_list[rank].clone()
+                    del weight_list, module.weight
+                    module.weight = nn.Parameter(new_tensor.contiguous())
+                else:
+                    module.weight.data = weight_list[rank].contiguous()
+
+                if hasattr(module.weight, "oslo_parallel"):
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+                else:
+                    module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+
+            _update_module_arguments(
+                module=module,
+                in_features=module.weight.size()[0],
+                out_features=module.weight.size()[1],
+            )
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if slice_bias is True and module.bias.dim() >= 1:
+                bias_list = module.bias.chunk(fusion_degree * world_size, dim=0)
+
+                if fusion_degree > 1:
+                    bias_list = self._deconstruct_combined_qkv(bias_list, world_size)
+
+                if isinstance(module, LazyModuleMixin):
+                    new_tensor = bias_list[rank].clone()
+                    del bias_list, module.bias
+                    module.bias = nn.Parameter(new_tensor.contiguous())
+                else:
+                    module.bias.data = bias_list[rank].contiguous()
+
+                if hasattr(module.bias, "oslo_parallel"):
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+                else:
+                    module.bias.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+
+        return module
