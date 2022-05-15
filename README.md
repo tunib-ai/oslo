@@ -67,12 +67,21 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/loopinf>
+            <img src=https://avatars.githubusercontent.com/u/2896446?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=loopinf/>
+            <br />
+            <sub style="font-size:14px"><b>loopinf</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/l-yohai>
             <img src=https://avatars.githubusercontent.com/u/49181231?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Yohan Lee/>
             <br />
             <sub style="font-size:14px"><b>Yohan Lee</b></sub>
         </a>
     </td>
+</tr>
+<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/ohwi>
             <img src=https://avatars.githubusercontent.com/u/22569365?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=ohwi/>
@@ -80,8 +89,6 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>ohwi</b></sub>
         </a>
     </td>
-</tr>
-<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/MicPie>
             <img src=https://avatars.githubusercontent.com/u/36303596?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Michael Pieler/>
@@ -117,6 +124,8 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>Tae-Kyun Kim</b></sub>
         </a>
     </td>
+</tr>
+<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/reniew>
             <img src=https://avatars.githubusercontent.com/u/32028135?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=JungHyun Cho/>
@@ -124,8 +133,6 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>JungHyun Cho</b></sub>
         </a>
     </td>
-</tr>
-<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/Mistobaan>
             <img src=https://avatars.githubusercontent.com/u/112599?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Fabrizio Milo/>
