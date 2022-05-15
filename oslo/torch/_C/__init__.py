@@ -128,6 +128,15 @@ class Binder(object):
         return nvcc_flags + additional_flags
 
 
+class FusedLayerNormBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_fused_layer_norm"
+
+    def sources(self):
+        return ["fused_layer_norm.cu", "FusedLayerNormBinder.cpp"]
+
+
 class SoftmaxBinder(Binder):
     @property
     def name(self):
