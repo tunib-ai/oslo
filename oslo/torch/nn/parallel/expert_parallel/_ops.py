@@ -7,11 +7,11 @@ from torch import Tensor
 from typing import Any, Tuple, Optional
 
 from torch.distributed import ProcessGroup
+from oslo.torch._C import ExpertParallelBinder
 
 OSLO_EP_KERNEL_FLAG = False
 try:
-    import oslo_expert_parallel_cuda
-
+    oslo_expert_parallel_cuda = ExpertParallelBinder().bind()
     OSLO_EP_KERNEL_FLAG = True
 except ImportError:
     print(

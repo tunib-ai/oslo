@@ -24,29 +24,22 @@ class ExpertParallelInfo(object):
         self.ep_group = None
         self.dp_group = None
 
-        if ep_size == 1:
-            self.ep_group = parallel_context.get_group(ParallelMode.TENSOR)
-            self.dp_group = parallel_context.get_group(ParallelMode.DATA)
-            return
-
-        if dp_size == 1:
-            self.ep_group = parallel_context.get_group(ParallelMode.DATA)
-            self.dp_group = parallel_context.get_group(ParallelMode.TENSOR)
-            return
-
         # Create expert parallel group
+        rank = parallel_context.get_global_rank()
         for i in range(dp_size):
             ranks = [i * ep_size + j for j in range(ep_size)]
             group = dist.new_group(ranks)
-            if parallel_context.rank in ranks:
+            if rank in ranks:
                 self.ep_group = group
+                self.ep_local_rank = ranks.index(rank)
 
         # Create data parallel group
         for j in range(ep_size):
             ranks = [i * ep_size + j for i in range(dp_size)]
             group = dist.new_group(ranks)
-            if parallel_context.rank in ranks:
+            if rank in ranks:
                 self.dp_group = group
+                self.dp_local_rank = ranks.index(rank)
 
 
 class ExpertParallelContext(object):
@@ -79,7 +72,7 @@ class ExpertParallelContext(object):
         ), "Maximum expert parallel size must be a factor of the number of GPUs"
 
         self.min_dp_size = self.world_size // self.parallel_context.expert_parallel_size
-        moe_set_seed(seed)
+        moe_set_seed(self.parallel_context, seed)
         self.has_setup = True
 
     def get_info(self, num_experts: int):

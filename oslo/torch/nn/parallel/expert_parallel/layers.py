@@ -250,10 +250,10 @@ class ExpertParallelFrontBlock(nn.Module):
 
     def __init__(
         self,
+        ep_context: ExpertParallelContext,
         in_features: int,
         out_features: int,
         num_experts: int,
-        ep_context: ExpertParallelContext,
         combine_info: dict,
         top_k: int,
         capacity_factor_train: float = 1.25,
@@ -305,11 +305,11 @@ class ExpertParallelFrontBlock(nn.Module):
         self.use_residual = use_residual
         self.expert_parallel_residual, self.expert_parallel_residual_mix = None, None
         if use_residual:
-            assert (
-                residual_instance is not None
-            ), "If use residual connection, Residual Instance must be given"
+            if residual_instance is None:
+                self.expert_parallel_residual = nn.Linear(in_features, out_features)
+            else:
+                self.expert_parallel_residual = residual_instance
 
-            self.expert_parallel_residual = residual_instance
             self.expert_parallel_residual_mix = nn.Linear(
                 in_features, 2, device=get_current_device()
             )
@@ -318,9 +318,18 @@ class ExpertParallelFrontBlock(nn.Module):
         self.num_local_experts, self.ep_info = ep_context.get_info(num_experts)
 
         self.weight = nn.Parameter(
-            torch.empty(self.num_local_experts, in_features, out_features).contiguous()
+            torch.empty(
+                self.num_local_experts,
+                in_features,
+                out_features,
+                device=get_current_device(),
+            ).contiguous()
         )
-        self.bias = nn.Parameter(torch.empty(self.num_local_experts, 1, out_features))
+        self.bias = nn.Parameter(
+            torch.empty(
+                self.num_local_experts, 1, out_features, device=get_current_device()
+            )
+        )
 
         std = math.sqrt(0.1 / in_features)
         with seed(ParallelMode.TENSOR):
@@ -372,7 +381,7 @@ class ExpertParallelFrontBlock(nn.Module):
         # |tokens| = ( token_num, in_features )
         # |fp32_input| = ( token_num, in_features )
 
-        gate_output = self.gate(fp32_input)
+        gate_output = self.expert_parallel_gate(fp32_input)
         # |gate_output| = ( token_num, in_features )
 
         # Routing Tokens
@@ -396,14 +405,24 @@ class ExpertParallelFrontBlock(nn.Module):
         # |front_output| = (num_local_experts, ep_size * capacity, out_features)
 
         # Residual Connection
-        residual_inter, residual_weight = None, None
+        residual_inter_shape, residual_weight = None, None
+        front_output_shape = front_output.shape
+        output = front_output.reshape(-1, front_output_shape[-1])
+        # |output| = (num_local_experts * ep_size * capacity, out_features)
         if self.use_residual:
             residual_inter = self.expert_parallel_residual(inputs)
-            # |residual_inter| = (sentence_len, batch_size, out_features)
+            # |residual_inter| = (sent_len, batch_size, out_features)
 
             residual_weight = self.expert_parallel_residual_mix(inputs)
             residual_weight = F.softmax(residual_weight, dim=-1)
-            # |residual_weight| = (sentence_len, batch_size, 2)
+            # |residual_weight| = (sent_len, batch_size, 2)
+
+            residual_inter_shape = residual_inter.shape
+            residual_inter = residual_inter.reshape(-1, residual_inter_shape[-1])
+            # |residual_inter| = (sent_len * batch_size, out_features)
+
+            output = torch.cat([output, residual_inter], dim=0)
+            # |output| = (num_local_experts * ep_size * capacity + sent_len * batch_size, out_features)
 
         # Save Information for Combine
         self.combine_info["inputs_shape"] = inputs.shape
@@ -413,10 +432,11 @@ class ExpertParallelFrontBlock(nn.Module):
 
         self.combine_info["router_res"] = router_res
 
-        self.combine_info["residual_inter"] = residual_inter
+        self.combine_info["front_output_shape"] = front_output_shape
+        self.combine_info["residual_inter_shape"] = residual_inter_shape
         self.combine_info["residual_weight"] = residual_weight
 
-        return front_output
+        return output
 
 
 class ExpertParallelBehindBlock(nn.Module):
@@ -445,19 +465,28 @@ class ExpertParallelBehindBlock(nn.Module):
         self.use_residual = use_residual
         self.expert_parallel_residual = None
         if use_residual:
-            assert (
-                residual_instance is not None
-            ), "If use residual connection, Residual Instance must be given"
-            self.expert_parallel_residual = residual_instance
+            if residual_instance is None:
+                self.expert_parallel_residual = nn.Linear(in_features, out_features)
+            else:
+                self.expert_parallel_residual = residual_instance
 
         self.combine_info = combine_info
         self.num_local_experts, self.ep_info = self.ep_context.get_info(num_experts)
 
         # Initialize Experts and Parallel Info
         self.weight = nn.Parameter(
-            torch.empty(self.num_local_experts, in_features, out_features).contiguous()
+            torch.empty(
+                self.num_local_experts,
+                in_features,
+                out_features,
+                device=get_current_device(),
+            ).contiguous()
         )
-        self.bias = nn.Parameter(torch.empty(self.num_local_experts, 1, out_features))
+        self.bias = nn.Parameter(
+            torch.empty(
+                self.num_local_experts, 1, out_features, device=get_current_device()
+            )
+        )
 
         std = math.sqrt(0.1 / in_features)
         with seed(ParallelMode.TENSOR):
@@ -478,7 +507,7 @@ class ExpertParallelBehindBlock(nn.Module):
         )
         # |behind_expert_output| = (num_local_experts, ep_size, capacity, out_features)
 
-        behind_expert_output = behind_expert_output.transpose(0, 1).contiugous()
+        behind_expert_output = behind_expert_output.transpose(0, 1).contiguous()
         # |behind_expert_output| = (ep_size, num_local_experts, capacity, out_features)
 
         return behind_expert_output
@@ -502,9 +531,15 @@ class ExpertParallelBehindBlock(nn.Module):
         return behind_expert_output
 
     def forward(self, inputs):
-        # |inputs| = (sentence_len, batch_size, in_features)
+        # |inputs| = (sentence_len * batch_size, in_features)
 
-        behind_expert_output = self.behind_a2a_process(inputs)
+        dim0, dim1, _ = self.combine_info["front_output_shape"]
+        front_output = inputs[: dim0 * dim1].reshape(
+            self.combine_info["front_output_shape"]
+        )
+        # |front_output| = (num_local_experts, ep_size * capacity, in_features)
+
+        behind_expert_output = self.behind_a2a_process(front_output)
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
         # Combine
@@ -520,18 +555,24 @@ class ExpertParallelBehindBlock(nn.Module):
             combine_weights = self.combine_info["router_res"][0].type_as(inputs)
             combine_weights = combine_weights.view(combine_weights.shape[0], -1)
             behind_expert_output = behind_expert_output.view(
-                -1, behind_expert_output.shape(-1)
+                -1, behind_expert_output.size(-1)
             )
             output = torch.matmul(combine_weights, behind_expert_output)
         output = output.reshape(self.combine_info["inputs_shape"])
-        # |output| = ( sentence_len, batch_size, in_features )
+        # |output| = (sent_len, batch_size, in_features )
 
         if self.use_residual:
-            residual_inter = self.combine_info["residual_inter"]
+            residual_inter = inputs[dim0 * dim1 :].reshape(
+                self.combine_info["residual_inter_shape"]
+            )
+            # |residual_inter| = (sent_len, batch_size, in_features)
             residual_output = self.expert_parallel_residual(residual_inter)
+            # |residual_output| = (sent_len, batch_size, out_features)
+
             output = (
                 output * self.combine_info["residual_weight"][..., 0:1]
                 + residual_output * self.combine_info["residual_weight"][..., 1:]
             )
+            # |output| = (sent_len, batch_size, out_features)
 
         return output

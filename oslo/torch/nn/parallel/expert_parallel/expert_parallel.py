@@ -91,6 +91,9 @@ class ExpertParallel(ParallelWrapper):
                 "`mapping` must be input if the model is not huggingface model."
             )
         self.expert_parallel_mapping = ExpertParallelMapping(mapping)
+
+        self.combine_info = dict()
+
         self._parallelize()
 
     @torch.no_grad()
@@ -98,15 +101,27 @@ class ExpertParallel(ParallelWrapper):
         self._parallelize_module()
 
     def _parallelize_module(self):
-        for module_name, module in self.module.named_modules():
-            if self.expert_parallel_mapping.is_front_parallel(self.module, module_name):
+        for module_name, module in self.model.named_modules():
+            if self.expert_parallel_mapping.is_front_parallel(self.model, module_name):
                 self._wrap_front(module, module_name)
                 module.__class__ = ExpertParallelFrontBlock
             elif self.expert_parallel_mapping.is_behind_parallel(
-                self.module, module_name
+                self.model, module_name
             ):
                 self._wrap_behind(module, module_name)
                 module.__class__ = ExpertParallelBehindBlock
+
+        return
+
+    def _extract_combine_info_key(self, module_name):
+        spl_modules = module_name.split(".")
+
+        split_id = len(spl_modules)
+        for i, cur_module in enumerate(spl_modules):
+            if cur_module.isdigit():
+                split_id = i + 1
+
+        return ".".join(spl_modules[:split_id])
 
     def _wrap_front(self, module: nn.Module, module_name: str):
         out_features, in_features = module.weight.size()
@@ -157,7 +172,7 @@ class ExpertParallel(ParallelWrapper):
             module.bias = new_param
 
         for param in self.parameters():
-            param.__setattr__("ep_info", self.ep_info)
+            param.__setattr__("ep_info", ep_info)
 
         return module
 
@@ -194,7 +209,7 @@ class ExpertParallel(ParallelWrapper):
                 torch.empty(num_local_experts, in_features, out_features).contiguous()
             )
             with seed(ParallelMode.TENSOR):
-                nn.init.trunc_normal_(self.weight, std=std)
+                nn.init.trunc_normal_(new_param, std=std)
             module.weight = new_param
 
         if hasattr(module, "bias") and module.bias is not None:
@@ -204,6 +219,6 @@ class ExpertParallel(ParallelWrapper):
             module.bias = new_param
 
         for param in self.parameters():
-            param.__setattr__("ep_info", self.ep_info)
+            param.__setattr__("ep_info", ep_info)
 
         return module
