@@ -12,7 +12,7 @@ from ._ops import OSLO_EP_KERNEL_FLAG
 
 def get_current_device():
     if torch.cuda.is_available():
-        return torch.device(f"cuda : {torch.cuda.current_device()}")
+        return torch.device(f"cuda:{torch.cuda.current_device()}")
     else:
         return torch.device("cpu")
 

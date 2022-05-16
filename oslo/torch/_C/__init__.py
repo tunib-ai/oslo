@@ -148,3 +148,12 @@ class SoftmaxBinder(Binder):
             "scaled_upper_triang_masked_softmax.cu",
             "SoftmaxBinder.cpp",
         ]
+
+
+class ExpertParallelBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_expert_parallel_cuda"
+
+    def sources(self):
+        return ["expert_parallel_cuda.cpp", "expert_parallel_cuda_kernel.cu"]
