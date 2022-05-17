@@ -10,7 +10,9 @@ import torch
 from torch import nn
 
 try:
-    from fairseq import ngram_repeat_block_cuda
+    from oslo.torch._C import NgramRepeatBlockBinder
+
+    ngram_repeat_block_cuda = NgramRepeatBlockBinder().bind()
 
     EXTENSION_BUILT = True
 except ImportError:

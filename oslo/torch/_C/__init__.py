@@ -148,3 +148,12 @@ class SoftmaxBinder(Binder):
             "scaled_upper_triang_masked_softmax.cu",
             "SoftmaxBinder.cpp",
         ]
+
+
+class NgramRepeatBlockBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_ngram_repeat_block"
+
+    def sources(self):
+        return ["ngram_repeat_block_cuda_kernel.cu", "ngram_repeat_block_cuda.cpp"]
