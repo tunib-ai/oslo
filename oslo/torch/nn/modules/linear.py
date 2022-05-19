@@ -154,11 +154,7 @@ class ColumnParallelLinear(Linear):
         )
 
         input = broadcast_1d(input, self.parallel_context)
-
-        if self.reversed:
-            outputs = torch.matmul(input, self.weight)
-        else:
-            outputs = torch.matmul(input, self.weight.t())
+        outputs = torch.matmul(input, self.weight.t())
 
         if self.gather_output:
             outputs = all_gather_1d(outputs, self.parallel_context).clone()
@@ -207,11 +203,7 @@ class RowParallelLinear(Linear):
             all_reduce_1d,
         )
 
-        if self.reversed:
-            outputs = torch.matmul(input, self.weight)
-        else:
-            outputs = torch.matmul(input, self.weight.t())
-
+        outputs = torch.matmul(input, self.weight.t())
         outputs = all_reduce_1d(outputs, self.parallel_context)
 
         if self.bias is not None:
@@ -232,8 +224,10 @@ class Linear2D(Linear):
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
+        gather_output: bool = False,
     ):
         self.parallel_context = parallel_context
+        self.gather_output = gather_output
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
@@ -284,6 +278,7 @@ class Linear2D(Linear):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             Matmul_ABT_2D,
             add_bias_2d,
+            all_gather_tensor_2d,
         )
 
         # input: [m/q, n/q, k/q]
@@ -339,7 +334,13 @@ class Linear2D(Linear):
                     self.pipeline_parallel_size,
                     self.tensor_parallel_size,
                 )
-
+        if self.gather_output:
+            outputs = all_gather_tensor_2d(
+                outputs, 
+                dim=-1, 
+                parallel_mode=ParallelMode.TENSOR_2D_COL, 
+                parallel_context=self.parallel_context,
+            ).clone()
         return outputs
 
 

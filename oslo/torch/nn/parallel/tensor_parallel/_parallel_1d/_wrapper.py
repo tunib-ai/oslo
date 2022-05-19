@@ -81,16 +81,14 @@ class _TensorParallel1D(ParallelWrapper):
                     setattr(module, elem.name, reduced_arg)
 
     @staticmethod
-    def _deconstruct_combined_qkv(tensor, world_size):
-        ranks = (len(tensor) + world_size - 1) // world_size
-        tensor = [tensor[i * world_size : (i + 1) * world_size] for i in range(ranks)]
-        tensor = list(map(lambda x: torch.cat([*x], dim=-1), zip(*tensor)))
+    def _deconstruct_combined_qkv(tensor, world_size, fusion_degree):
+        tensor = [tensor[i * world_size : (i + 1) * world_size] for i in range(fusion_degree)]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
         return tensor
 
     def _slice(self, module, reversed, fusion_degree, slice_bias, dim):
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-        dim = dim if not reversed else abs(dim - 1)
 
         _update_module_arguments(
             module=module,
@@ -108,12 +106,15 @@ class _TensorParallel1D(ParallelWrapper):
             if module.weight.dim() >= 1:
                 if isinstance(module, LazyModuleMixin):
                     module.initialize_parameters()
+                
+                if reversed:
+                    module.weight.data = module.weight.data.t()
 
-                weight_list = module.weight.chunk(fusion_degree * world_size, dim=dim)
+                weight_list = module.weight.data.chunk(fusion_degree * world_size, dim=dim)
 
                 if fusion_degree > 1:
                     weight_list = self._deconstruct_combined_qkv(
-                        weight_list, world_size
+                        weight_list, world_size, fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
@@ -130,8 +131,8 @@ class _TensorParallel1D(ParallelWrapper):
 
             _update_module_arguments(
                 module=module,
-                in_features=module.weight.size()[0],
-                out_features=module.weight.size()[1],
+                in_features=module.weight.size()[1],
+                out_features=module.weight.size()[0],
             )
 
         if hasattr(module, "bias") and module.bias is not None:
@@ -139,7 +140,9 @@ class _TensorParallel1D(ParallelWrapper):
                 bias_list = module.bias.chunk(fusion_degree * world_size, dim=0)
 
                 if fusion_degree > 1:
-                    bias_list = self._deconstruct_combined_qkv(bias_list, world_size)
+                    bias_list = self._deconstruct_combined_qkv(
+                        bias_list, world_size, fusion_degree,
+                    )
 
                 if isinstance(module, LazyModuleMixin):
                     new_tensor = bias_list[rank].clone()
