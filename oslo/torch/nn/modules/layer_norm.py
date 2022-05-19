@@ -62,6 +62,7 @@ class LayerNorm2D(nn.Module):
             add_bias_2d,
             layernorm_2d,
         )
+
         with torch.no_grad():
             E_i = torch.sum(input_, dim=-1, keepdim=True)
             dist.all_reduce(
@@ -124,8 +125,10 @@ class LayerNorm2D(nn.Module):
         return output
 
     def extra_repr(self) -> str:
-        return f'{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, ' \
-            f'eps={self.eps}, elementwise_affine={self.elementwise_affine}'
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
 
 
 class LayerNorm2p5D(nn.Module):
@@ -185,6 +188,7 @@ class LayerNorm2p5D(nn.Module):
             layernorm_2p5d,
             add_bias_2p5d,
         )
+
         with torch.no_grad():
             E_x = torch.sum(_input, dim=-1, keepdim=True)  # [b/q, s, 1]
             torch.distributed.all_reduce(

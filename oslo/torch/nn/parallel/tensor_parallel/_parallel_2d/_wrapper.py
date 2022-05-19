@@ -87,29 +87,34 @@ class _TensorParallel2D(ParallelWrapper):
 
     @staticmethod
     def _deconstruct_combined_qkv(tensor, summa_dim, fusion_degree):
-        tensor = [[tensor[i * summa_dim + k][j] for j in range(summa_dim) for k in range(summa_dim)] for i in range(fusion_degree)]
+        tensor = [
+            [
+                tensor[i * summa_dim + k][j]
+                for j in range(summa_dim)
+                for k in range(summa_dim)
+            ]
+            for i in range(fusion_degree)
+        ]
         tensor = list(map(lambda x: torch.cat([*x], dim=-1), zip(*tensor)))
-        tensor = [[tensor[i * summa_dim + j] for i in range(summa_dim)] for j in range(summa_dim)]
+        tensor = [
+            [tensor[i * summa_dim + j] for i in range(summa_dim)]
+            for j in range(summa_dim)
+        ]
         return tensor
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-        
-        data_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.DATA
-        )
-        pipeline_parallel_rank=self.parallel_context.get_local_rank(
+
+        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+        pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.TENSOR
-        )
+        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
         )
-
 
         _update_module_arguments(
             module=module,
@@ -143,7 +148,9 @@ class _TensorParallel2D(ParallelWrapper):
 
                 if fusion_degree > 1:
                     weight_list = self._deconstruct_combined_qkv(
-                        weight_list, summa_dim, fusion_degree,
+                        weight_list,
+                        summa_dim,
+                        fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
@@ -175,7 +182,9 @@ class _TensorParallel2D(ParallelWrapper):
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
-                        bias_list, summa_dim, fusion_degree,
+                        bias_list,
+                        summa_dim,
+                        fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
@@ -200,16 +209,12 @@ class _TensorParallel2D(ParallelWrapper):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-        
-        data_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.DATA
-        )
-        pipeline_parallel_rank=self.parallel_context.get_local_rank(
+
+        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+        pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.TENSOR
-        )
+        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
         )
@@ -259,7 +264,7 @@ class _TensorParallel2D(ParallelWrapper):
 
         _update_module_arguments(
             module=module,
-            normalized_shape=module.weight.size()[0] * (summa_dim ** 2),
+            normalized_shape=module.weight.size()[0] * (summa_dim**2),
             partitioned_dim=module.weight.size()[0],
         )
 
@@ -271,10 +276,8 @@ class _TensorParallel2D(ParallelWrapper):
         summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 
         if module is self.module.get_input_embeddings():
-            data_parallel_rank = self.parallel_context.get_local_rank(
-                ParallelMode.DATA
-            )
-            pipeline_parallel_rank=self.parallel_context.get_local_rank(
+            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+            pipeline_parallel_rank = self.parallel_context.get_local_rank(
                 ParallelMode.PIPELINE
             )
             tensor_parallel_size = self.parallel_context.get_world_size(
@@ -288,7 +291,9 @@ class _TensorParallel2D(ParallelWrapper):
                 vocab_start_index,
                 vocab_end_index,
             ) = VocabUtility.vocab_range_from_global_vocab_size(
-                module.num_embeddings, col_rank, summa_dim,
+                module.num_embeddings,
+                col_rank,
+                summa_dim,
             )
             if isinstance(module, LazyModuleMixin):
                 assert hasattr(module, "weight"), "embedding must has `weight`."
@@ -379,8 +384,6 @@ class _TensorParallel2D(ParallelWrapper):
 
             if isinstance(module, Embedding):
                 module.__class__ = Embedding2D
-                        
-        
 
     # def _parallelize_embedding(self):
     #     module = self.module
@@ -395,7 +398,7 @@ class _TensorParallel2D(ParallelWrapper):
     #     row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
     #     col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
     #     summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-        
+
     #     data_parallel_rank = self.parallel_context.get_local_rank(
     #         ParallelMode.DATA
     #     )
@@ -483,11 +486,11 @@ class _TensorParallel2D(ParallelWrapper):
     #             else:
     #                 raise RuntimeError("Classifier layer must be `nn.Linear` class")
 
-
     def _parallelize_linear(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name) \
-                or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+            if self.tensor_parallel_mapping.is_column_parallel(
+                self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._slice_linear(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed_param(
@@ -500,7 +503,6 @@ class _TensorParallel2D(ParallelWrapper):
                 )
                 module.__class__ = Linear2D
 
-
     def _parallelize_layernorm(self):
         for module in self.module.modules():
             if isinstance(module, nn.LayerNorm):
@@ -508,7 +510,6 @@ class _TensorParallel2D(ParallelWrapper):
                     module=module,
                 )
                 module.__class__ = LayerNorm2D
-
 
     def _parallelize_embedding(self):
         for module in self.module.modules():

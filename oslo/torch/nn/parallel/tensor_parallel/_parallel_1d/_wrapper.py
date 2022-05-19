@@ -82,7 +82,9 @@ class _TensorParallel1D(ParallelWrapper):
 
     @staticmethod
     def _deconstruct_combined_qkv(tensor, world_size, fusion_degree):
-        tensor = [tensor[i * world_size : (i + 1) * world_size] for i in range(fusion_degree)]
+        tensor = [
+            tensor[i * world_size : (i + 1) * world_size] for i in range(fusion_degree)
+        ]
         tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
         return tensor
 
@@ -106,15 +108,19 @@ class _TensorParallel1D(ParallelWrapper):
             if module.weight.dim() >= 1:
                 if isinstance(module, LazyModuleMixin):
                     module.initialize_parameters()
-                
+
                 if reversed:
                     module.weight.data = module.weight.data.t()
 
-                weight_list = module.weight.data.chunk(fusion_degree * world_size, dim=dim)
+                weight_list = module.weight.data.chunk(
+                    fusion_degree * world_size, dim=dim
+                )
 
                 if fusion_degree > 1:
                     weight_list = self._deconstruct_combined_qkv(
-                        weight_list, world_size, fusion_degree,
+                        weight_list,
+                        world_size,
+                        fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
@@ -141,7 +147,9 @@ class _TensorParallel1D(ParallelWrapper):
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
-                        bias_list, world_size, fusion_degree,
+                        bias_list,
+                        world_size,
+                        fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
