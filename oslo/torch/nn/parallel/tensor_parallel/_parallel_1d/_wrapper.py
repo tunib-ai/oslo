@@ -67,7 +67,7 @@ class _TensorParallel1D(ParallelWrapper):
     def _parallelize(self):
         self._update_mp_arguments()
         self._parallelize_embedding()
-        self._parallelize_modules()
+        self._parallelize_linear()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
     def _update_mp_arguments(self):
@@ -257,7 +257,7 @@ class _TensorParallel1D(ParallelWrapper):
                 else:
                     raise RuntimeError("Classifier layer must be `nn.Linear` class")
 
-    def _parallelize_modules(self):
+    def _parallelize_linear(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
                 self._column_slice(
