@@ -267,9 +267,6 @@ class VocabParallelEmbedding2D(nn.Embedding):
         # output = reduce_scatter_tensor_2d(
         #     output_parallel, 0, ParallelMode.TENSOR_2D_COL, self.parallel_context
         # )
-        # if torch.distributed.get_rank() == 0:
-        #     import ipdb; ipdb.set_trace()
-        # torch.distributed.barrier
         return output
 
 
