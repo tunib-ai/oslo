@@ -89,16 +89,16 @@ class _TensorParallel2D(ParallelWrapper):
     def _deconstruct_combined_qkv(tensor, summa_dim, fusion_degree):
         tensor = [
             [
-                tensor[i * summa_dim + k][j]
-                for j in range(summa_dim)
+                tensor[i][j * summa_dim + k]
+                for i in range(summa_dim)
                 for k in range(summa_dim)
             ]
-            for i in range(fusion_degree)
+            for j in range(fusion_degree)
         ]
-        tensor = list(map(lambda x: torch.cat([*x], dim=-1), zip(*tensor)))
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
         tensor = [
-            [tensor[i * summa_dim + j] for i in range(summa_dim)]
-            for j in range(summa_dim)
+            [tensor[i * summa_dim + j] for j in range(summa_dim)]
+            for i in range(summa_dim)
         ]
         return tensor
 
@@ -143,8 +143,11 @@ class _TensorParallel2D(ParallelWrapper):
                 if reversed:
                     module.weight.data = module.weight.data.t()
 
-                weight_list = module.weight.data.chunk(fusion_degree * summa_dim, dim=1)
-                weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
+                weight_list = module.weight.data.chunk(summa_dim, dim=1)
+                weight_list = [
+                    weight.chunk(fusion_degree * summa_dim, dim=0)
+                    for weight in weight_list
+                ]
 
                 if fusion_degree > 1:
                     weight_list = self._deconstruct_combined_qkv(
@@ -177,8 +180,10 @@ class _TensorParallel2D(ParallelWrapper):
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(fusion_degree * summa_dim, dim=0)
-                bias_list = [bias.chunk(summa_dim, dim=0) for bias in bias_list]
+                bias_list = module.bias.chunk(summa_dim, dim=0)
+                bias_list = [
+                    bias.chunk(fusion_degree * summa_dim, dim=0) for bias in bias_list
+                ]
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
