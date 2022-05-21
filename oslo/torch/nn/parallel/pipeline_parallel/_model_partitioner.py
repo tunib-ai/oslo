@@ -9,6 +9,10 @@ from oslo.torch.distributed import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
+from oslo.torch.nn.parallel.pipeline_parallel.pipe_comm import (
+    PPModuleWrapper,
+    wrap_nn_modules,
+)
 from oslo.torch.nn.parallel.pipeline_parallel._utils import bfs, dfs
 
 
@@ -82,6 +86,21 @@ class ModelPartitioner(object):
                     self._set_attribute(param, node)
                 for buffer in module.buffers():
                     self._set_attribute(buffer, node)
+        self._set_attribute(self.root_node.modules[0], self.root_node)
+        #print("HERE HERE HERE: " + str(self.root_node.modules[0].oslo_parallel))
+        #for node in dfs(self.root_node):
+        #    if not hasattr(node.modules[0], "oslo_parallel"):
+        #        print("NONE: " + str(node.modules[0]))
+        #    else:
+        #        print("PARALLEL: " + str(node.modules[0]))
+            #print(node.modules)
+        #print(self.root_node.modules)
+
+        #for m in self.root_node.modules:
+        #    print(m)
+        #print(self.root_node.modules)
+        wrap_nn_modules(self.root_node.modules[0])
+        #print(self.root_node.modules)
 
     @staticmethod
     def _get_parameters(module, to_list=True):
