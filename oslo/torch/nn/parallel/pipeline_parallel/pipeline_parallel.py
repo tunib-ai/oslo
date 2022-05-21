@@ -45,6 +45,7 @@ class PipelineParallel(nn.Module):
         module: nn.Module,
         parallel_context: ParallelContext,
         micro_batch_size: int,
+        use_auto_partitioning: bool = True,
         memory_computation_balance: float = 1.0,
         tracing_inputs: Dict[str, Any] = None,
     ):
@@ -58,11 +59,13 @@ class PipelineParallel(nn.Module):
             memory_computation_balance=memory_computation_balance,
         )
         self.device = torch.cuda.current_device()
-        self.partitioner.partition()
         self.batch_size = None
         self.micro_batch_size = micro_batch_size
         self.num_micro_batches = None
         self.micro_batches = None
+
+        if use_auto_partitioning:
+            self.partitioner.partition()
 
         #self.module = _pipeline_wrapper()
 

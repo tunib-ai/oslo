@@ -1,34 +1,40 @@
 import torch
+import torch.nn as nn
 import torch.distributed as dist
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from torch.optim import Adam
-
-from datasets import load_dataset
-from torch.utils.data import DataLoader
 
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel import PipelineParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
-parallel_context = ParallelContext.from_torch(pipeline_parallel_size=4)
-#model = GPT2LMHeadModel.from_pretrained("gpt2")
-model = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
 
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-tokenizer.pad_token = tokenizer.eos_token
+torch.manual_seed(42)
+
+parallel_context = ParallelContext.from_torch(
+    data_parallel_size=1,
+    pipeline_parallel_size=2,
+    tensor_parallel_size=1,
+)
+
+n_steps = 20
+batch_size = 16
+
+in_channels = 16
+hidden_channels = 8
+out_channels = 4
+
+fc1 = nn.Linear(in_channels, hidden_channels).cuda(0)
+fc2 = nn.Linear(hidden_channels, out_channels).cuda(1)
+model = nn.Sequential(fc1, fc2)
 
 wrapper_pp = PipelineParallel(
-    model, parallel_context=parallel_context, memory_computation_balance=0.5, micro_batch_size=4
+    model, parallel_context=parallel_context, micro_batch_size=4, use_auto_partitioning=False
 )
 
 if dist.get_rank() == 0:
     print(wrapper_pp.partitioner.module)
 
 optimizer_pp = Adam(wrapper_pp.parameters(), lr=3e-5)
-
-datasets = load_dataset("squad").data["train"]["context"]
-datasets = [str(sample) for sample in datasets[:500]]
-dataloader = DataLoader(datasets, batch_size=2)
 
 allocate_params(wrapper_pp, parallel_context)
 """
@@ -47,25 +53,23 @@ for rank in range(dist.get_world_size()):
     print()
 """
 
-for data in dataloader:
+loss_fn = torch.nn.MSELoss()
+
+current_device = torch.cuda.current_device()
+
+for i in range(n_steps):
+    sample_input = torch.rand(batch_size, in_channels).to(current_device)
+    sample_output = torch.rand(batch_size, out_channels).to(current_device)
+
     optimizer_pp.zero_grad()
 
-    inputs = tokenizer(
-        data,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=512,
-    ).to("cuda")
-
-    #print(inputs["input_ids"])
-
-    loss_pp = wrapper_pp(**inputs, labels=inputs["input_ids"]).loss
-    #loss_no_pp = model(**inputs, labels=inputs["input_ids"]).loss
+    out_pp = wrapper_pp(sample_input)
+    out_no_pp = model(sample_input)
+    loss_pp = loss_fn(out_pp, sample_output)
+    loss_no_pp = loss_fn(out_no_pp, sample_output)
 
     if dist.get_rank() == 0:
-        print(f"pp:{loss_pp}, NOTHING:{loss_pp}")
-        #wandb.log({"pp": loss_zero, "nothing": loss_no_zero})
+        print(f"rank: {dist.get_rank()}, pp:{loss_pp}, NOTHING:{loss_no_pp}")
 
     loss_pp.backward()
 
