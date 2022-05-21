@@ -1,7 +1,4 @@
-# Copyright (c) Facebook, Inc. and its affiliates.
-#
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+# Originaly from Facebook
 
 import argparse
 import math
@@ -12,16 +9,19 @@ import numpy as np
 import torch
 
 import tests.utils as test_utils
-from fairseq import search
-from fairseq.data.dictionary import Dictionary
-from fairseq.models.transformer import TransformerModel
-from fairseq.ngram_repeat_block import NGramRepeatBlock
-from fairseq.sequence_generator import EnsembleModel, SequenceGenerator
-from fairseq.tasks.fairseq_task import LegacyFairseqTask
+
+# from fairseq import search
+# from fairseq.data.dictionary import Dictionary
+# from fairseq.models.transformer import TransformerModel
+# from fairseq.ngram_repeat_block import NGramRepeatBlock
+# from fairseq.sequence_generator import EnsembleModel, SequenceGenerator
+# from fairseq.tasks.fairseq_task import LegacyFairseqTask
+
+from oslo.torch.nn import NGramRepeatBlock
 
 DEFAULT_TEST_VOCAB_SIZE = 100
 
-
+"""comment out for now
 class DummyTask(LegacyFairseqTask):
     def __init__(self, args):
         super().__init__(args)
@@ -38,16 +38,18 @@ class DummyTask(LegacyFairseqTask):
     @property
     def target_dictionary(self):
         return self.dictionary
+"""
 
-
+"""comment out for now
 def get_dummy_dictionary(vocab_size=DEFAULT_TEST_VOCAB_SIZE):
     dummy_dict = Dictionary()
     # add dummy symbol to satisfy vocab size
     for id, _ in enumerate(range(vocab_size)):
         dummy_dict.add_symbol("{}".format(id), n=1000)
     return dummy_dict
+"""
 
-
+'''comment out for now
 def get_dummy_task_and_parser():
     """
     to build a fariseq model, we need some dummy parse and task. This function
@@ -63,8 +65,9 @@ def get_dummy_task_and_parser():
     args = parser.parse_args([])
     task = DummyTask.setup_task(args)
     return task, parser
+'''
 
-
+"""comment out for now
 class TestJitSequenceGeneratorBase(unittest.TestCase):
     def setUp(self):
         self.task, self.parser = get_dummy_task_and_parser()
@@ -79,7 +82,7 @@ class TestJitSequenceGeneratorBase(unittest.TestCase):
         args = self.parser.parse_args([])
         args.encoder_layers = 2
         args.decoder_layers = 1
-        self.transformer_model = TransformerModel.build_model(args, self.task)
+        # self.transformer_model = TransformerModel.build_model(args, self.task)
 
     def assertOutputEqual(self, hypo, pos_probs):
         pos_scores = torch.FloatTensor(pos_probs).log()
@@ -108,59 +111,63 @@ class TestJitSequenceGeneratorBase(unittest.TestCase):
         with tempfile.NamedTemporaryFile() as f:
             scripted_module.save(f.name)
             torch.jit.load(f.name)
+"""
 
 
 JIT_MSG = "Targeting OSS scriptability for the 1.6 release"
 
 
-@unittest.skipIf(torch.__version__ < "1.6.0", JIT_MSG)
-class TestJitSequenceGenerator(TestJitSequenceGeneratorBase):
-    def test_export_transformer(self):
-        model = self.transformer_model
-        torch.jit.script(model)
+"""comment out for now
+# @unittest.skipIf(torch.__version__ < "1.6.0", JIT_MSG)
+# class TestJitSequenceGenerator(TestJitSequenceGeneratorBase):
+#     def test_export_transformer(self):
+#         model = self.transformer_model
+#         torch.jit.script(model)
 
-    def test_ensemble_sequence_generator(self):
-        model = self.transformer_model
-        generator = SequenceGenerator(
-            [model],
-            self.task.tgt_dict,
-            beam_size=2,
-            no_repeat_ngram_size=2,
-            max_len_b=10,
-        )
-        scripted_model = torch.jit.script(generator)
-        self._test_save_and_load(scripted_model)
+#     def test_ensemble_sequence_generator(self):
+#         model = self.transformer_model
+#         generator = SequenceGenerator(
+#             [model],
+#             self.task.tgt_dict,
+#             beam_size=2,
+#             no_repeat_ngram_size=2,
+#             max_len_b=10,
+#         )
+#         scripted_model = torch.jit.script(generator)
+#         self._test_save_and_load(scripted_model)
 
-    def test_export_ensemble_model(self):
-        model = self.transformer_model
-        ensemble_models = EnsembleModel([model])
-        torch.jit.script(ensemble_models)
+#     def test_export_ensemble_model(self):
+#         model = self.transformer_model
+#         ensemble_models = EnsembleModel([model])
+#         torch.jit.script(ensemble_models)
+"""
 
+"""comment out for now
+# class TestExportSearch(unittest.TestCase):
+#     def setUp(self):
+#         task, _ = get_dummy_task_and_parser()
+#         self.tgt_dict = task.tgt_dict
+#         self.min_top1_prob = 0.4
 
-class TestExportSearch(unittest.TestCase):
-    def setUp(self):
-        task, _ = get_dummy_task_and_parser()
-        self.tgt_dict = task.tgt_dict
-        self.min_top1_prob = 0.4
+#     def test_export_diverse_bs(self):
+#         search_strategy = search.DiverseBeamSearch(
+#             self.tgt_dict, num_groups=2, diversity_strength=0.0
+#         )
+#         torch.jit.script(search_strategy)
 
-    def test_export_diverse_bs(self):
-        search_strategy = search.DiverseBeamSearch(
-            self.tgt_dict, num_groups=2, diversity_strength=0.0
-        )
-        torch.jit.script(search_strategy)
+#     def test_export_sampling(self):
+#         low_sampling_topp = self.min_top1_prob / 2.0
+#         search_strategy = search.Sampling(
+#             self.tgt_dict, sampling_topp=low_sampling_topp
+#         )
+#         torch.jit.script(search_strategy)
 
-    def test_export_sampling(self):
-        low_sampling_topp = self.min_top1_prob / 2.0
-        search_strategy = search.Sampling(
-            self.tgt_dict, sampling_topp=low_sampling_topp
-        )
-        torch.jit.script(search_strategy)
-
-    def test_export_diverse_siblings_search(self):
-        search_strategy = search.DiverseSiblingsSearch(
-            self.tgt_dict, diversity_rate=0.5
-        )
-        torch.jit.script(search_strategy)
+#     def test_export_diverse_siblings_search(self):
+#         search_strategy = search.DiverseSiblingsSearch(
+#             self.tgt_dict, diversity_rate=0.5
+#         )
+#         torch.jit.script(search_strategy)
+"""
 
 
 class TestSequenceGeneratorBase(unittest.TestCase):
@@ -185,6 +192,7 @@ class TestSequenceGeneratorBase(unittest.TestCase):
         self.assertEqual(t1.ne(t2).long().sum(), 0)
 
 
+"""comment out for now
 class TestSequenceGenerator(TestSequenceGeneratorBase):
     def setUp(self):
         (
@@ -325,6 +333,8 @@ class TestSequenceGenerator(TestSequenceGeneratorBase):
         self.assertHypoTokens(hypos[0][0], [w1, eos])
         self.assertHypoScore(hypos[0][0], [0.9, 1.0])
 
+"""
+
 
 @unittest.skipUnless(torch.cuda.is_available(), "")
 class TestRepeatNgramBlocking(TestSequenceGeneratorBase):
@@ -423,6 +433,7 @@ class TestRepeatNgramBlocking(TestSequenceGeneratorBase):
         return cuda_ext_result, baseline_result
 
 
+"""commenting out for now,
 class TestDiverseBeamSearch(TestSequenceGeneratorBase):
     def setUp(self):
         # construct dummy dictionary
@@ -518,8 +529,10 @@ class TestDiverseBeamSearch(TestSequenceGeneratorBase):
         # sentence 2, beam 2
         self.assertHypoTokens(hypos[1][1], [w1, w2, eos])
         self.assertHypoScore(hypos[1][1], [0.7, 0.4, 0.9])
+"""
 
 
+"""commenting out for now,
 class TestDiverseSiblingsSearch(TestDiverseBeamSearch):
     def assertHypoScore(
         self, hypo, pos_probs, sibling_rank, diversity_rate, normalized=True, lenpen=1.0
@@ -560,8 +573,9 @@ class TestDiverseSiblingsSearch(TestDiverseBeamSearch):
         # sentence 2, beam 2
         self.assertHypoTokens(hypos[1][1], [w1, w1, eos])
         self.assertHypoScore(hypos[1][1], [0.7, 0.35, 0.9], [0, 2, 1], 0.5)
+"""
 
-
+"""commenting out for now,
 class TestTopPSamplingSearch(TestSequenceGeneratorBase):
     def setUp(self):
         # construct dummy dictionary
@@ -738,7 +752,7 @@ class TestTopPSamplingSearch(TestSequenceGeneratorBase):
 
     def tensorEqual(self, t1, t2):
         return t1.size() == t2.size() and t1.ne(t2).long().sum() == 0
-
+"""
 
 if __name__ == "__main__":
     unittest.main()
