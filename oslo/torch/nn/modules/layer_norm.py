@@ -6,14 +6,6 @@ import torch.nn as nn
 from torch.nn import Parameter
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
-    add_bias_2d,
-    layernorm_2d,
-)
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
-    layernorm_2p5d,
-    add_bias_2p5d,
-)
 
 
 class LayerNorm2D(nn.Module):
@@ -35,7 +27,7 @@ class LayerNorm2D(nn.Module):
         ), "normalized_shape must be divisible by summa dim."
 
         self.normalized_shape = normalized_shape
-        self.variance_epsilon = eps
+        self.eps = eps
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -66,6 +58,11 @@ class LayerNorm2D(nn.Module):
             self.bias = None
 
     def forward(self, input_: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
+            add_bias_2d,
+            layernorm_2d,
+        )
+
         with torch.no_grad():
             E_i = torch.sum(input_, dim=-1, keepdim=True)
             dist.all_reduce(
@@ -80,7 +77,7 @@ class LayerNorm2D(nn.Module):
             Var_i /= self.normalized_shape
 
             Var_i = Var_i - E_i * E_i
-            Var_i = 1.0 / torch.sqrt(Var_i + self.variance_epsilon)
+            Var_i = 1.0 / torch.sqrt(Var_i + self.eps)
 
         output = layernorm_2d(
             input_,
@@ -126,6 +123,12 @@ class LayerNorm2D(nn.Module):
         else:
             output = torch.mul(scale, output)
         return output
+
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
 
 
 class LayerNorm2p5D(nn.Module):
@@ -181,6 +184,11 @@ class LayerNorm2p5D(nn.Module):
             self.bias = Parameter(torch.zeros(self.normalized_shape, **factory_kwargs))
 
     def forward(self, _input: torch.Tensor) -> torch.Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+            layernorm_2p5d,
+            add_bias_2p5d,
+        )
+
         with torch.no_grad():
             E_x = torch.sum(_input, dim=-1, keepdim=True)  # [b/q, s, 1]
             torch.distributed.all_reduce(

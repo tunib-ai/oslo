@@ -7,6 +7,9 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._wrapper import (
     _TensorParallel1D,
 )
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._wrapper import (
+    _TensorParallel2D,
+)
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
     unwrap_parallel,
@@ -48,6 +51,8 @@ class TensorParallel(ParallelWrapper):
         orig_vocab_size, module = self._add_embeddings(module, self.parallel_context)
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(module, self.parallel_context)
+        elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
+            self.module = _TensorParallel2D(module, self.parallel_context)
         else:
             raise ValueError("currently, only 1d tensor parallelism is supported.")
 
