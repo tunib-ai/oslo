@@ -60,7 +60,7 @@ class Binder(object):
         a, b = torch.cuda.get_device_capability(torch.cuda.current_device())
         return int(str(a) + str(b))
 
-    def bind(self):
+    def bind(self, verbose: bool = False):
         try:
             import ninja
             import pybind11
@@ -82,7 +82,7 @@ class Binder(object):
             extra_include_paths=self.includes(),
             extra_cflags=self.cxx_args(),
             extra_cuda_cflags=self.nvcc_args(),
-            verbose=False,
+            verbose=verbose,
         )
 
         return op_module
