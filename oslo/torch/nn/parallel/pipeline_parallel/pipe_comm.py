@@ -166,9 +166,9 @@ class PPModuleWrapper(nn.Module):
             print("fwd2", dist.get_rank(), self.rank, self.rank_parent, type(x))
             x = self.post_com((x, self.rank, self.rank_parent))
             print("fwd3", dist.get_rank(), self.rank, self.rank_parent, type(x))
-            return self.module(x, *args, **kwargs)
         else:
             x = self.module(x, *args, **kwargs)
+        return x
 
 
 def wrap_nn_modules(m):
