@@ -54,6 +54,11 @@ class ModelPartitioner(object):
         else:
             element.oslo_parallel = {ParallelMode.PIPELINE: node.device}
 
+        if node.parent is None:
+            setattr(element, "oslo_pp_parent_rank", node.device)
+        else:
+            setattr(element, "oslo_pp_parent_rank", node.parent.device)
+
     def partition(self):
         # 1. construct tree
         self.root_node = Node(
