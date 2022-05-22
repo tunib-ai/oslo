@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 import torch
 
-import tests.utils as test_utils
+# import tests.utils as test_utils
 
 # from fairseq import search
 # from fairseq.data.dictionary import Dictionary
@@ -21,7 +21,7 @@ from oslo.torch.nn import NGramRepeatBlock
 
 DEFAULT_TEST_VOCAB_SIZE = 100
 
-"""comment out for now
+"""comment out for now class DummyTask(LegacyFairseqTask):
 class DummyTask(LegacyFairseqTask):
     def __init__(self, args):
         super().__init__(args)
@@ -338,17 +338,17 @@ class TestSequenceGenerator(TestSequenceGeneratorBase):
 
 @unittest.skipUnless(torch.cuda.is_available(), "")
 class TestRepeatNgramBlocking(TestSequenceGeneratorBase):
-    @classmethod
-    def setUpClass(cls):
-        (
-            cls.tgt_dict,
-            cls.w1,
-            cls.w2,
-            src_tokens,
-            src_lengths,
-            cls.model,
-        ) = test_utils.sequence_generator_setup()
-        return cls
+    # @classmethod
+    # def setUpClass(cls):
+    #     (
+    #         cls.tgt_dict,
+    #         cls.w1,
+    #         cls.w2,
+    #         src_tokens,
+    #         src_lengths,
+    #         cls.model,
+    #     ) = test_utils.sequence_generator_setup()
+    #     return cls
 
     def test_finds_repetitive_tokens(self):
         bsz, vocab_size, beam_size, step = 2, 4, 1, 3
