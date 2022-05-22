@@ -273,7 +273,7 @@ class _FusedRMSNormFunction(torch.autograd.Function):
         return grad_input, None, None
 
 
-class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
+class _FusedScaleUpperTriangMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, scale):
         scale_t = torch.tensor([scale])
@@ -448,7 +448,7 @@ def _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask):
     if use_triang_mask:
         if pad_mask is not None:
             input += pad_mask
-        output = _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
+        output = _FusedScaleUpperTriangMaskSoftmaxFunction.apply(
             input.view(-1, sq, sk),
             scale,
         )
@@ -653,16 +653,25 @@ def multi_head_attention_forward(
             assert (
                 attn_mask.is_floating_point() or attn_mask.dtype == torch.bool
             ), f"Only float, byte, and bool types are supported for attn_mask, not {attn_mask.dtype}"
+
+        # get attn_mask's shape when using SP
+        if use_sequence_parallel:
+            mask_src_len = src_len * parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
+        else:
+            mask_src_len = src_len
+
         # ensure attn_mask's dim is 3
         if attn_mask.dim() == 2:
-            correct_2d_size = (tgt_len, src_len)
+            correct_2d_size = (tgt_len, mask_src_len)
             if attn_mask.shape != correct_2d_size:
                 raise RuntimeError(
                     f"The shape of the 2D attn_mask is {attn_mask.shape}, but should be {correct_2d_size}."
                 )
             attn_mask = attn_mask.unsqueeze(0)
         elif attn_mask.dim() == 3:
-            correct_3d_size = (bsz * num_heads, tgt_len, src_len)
+            correct_3d_size = (bsz * num_heads, tgt_len, mask_src_len)
             if attn_mask.shape != correct_3d_size:
                 raise RuntimeError(
                     f"The shape of the 3D attn_mask is {attn_mask.shape}, but should be {correct_3d_size}."
@@ -751,13 +760,16 @@ def multi_head_attention_forward(
         elif attn_mask.dtype == torch.bool:
             attn_mask = attn_mask.logical_or(key_padding_mask)
         else:
-            attn_mask = attn_mask.masked_fill(key_padding_mask, float("-inf"))
+            pass
+            # TODO; check whether this should be commented out
+            # attn_mask = attn_mask.masked_fill(key_padding_mask, float("-inf"))
 
     # convert mask to float
-    if attn_mask is not None and attn_mask.dtype == torch.bool:
-        new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
-        new_attn_mask.masked_fill_(attn_mask, float("-inf"))
-        attn_mask = new_attn_mask
+    # TODO; check whether this should be commented out
+    # if attn_mask is not None and attn_mask.dtype == torch.bool:
+    #     new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
+    #     new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+    #     attn_mask = new_attn_mask
 
     # adjust dropout probability
     if not training:
@@ -765,20 +777,40 @@ def multi_head_attention_forward(
 
     # SP
     if use_sequence_parallel:
-
-        # [batch_size, num_heads, sub_seq_len, seq_len]
+        # [batch_size x num_heads, sub_seq_len, seq_len]
         attn_scores = ring_qk(
             sub_q=q,
             sub_k=k,
             parallel_context=parallel_context,
         )
 
-        attn_scores /= math.sqrt(head_dim)
+        # fused_scale_mask_softmax does not support double
+        if attn_scores.dtype == torch.double:
+            attn_scores /= math.sqrt(head_dim)
 
-        # TODO: apply ScaleMaskSoftmax
-        # TODO: test attn_mask
-        # attn_output_weights = FusedScaleMaskSoftmax(attn_scores, attn_mask)
-        attn_output_weights = torch.softmax(attn_scores, dim=-1)
+            if attn_mask is not None:
+                if attn_mask.dtype == torch.bool:
+                    new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
+                    new_attn_mask.masked_fill_(attn_mask, float("-inf"))
+                    attn_mask = new_attn_mask
+
+                attn_scores += attn_mask
+
+            attn_output_weights = torch.softmax(attn_scores, dim=-1)
+        else:
+            attn_scores = attn_scores.reshape(bsz, num_heads, tgt_len, -1)
+            if attn_mask is not None:
+                attn_mask = attn_mask.reshape(bsz, num_heads, tgt_len, -1)
+            attn_output_weights = fused_scale_mask_softmax(
+                attn_scores,
+                math.sqrt(head_dim),
+                use_triang_mask=False,
+                softmax_in_fp32=True,
+                pad_mask=attn_mask,
+            )
+            attn_output_weights = attn_output_weights.reshape(
+                bsz * num_heads, tgt_len, -1
+            )
 
         with seed(ParallelMode.TENSOR):
             attn_output_weights = F.dropout(attn_output_weights, p=dropout_p)
