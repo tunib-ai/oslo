@@ -53,9 +53,9 @@ def _send_forward_recv_forward(
     ops.append(recv_prev_op)
 
     # TODO; need this ? ColossalAI implementation uses this
-    # current_rank = parallel_context.get_global_rank()
-    # if current_rank % 2 == 0:
-    #     ops = ops[::-1]
+    current_rank = parallel_context.get_global_rank()
+    if current_rank % 2 == 0:
+        ops = ops[::-1]
 
     reqs = torch.distributed.batch_isend_irecv(ops)
     for req in reqs:
