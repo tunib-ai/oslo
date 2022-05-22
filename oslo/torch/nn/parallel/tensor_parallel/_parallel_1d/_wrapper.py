@@ -9,7 +9,6 @@ from oslo.torch.nn.modules.embedding import (
     VocabParallelEmbedding1D,
     VocabUtility,
 )
-from oslo.torch.nn.modules.lazy import LazyModuleMixin
 from oslo.torch.nn.modules.linear import (
     ColumnParallelLinear,
     RowParallelLinear,
@@ -106,8 +105,6 @@ class _TensorParallel1D(ParallelWrapper):
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
-                if isinstance(module, LazyModuleMixin):
-                    module.initialize_parameters()
 
                 if reversed:
                     module.weight.data = module.weight.data.t()
@@ -123,12 +120,7 @@ class _TensorParallel1D(ParallelWrapper):
                         fusion_degree,
                     )
 
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = weight_list[rank].clone()
-                    del weight_list, module.weight
-                    module.weight = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.weight.data = weight_list[rank].contiguous()
+                module.weight.data = weight_list[rank].contiguous()
 
                 if hasattr(module.weight, "oslo_parallel"):
                     module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
@@ -152,12 +144,7 @@ class _TensorParallel1D(ParallelWrapper):
                         fusion_degree,
                     )
 
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = bias_list[rank].clone()
-                    del bias_list, module.bias
-                    module.bias = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.bias.data = bias_list[rank].contiguous()
+                module.bias.data = bias_list[rank].contiguous()
 
                 if hasattr(module.bias, "oslo_parallel"):
                     module.bias.oslo_parallel[ParallelMode.TENSOR_1D] = rank
@@ -204,23 +191,15 @@ class _TensorParallel1D(ParallelWrapper):
         ) = VocabUtility.vocab_range_from_global_vocab_size(
             embedding.num_embeddings, rank, world_size
         )
-        if isinstance(embedding, LazyModuleMixin):
-            assert hasattr(embedding, "weight"), "embedding must has `weight`."
-            embedding.initialize_parameters()
 
         weight_list = embedding.weight.chunk(world_size, dim=0)
 
-        if isinstance(embedding, LazyModuleMixin):
-            new_tensor = weight_list[rank].clone()
-            del weight_list, embedding.weight
-            embedding.weight = nn.Parameter(new_tensor.contiguous())
-        else:
-            embedding.weight.data = weight_list[rank].contiguous()
+        embedding.weight.data = weight_list[rank].contiguous()
 
-            if hasattr(embedding.weight, "oslo_parallel"):
-                embedding.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
-            else:
-                embedding.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+        if hasattr(embedding.weight, "oslo_parallel"):
+            embedding.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+        else:
+            embedding.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
 
         _update_module_arguments(
             module=embedding,

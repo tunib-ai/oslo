@@ -11,7 +11,6 @@ from oslo.torch.nn.modules.embedding import (
     Embedding2D,
     VocabUtility,
 )
-from oslo.torch.nn.modules.lazy import LazyModuleMixin
 from oslo.torch.nn.modules.linear import (
     Linear2D,
 )
@@ -74,7 +73,6 @@ class _TensorParallel2D(ParallelWrapper):
         self._parallelize_layernorm()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
-    # TODO: need to fix or remove
     def _update_mp_arguments(self):
         for module in self.module.modules():
             for elem in self.tensor_parallel_mapping.update_attrs(self.module):
@@ -137,9 +135,6 @@ class _TensorParallel2D(ParallelWrapper):
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
-                if isinstance(module, LazyModuleMixin):
-                    module.initialize_parameters()
-
                 if reversed:
                     module.weight.data = module.weight.data.t()
 
@@ -156,12 +151,7 @@ class _TensorParallel2D(ParallelWrapper):
                         fusion_degree,
                     )
 
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = weight_list[row_rank][col_rank].clone()
-                    del weight_list, module.weight
-                    module.weight = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.weight.data = weight_list[row_rank][col_rank].contiguous()
+                module.weight.data = weight_list[row_rank][col_rank].contiguous()
 
                 if hasattr(module.weight, "oslo_parallel"):
                     module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
@@ -192,12 +182,7 @@ class _TensorParallel2D(ParallelWrapper):
                         fusion_degree,
                     )
 
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = bias_list[row_rank][col_rank].clone()
-                    del bias_list, module.bias
-                    module.bias = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.bias.data = bias_list[row_rank][col_rank].contiguous()
+                module.bias.data = bias_list[row_rank][col_rank].contiguous()
 
                 if hasattr(module.bias, "oslo_parallel"):
                     module.bias.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
@@ -300,28 +285,20 @@ class _TensorParallel2D(ParallelWrapper):
                 col_rank,
                 summa_dim,
             )
-            if isinstance(module, LazyModuleMixin):
-                assert hasattr(module, "weight"), "embedding must has `weight`."
-                module.initialize_parameters()
 
             weight_list = module.weight.data.chunk(summa_dim, dim=1)
             weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
 
-            if isinstance(module, LazyModuleMixin):
-                new_tensor = weight_list[row_rank][col_rank].clone()
-                del weight_list, module.weight
-                module.weight = nn.Parameter(new_tensor.contiguous())
-            else:
-                module.weight.data = weight_list[row_rank][col_rank].contiguous()
+            module.weight.data = weight_list[row_rank][col_rank].contiguous()
 
-                if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
-                else:
-                    module.weight.oslo_parallel = {
-                        ParallelMode.TENSOR_2D_ROW: row_rank,
-                        ParallelMode.TENSOR_2D_COL: col_rank,
-                    }
+            if hasattr(module.weight, "oslo_parallel"):
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+            else:
+                module.weight.oslo_parallel = {
+                    ParallelMode.TENSOR_2D_ROW: row_rank,
+                    ParallelMode.TENSOR_2D_COL: col_rank,
+                }
 
             _update_module_arguments(
                 module=module,
