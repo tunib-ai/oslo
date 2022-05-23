@@ -116,3 +116,4 @@ class UniformNoiseSampler:
         noise = self.popl(inputs.shape)
 
         return inputs * noise
+

@@ -24,6 +24,9 @@ class ExpertParallelInfo(object):
         self.ep_group = None
         self.dp_group = None
 
+        self.ep_group_ranks = None
+        self.dp_group_ranks = None
+
         # Create expert parallel group
         rank = parallel_context.get_global_rank()
         for i in range(dp_size):
@@ -31,6 +34,7 @@ class ExpertParallelInfo(object):
             group = dist.new_group(ranks)
             if rank in ranks:
                 self.ep_group = group
+                self.ep_group_ranks = ranks
                 self.ep_local_rank = ranks.index(rank)
 
         # Create data parallel group
@@ -39,12 +43,31 @@ class ExpertParallelInfo(object):
             group = dist.new_group(ranks)
             if rank in ranks:
                 self.dp_group = group
+                self.dp_group_ranks = ranks
                 self.dp_local_rank = ranks.index(rank)
+
+    def get_dp_group(self):
+        return self.dp_group
+
+    def get_ep_group(self):
+        return self.ep_group
+
+    def get_dp_local_rank(self):
+        return self.dp_local_rank
+
+    def get_ep_local_rank(self):
+        return self.ep_local_rank
+
+    def get_ep_group_ranks(self):
+        return self.ep_group_ranks
+
+    def get_dp_group_ranks(self):
+        return self.dp_group_ranks
 
 
 class ExpertParallelContext(object):
     def __init__(self, parallel_context, use_kernel_optim):
-        self.world_size = dist.get_world_size()
+        self.world_size = parallel_context.expert_parallel_size
         self.parallel_context = parallel_context
         self.use_kernel_optim = use_kernel_optim
         self.min_dp_size = 1
@@ -126,3 +149,4 @@ class ExpertParallelContext(object):
 
     def get_world_size(self):
         return self.world_size
+
