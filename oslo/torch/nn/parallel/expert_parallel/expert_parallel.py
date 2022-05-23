@@ -3,6 +3,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 from oslo.torch.distributed import ParallelMode
 from oslo.torch.distributed._seed.helper import seed
@@ -47,6 +48,7 @@ class ExpertParallel(ParallelWrapper):
         noisy_policy: str = None,
         drop_tks: bool = True,
         use_residual: bool = None,
+        mapping:object = None,
     ):
         super().__init__()
 
@@ -55,6 +57,7 @@ class ExpertParallel(ParallelWrapper):
         use_kernel_optim = OSLO_EP_KERNEL_FLAG and use_kernel_optim
         self.ep_context = ExpertParallelContext(parallel_context, use_kernel_optim)
         self.ep_context.setup(parallel_context.seed)
+        self.ep_context.reset_loss()
 
         self.device = torch.cuda.current_device()
 
@@ -62,11 +65,13 @@ class ExpertParallel(ParallelWrapper):
             num_experts if num_experts > 0 else self.ep_context.get_world_size()
         )
 
+        self.use_residual = use_residual
         if use_residual is None:
             self.use_residual = True if top_k == 1 else False
 
         if noisy_policy is None:
             noisy_policy = "Jitter" if use_residual else "Gaussian"
+
         self.router_args = {
             "ep_context": self.ep_context,
             "capacity_factor_train": capacity_factor_train,
@@ -87,28 +92,43 @@ class ExpertParallel(ParallelWrapper):
         if is_huggingface_model(model):
             mapping = _ExpertParallelMappingForHuggingFace().get_mapping(model)
         else:
-            raise ValueError(
-                "`mapping` must be input if the model is not huggingface model."
-            )
+            assert mapping is not None, "`mapping` must be input if the model is not huggingface model."
+            mapping = mapping.get_mapping(model)
+        
+            
         self.expert_parallel_mapping = ExpertParallelMapping(mapping)
 
         self.combine_info = dict()
 
         self._parallelize()
 
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
     @torch.no_grad()
     def _parallelize(self):
         self._parallelize_module()
+        self._sync_ep_model_param()
 
     def _parallelize_module(self):
-        for module_name, module in self.model.named_modules():
+        # TODO : Difference of Conv1D and Linear, https://stackoverflow.com/questions/55576314/conv1d-with-kernel-size-1-vs-linear-layer
+        #        -> Initialization, Speed
+        # TODO : Concurrent Modification Exception
+        test = [(module_name, module) for module_name, module in self.model.named_modules()]
+        for module_name, module in test:
             if self.expert_parallel_mapping.is_front_parallel(self.model, module_name):
-                self._wrap_front(module, module_name)
+                self._wrap_front(module,
+                                 module_name,
+                                 reversed=self.expert_parallel_mapping.is_reversed_param(self.model, module_name)
+                )
                 module.__class__ = ExpertParallelFrontBlock
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
             ):
-                self._wrap_behind(module, module_name)
+                self._wrap_behind(module,
+                                  module_name,
+                                  reversed=self.expert_parallel_mapping.is_reversed_param(self.model, module_name)
+                )
                 module.__class__ = ExpertParallelBehindBlock
 
         return
@@ -123,8 +143,10 @@ class ExpertParallel(ParallelWrapper):
 
         return ".".join(spl_modules[:split_id])
 
-    def _wrap_front(self, module: nn.Module, module_name: str):
+    def _wrap_front(self, module: nn.Module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
+        if reversed:
+            out_features, in_features = in_features, out_features
 
         expert_parallel_gate = FP32LinearGate(in_features, self.num_experts)
         expert_parallel_router = self.router_cls(**self.router_args)
@@ -142,7 +164,7 @@ class ExpertParallel(ParallelWrapper):
         num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
         _update_module_arguments(
             module=module,
-            parallel_context=self.ep_context,
+            ep_context=self.ep_context,
             in_features=in_features,
             out_features=out_features,
             num_experts=self.num_experts,
@@ -159,14 +181,14 @@ class ExpertParallel(ParallelWrapper):
         std = math.sqrt(0.1 / in_features)
         if hasattr(module, "weight") and module.weight is not None:
             new_param = nn.Parameter(
-                torch.empty(num_local_experts, in_features, out_features).contiguous()
+                torch.empty(num_local_experts, in_features, out_features, device=self.device).contiguous()
             )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
-            self.weight = new_param
+            module.weight = new_param
 
         if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features))
+            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features, device=self.device))
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.bias = new_param
@@ -176,8 +198,10 @@ class ExpertParallel(ParallelWrapper):
 
         return module
 
-    def _wrap_behind(self, module, module_name):
+    def _wrap_behind(self, module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
+        if reversed:
+            out_features, in_features = in_features, out_features
 
         expert_parallel_residual = None
         if self.use_residual:
@@ -206,14 +230,14 @@ class ExpertParallel(ParallelWrapper):
         std = math.sqrt(0.1 / in_features)
         if hasattr(module, "weight") and module.weight is not None:
             new_param = nn.Parameter(
-                torch.empty(num_local_experts, in_features, out_features).contiguous()
+                torch.empty(num_local_experts, in_features, out_features, device=self.device).contiguous()
             )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.weight = new_param
 
         if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features))
+            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features, device=self.device))
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.bias = new_param
@@ -222,3 +246,43 @@ class ExpertParallel(ParallelWrapper):
             param.__setattr__("ep_info", ep_info)
 
         return module
+
+    def _get_ep_size_param_dict(self):
+        ep_size_param_dict = dict()
+        for param in self.model.parameters():
+            if not hasattr(param, "ep_info"):
+                ep_size = 1
+            else:
+                ep_size = param.ep_info.ep_size
+
+            if ep_size not in ep_size_param_dict:
+                ep_size_param_dict[ep_size] = []
+
+            ep_size_param_dict[ep_size].append(param)
+
+        return ep_size_param_dict
+
+
+    def _sync_ep_model_param(self):
+        ep_info_dict = self.ep_context.parallel_info_dict
+        if self.ep_context.has_setup and len(ep_info_dict) > 0:
+            param_dict = self._get_ep_size_param_dict()
+            if 1 in param_dict:
+                _, ep_info = self.ep_context.get_info(1)
+                dp_group = ep_info.get_dp_group()
+                src_rank = ep_info.get_dp_group_ranks()[0]
+
+                for param in param_dict[1]:
+                    dist.broadcast(
+                        param,
+                        src=src_rank,
+                        group=dp_group,
+                    )
+
+            for ep_size in param_dict:
+                if ep_size != 1 and ep_size != self.ep_context.world_size:
+                    _, ep_info = self.ep_context.get_info(ep_size)
+                    src_rank = dist.get_rank(ep_info.ep_group)
+                    for param in param_dict[ep_size]:
+                        dist.broadcast(param, src=src_rank, group=param.ep_info.dp_group)
+

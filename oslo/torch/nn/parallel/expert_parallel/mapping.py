@@ -2,8 +2,9 @@ import copy
 
 
 class ExpertParallelInfo(object):
-    def __init__(self, *name):
+    def __init__(self, *name, reverse: bool = False):
         self.name = name
+        self.reverse = reverse
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -61,6 +62,7 @@ class ExpertParallelMapping(object):
     def search(self, model, param_name):
 
         mapping = self.get_mapping(model)
+        count_contain_elem_in_param = 0
         param_split = param_name.split(".")
         first_check = []
 
@@ -71,12 +73,28 @@ class ExpertParallelMapping(object):
 
         for elem in first_check:
             elem_split = elem.name.split(".")
-            to_comp = param_split[-len(elem_split) :]
-
-            if elem_split == to_comp:
+            for split in elem_split:
+                if split in param_split:
+                    count_contain_elem_in_param += 1
+            if count_contain_elem_in_param == len(elem_split):
                 return elem
 
         return None
+
+    def is_reversed_param(self, model, param_name):
+        """
+        Check whether the parameter is reversed or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            param_name (str): name of parameter
+
+        Returns:
+            bool: whether the param is reversed or not
+        """
+        elem = self.search(model, param_name)
+        if elem is not None:
+            return elem.reverse
 
     def is_front_parallel(self, model, param_name):
         elem = self.search(model, param_name)
@@ -87,3 +105,5 @@ class ExpertParallelMapping(object):
         elem = self.search(model, param_name)
         if elem is not None:
             return isinstance(elem, Behind)
+
+
