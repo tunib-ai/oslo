@@ -28,7 +28,6 @@ from oslo.torch.nn.parallel.data_parallel._params import (
     get_global_rank,
 )
 from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
-from oslo.torch.optim import ZeroRedundancyOptimizer
 
 
 def _trainable(param: torch.Tensor) -> bool:
@@ -95,6 +94,8 @@ class ShardedDataParallel(ParallelWrapper):
         ShardedDDP assumptions by calling `refresh_trainable()` just after said change (before the next forward pass).
 
     """
+
+    from oslo.torch.optim import ZeroRedundancyOptimizer
 
     def __init__(
         self,
