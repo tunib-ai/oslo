@@ -25,6 +25,7 @@ def get_softmax_kernel():
 
     return _SOFTMAX_KERNEL
 
+
 def get_adam_kernel():
     global _ADAM_KERNEL
 
@@ -38,7 +39,8 @@ def get_adam_kernel():
             "please check your CUDA environment."
         )
 
-    return _ADAM_KERNEL    
+    return _ADAM_KERNEL
+
 
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
     os.path.expanduser("~"),
@@ -164,6 +166,7 @@ class SoftmaxBinder(Binder):
             "SoftmaxBinder.cpp",
         ]
 
+
 class AdamBinder(Binder):
     @property
     def name(self):
@@ -172,5 +175,17 @@ class AdamBinder(Binder):
     def sources(self):
         return [
             "multi_tensor_adam.cu",
-            "amp_C_frontend.cpp",
+            "fused_adam_frontend.cpp",
+        ]
+
+
+class CPUAdamBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_cpu_adam"
+
+    def sources(self):
+        return [
+            "custom_cuda_kernel.cu",
+            "cpu_adam.cpp",
         ]
