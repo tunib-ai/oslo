@@ -5,7 +5,7 @@ import torch.distributed as dist
 import torch.nn as nn
 from anytree import Node
 
-from oslo.torch.distributed import ParallelMode
+from oslo.torch.distributed import ParallelMode, ParallelContext
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
@@ -34,12 +34,13 @@ class ModelPartitioner(object):
     def __init__(
         self,
         module: nn.Module,
-        process_group: dist.ProcessGroup,
+        parallel_context: ParallelContext,
         tracing_inputs: Dict[str, Any] = None,
         memory_computation_balance: float = 1.0,
     ):
         self.module = module
-        self.process_group = process_group
+        self.parallel_context = parallel_context
+        self.process_group = parallel_context.get_group(ParallelMode.PIPELINE)
         self.tracing_inputs = tracing_inputs
         self.memory_computation_balance = memory_computation_balance
 
@@ -48,7 +49,7 @@ class ModelPartitioner(object):
         self.partition_memoization = {}
 
     @staticmethod
-    def _set_attribute(element, node):
+    def _set_attribute(element, node, parallel_context):
         if hasattr(element, "oslo_parallel"):
             element.oslo_parallel[ParallelMode.PIPELINE] = node.device
         else:
@@ -58,6 +59,8 @@ class ModelPartitioner(object):
             setattr(element, "oslo_pp_parent_rank", node.device)
         else:
             setattr(element, "oslo_pp_parent_rank", node.parent.device)
+
+        setattr(element, "parallel_context", parallel_context)
 
     def partition(self):
         # 1. construct tree
@@ -86,12 +89,12 @@ class ModelPartitioner(object):
         for node in dfs(self.root_node):
             if all([not hasattr(child, "device") for child in node.children]):
                 module = node.modules[0]
-                self._set_attribute(module, node)
+                self._set_attribute(module, node, self.parallel_context)
                 for param in node.parameters:
-                    self._set_attribute(param, node)
+                    self._set_attribute(param, node, self.parallel_context)
                 for buffer in module.buffers():
-                    self._set_attribute(buffer, node)
-        self._set_attribute(self.root_node.modules[0], self.root_node)
+                    self._set_attribute(buffer, node, self.parallel_context)
+        self._set_attribute(self.root_node.modules[0], self.root_node, self.parallel_context)
         #print("HERE HERE HERE: " + str(self.root_node.modules[0].oslo_parallel))
         #for node in dfs(self.root_node):
         #    if not hasattr(node.modules[0], "oslo_parallel"):
