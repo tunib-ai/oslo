@@ -16,6 +16,8 @@ parallel_context = ParallelContext.from_torch(
     tensor_parallel_size=1,
 )
 
+current_device = torch.cuda.current_device()
+
 n_steps = 20
 batch_size = 16
 
@@ -31,11 +33,13 @@ fc1_no_pp = nn.Linear(in_channels, hidden_channels)
 fc2_no_pp = nn.Linear(hidden_channels, out_channels)
 model_no_pp = nn.Sequential(fc1_no_pp, fc2_no_pp)
 model_no_pp.load_state_dict(model.state_dict())
-model_no_pp.to('cuda')
+model_no_pp.to(current_device)
 
 wrapper_pp = PipelineParallel(
     model, parallel_context=parallel_context, micro_batch_size=4, use_auto_partitioning=True, memory_computation_balance=1.0
 )
+
+wrapper_pp.train()
 
 if parallel_context.get_global_rank() == 0:
     print(wrapper_pp.partitioner.module)
@@ -61,10 +65,8 @@ for rank in range(dist.get_world_size()):
 
 loss_fn = torch.nn.MSELoss()
 
-current_device = torch.cuda.current_device()
-
 for i in range(n_steps):
-    sample_input = torch.rand(batch_size, in_channels)
+    sample_input = torch.rand(batch_size, in_channels).to(current_device)
     sample_output = torch.rand(batch_size, out_channels)
 
     optimizer_pp.zero_grad()

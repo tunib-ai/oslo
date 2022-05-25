@@ -21,7 +21,7 @@ from oslo.torch.nn.parallel.utils import get_parallel_context
 def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_context):
     rank = dist.get_rank()
     print(f"B, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
-    if input_.device.index != module_rank:
+    if input_.device.index != module_rank:  # device of input should be the same as module_rank
         if input_.device.index == rank: # if input_ is on our rank we send
             print(f"C1a, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
             send(data=input_, src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
@@ -31,6 +31,7 @@ def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_contex
             #input_ = torch.empty(input_.shape, device=rank) # TO DO: Check buffer preallocation!
             input_buffer = recv(src_rank=input_.device.index, dst_rank=input_.device.index, parallel_context=parallel_context)
             print(f"C2b, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
+        dist.barrier()
         if module_rank == rank: # if the module rank is our rank we receive input_
             return input_buffer
     else: # input_ and module are on the same rank
@@ -45,6 +46,7 @@ def _pp_post_bwd_p2p_com(input_grad, module_rank, module_rank_parent, parallel_c
             send(data=input_grad, src_rank=module_rank_parent, dst_rank=module_rank_parent, parallel_context=parallel_context)
         elif module_rank_parent == rank: # if the parent rank is our rank we receive output
             input_grad = recv(src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
+        dist.barrier()
         if module_rank_parent == rank: # if the parent rank is our rank we receive output
             return input_grad
     else: # data_out and module are on the same rank
@@ -87,7 +89,8 @@ def _pp_post_fwd_p2p_com(output_, module_rank, module_rank_parent, parallel_cont
         if module_rank == rank: # if output_ is on our rank we send
             send(data=output_, src_rank=module_rank_parent, dst_rank=module_rank_parent, parallel_context=parallel_context)
         elif module_rank_parent == rank: # if the parent rank is our rank we receive output_
-            output_ = recv(src_rank=module_rank, dst_rank=module_rank)
+            output_ = recv(src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
+        dist.barrier()
         if module_rank_parent == rank: # if the parent rank is our rank we receive output_
             return output_
     else: # data_out and module are on the same rank
@@ -101,6 +104,7 @@ def _pp_pre_bwd_p2p_com(output_grad, module_rank, module_rank_parent, parallel_c
             send(data=output_grad, src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
         elif module_rank == rank: # if the module rank is our rank we receive output_grad
             output_grad = recv(src_rank=output_grad.device.index, dst_rank=output_grad.device.index, parallel_context=parallel_context)
+        dist.barrier()
         if module_rank == rank: # if the module rank is our rank we receive output_grad
             return output_grad
     else: # data_out_grad and module are on the same rank
@@ -115,6 +119,7 @@ class PPPostFwdP2PCom(torch.autograd.Function):
         ctx.save_for_backward(
                 torch.tensor(module_rank, device=module_rank),
                 torch.tensor(module_rank_parent, device=module_rank),
+                parallel_context
                 )
         print("PPPostFwdP2PCom", input_.device.index, module_rank, module_rank_parent)
         return _pp_post_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_context)
