@@ -45,6 +45,7 @@ if parallel_context.get_global_rank() == 0:
     print(wrapper_pp.partitioner.module)
 
 optimizer_pp = Adam(wrapper_pp.parameters(), lr=3e-5)
+optimizer_no_pp = Adam(model_no_pp.parameters(), lr=3e-5)
 
 allocate_params(wrapper_pp, parallel_context)
 """
@@ -70,9 +71,10 @@ for i in range(n_steps):
     sample_output = torch.rand(batch_size, out_channels)
 
     optimizer_pp.zero_grad()
+    optimizer_no_pp.zero_grad()
 
     out_pp = wrapper_pp(sample_input)
-    out_no_pp = model(sample_input)
+    out_no_pp = model_no_pp(sample_input)
     sample_output = sample_output.to(out_pp.device)
     loss_pp = loss_fn(out_pp, sample_output)
     loss_no_pp = loss_fn(out_no_pp, sample_output)
@@ -81,5 +83,7 @@ for i in range(n_steps):
         print(f"rank: {dist.get_rank()}, pp:{loss_pp}, NOTHING:{loss_no_pp}")
 
     loss_pp.backward()
+    loss_no_pp.backward()
 
     optimizer_pp.step()
+    optimizer_no_pp.step()
