@@ -125,8 +125,6 @@ class DataCollatorForT5Pretraining:
         self.input_length = processor._max_length
         self.target_length = processor.target_chunk_size
         self.pad_to_multiple_of = pad_to_multiple_of
-        self.pad_token_id = self.tokenizer.pad_token_id
-        self.decoder_start_token_id = self.tokenizer.pad_token_id
     
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
@@ -160,12 +158,6 @@ class DataCollatorForT5Pretraining:
             )
 
         batch = {key: torch.from_numpy(value) for key, value in batch.items()}
-
-        # to check that tokens are correctly preprocessed, one can run `self.tokenizer.batch_decode(input_ids)` and `self.tokenizer.batch_decode(labels)` here...
-        batch["decoder_input_ids"] = self.shift_tokens_right(
-            batch["labels"], self.pad_token_id, self.decoder_start_token_id
-        )
-
         return batch
 
     def create_sentinel_ids(self, mask_indices):
@@ -198,21 +190,6 @@ class DataCollatorForT5Pretraining:
             [input_ids, np.full((batch_size, 1), self.tokenizer.eos_token_id, dtype=np.int32)], axis=-1
         )
         return input_ids
-    
-    def shift_tokens_right(self, input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
-        """
-        Shift input ids one token to the right.
-        """
-        shifted_input_ids = input_ids.new_zeros(input_ids.shape)
-        shifted_input_ids[:, 1:] = input_ids[:, :-1].clone()
-        shifted_input_ids[:, 0] = decoder_start_token_id
-
-        if pad_token_id is None:
-            raise ValueError("processor._tokenizer.pad_token_id has to be defined.")
-        # replace possible -100 values in labels by `pad_token_id`
-        shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
-
-        return shifted_input_ids
 
     def random_spans_noise_mask(self, length):
 
