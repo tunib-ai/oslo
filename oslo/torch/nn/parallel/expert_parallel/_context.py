@@ -2,7 +2,6 @@ import torch
 import torch.distributed as dist
 
 from oslo.torch.distributed._seed.helper import moe_set_seed
-from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 def _check_sanity(parallel_context):
@@ -18,7 +17,17 @@ def _check_sanity(parallel_context):
 
 
 class ExpertParallelInfo(object):
+    """
+    A class to describe information expert parallelization and expert data parallelization
+
+    Args:
+            ep_size: the number of nodes in expert parallel group
+            dp_size: the number of nodes in expert data parallel group
+            parallel_context: global parallel context
+    """
+
     def __init__(self, ep_size, dp_size, parallel_context):
+
         self.ep_size = ep_size
         self.dp_size = dp_size
         self.ep_group = None
@@ -37,7 +46,7 @@ class ExpertParallelInfo(object):
                 self.ep_group_ranks = ranks
                 self.ep_local_rank = ranks.index(rank)
 
-        # Create data parallel group
+        # Create expert data parallel group
         for j in range(ep_size):
             ranks = [i * ep_size + j for i in range(dp_size)]
             group = dist.new_group(ranks)
@@ -66,6 +75,14 @@ class ExpertParallelInfo(object):
 
 
 class ExpertParallelContext(object):
+    """
+    A class to describe the Context about Expert Parallel
+
+    Args:
+            parallel_context: global parallel context
+            use_kernel_optim: flag to use kernel optimization
+    """
+
     def __init__(self, parallel_context, use_kernel_optim):
         self.world_size = parallel_context.expert_parallel_size
         self.parallel_context = parallel_context
@@ -85,6 +102,13 @@ class ExpertParallelContext(object):
         return self.has_setup
 
     def setup(self, seed: int):
+        """
+        Set base information about expert parallel context
+
+        Args:
+            seed: random seed value for expert parallel
+        """
+
         assert (
             not self.is_initialized
         ), "MoE distributed context shouldn't be set up again"
@@ -99,6 +123,17 @@ class ExpertParallelContext(object):
         self.has_setup = True
 
     def get_info(self, num_experts: int):
+        """
+        If there is no information about given num_experts, create, save and return the information about expert parallel.
+        Otherwise, just return the information about expert parallel
+
+        Args:
+            num_experts: the number of experts
+
+        Returns:
+            num_local_experts: the number of local experts
+        """
+
         gt_flag = (
             num_experts % self.parallel_context.expert_parallel_size == 0
         )  # check whether num_experts is greater
@@ -149,4 +184,3 @@ class ExpertParallelContext(object):
 
     def get_world_size(self):
         return self.world_size
-

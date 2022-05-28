@@ -34,6 +34,41 @@ from oslo.torch.nn.parallel.expert_parallel.utils import (
 
 
 class ExpertParallel(ParallelWrapper):
+    """
+    A class to wrap the given model for expert parallelization
+
+    Args:
+        model: model to wrap for expert paralleization
+        parallel_context: global parallel context
+        use_kernel_optim: flag to use kernel optimization
+        num_experts: number of experts
+        top_k: the number of experts for each token to be dispatched
+        capacity_factor_train: capacity of each expert for training
+        capacity_factor_eval: capacity of each expert for evaluation
+        min_capacity: minimum capacity of each expert
+        select_policy: policy to select top-1 expert ("first" or "random")
+        noisy_policy: policy to generate and add noise ("Jitter" or "Gaussian")
+        drop_tks: flag to drop tokens in the case that the number of dispatched tokens is larger than capacity
+        use_residual: flag to use residual network proposed by
+                      DeepSpeed-MoE: Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale
+        mapping: mapping for each module to expert-parallelize
+
+    Notes:
+        1. Similar design with `torch.nn.parallel.DistributedDataParallel`
+        2. Support data parallel for non-expert paramete
+
+    Examples:
+        >>> from oslo.torch.nn.parallel import ExpertParallel
+
+        >>> model = AnyTransformerModel()
+        >>> ep_wrapper = ExpertParallel(model, parallel_context=..., ...)
+        >>> optimizer = AnyOptimizer(ep_wrapper.parameters(), lr=3e-5)
+
+        >>> output = ep_wrapper(input_data)
+        >>> output.backward()
+        >>> optimizer.step()
+    """
+
     def __init__(
         self,
         model: nn.Module,
@@ -48,7 +83,7 @@ class ExpertParallel(ParallelWrapper):
         noisy_policy: str = None,
         drop_tks: bool = True,
         use_residual: bool = None,
-        mapping:object = None,
+        mapping: object = None,
     ):
         super().__init__()
 
@@ -92,13 +127,14 @@ class ExpertParallel(ParallelWrapper):
         if is_huggingface_model(model):
             mapping = _ExpertParallelMappingForHuggingFace().get_mapping(model)
         else:
-            assert mapping is not None, "`mapping` must be input if the model is not huggingface model."
+            assert (
+                mapping is not None
+            ), "`mapping` must be input if the model is not huggingface model."
             mapping = mapping.get_mapping(model)
-        
-            
+
         self.expert_parallel_mapping = ExpertParallelMapping(mapping)
 
-        self.combine_info = dict()
+        self.link_info = dict()
 
         self._parallelize()
 
@@ -111,29 +147,34 @@ class ExpertParallel(ParallelWrapper):
         self._sync_ep_model_param()
 
     def _parallelize_module(self):
-        # TODO : Difference of Conv1D and Linear, https://stackoverflow.com/questions/55576314/conv1d-with-kernel-size-1-vs-linear-layer
-        #        -> Initialization, Speed
-        # TODO : Concurrent Modification Exception
-        test = [(module_name, module) for module_name, module in self.model.named_modules()]
-        for module_name, module in test:
+        to_parallelize = [
+            (module_name, module) for module_name, module in self.model.named_modules()
+        ]
+        for module_name, module in to_parallelize:
             if self.expert_parallel_mapping.is_front_parallel(self.model, module_name):
-                self._wrap_front(module,
-                                 module_name,
-                                 reversed=self.expert_parallel_mapping.is_reversed_param(self.model, module_name)
+                self._wrap_front(
+                    module,
+                    module_name,
+                    reversed=self.expert_parallel_mapping.is_reversed_param(
+                        self.model, module_name
+                    ),
                 )
                 module.__class__ = ExpertParallelFrontBlock
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
             ):
-                self._wrap_behind(module,
-                                  module_name,
-                                  reversed=self.expert_parallel_mapping.is_reversed_param(self.model, module_name)
+                self._wrap_behind(
+                    module,
+                    module_name,
+                    reversed=self.expert_parallel_mapping.is_reversed_param(
+                        self.model, module_name
+                    ),
                 )
                 module.__class__ = ExpertParallelBehindBlock
 
         return
 
-    def _extract_combine_info_key(self, module_name):
+    def _extract_link_info_key(self, module_name):
         spl_modules = module_name.split(".")
 
         split_id = len(spl_modules)
@@ -156,10 +197,10 @@ class ExpertParallel(ParallelWrapper):
             expert_parallel_residual = copy.deepcopy(module)
             expert_parallel_residual_mix = nn.Linear(in_features, 2)
 
-        # Add Cur Module's Combine Info
-        combine_info_k = self._extract_combine_info_key(module_name)
-        if combine_info_k not in self.combine_info:
-            self.combine_info[combine_info_k] = dict()
+        # Add Cur Module's Link Info
+        link_info_k = self._extract_link_info_key(module_name)
+        if link_info_k not in self.link_info:
+            self.link_info[link_info_k] = dict()
 
         num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
         _update_module_arguments(
@@ -173,7 +214,7 @@ class ExpertParallel(ParallelWrapper):
             use_residual=self.use_residual,
             expert_parallel_residual=expert_parallel_residual,
             expert_parallel_residual_mix=expert_parallel_residual_mix,
-            combine_info=self.combine_info[combine_info_k],
+            link_info=self.link_info[link_info_k],
             num_local_experts=num_local_experts,
             ep_info=ep_info,
         )
@@ -181,14 +222,18 @@ class ExpertParallel(ParallelWrapper):
         std = math.sqrt(0.1 / in_features)
         if hasattr(module, "weight") and module.weight is not None:
             new_param = nn.Parameter(
-                torch.empty(num_local_experts, in_features, out_features, device=self.device).contiguous()
+                torch.empty(
+                    num_local_experts, in_features, out_features, device=self.device
+                ).contiguous()
             )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.weight = new_param
 
         if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features, device=self.device))
+            new_param = nn.Parameter(
+                torch.empty(num_local_experts, 1, out_features, device=self.device)
+            )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.bias = new_param
@@ -207,10 +252,10 @@ class ExpertParallel(ParallelWrapper):
         if self.use_residual:
             expert_parallel_residual = copy.deepcopy(module)
 
-        # Add Cur Module's Combine Info
-        combine_info_k = self._extract_combine_info_key(module_name)
-        if combine_info_k not in self.combine_info:
-            self.combine_info[combine_info_k] = dict()
+        # Add Cur Module's Link Info
+        link_info_k = self._extract_link_info_key(module_name)
+        if link_info_k not in self.link_info:
+            self.link_info[link_info_k] = dict()
 
         num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
 
@@ -222,7 +267,7 @@ class ExpertParallel(ParallelWrapper):
             num_experts=self.num_experts,
             use_residual=self.use_residual,
             expert_parallel_residual=expert_parallel_residual,
-            combine_info=self.combine_info[combine_info_k],
+            link_info=self.link_info[link_info_k],
             num_local_experts=num_local_experts,
             ep_info=ep_info,
         )
@@ -230,14 +275,18 @@ class ExpertParallel(ParallelWrapper):
         std = math.sqrt(0.1 / in_features)
         if hasattr(module, "weight") and module.weight is not None:
             new_param = nn.Parameter(
-                torch.empty(num_local_experts, in_features, out_features, device=self.device).contiguous()
+                torch.empty(
+                    num_local_experts, in_features, out_features, device=self.device
+                ).contiguous()
             )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.weight = new_param
 
         if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(torch.empty(num_local_experts, 1, out_features, device=self.device))
+            new_param = nn.Parameter(
+                torch.empty(num_local_experts, 1, out_features, device=self.device)
+            )
             with seed(ParallelMode.TENSOR):
                 nn.init.trunc_normal_(new_param, std=std)
             module.bias = new_param
@@ -262,7 +311,6 @@ class ExpertParallel(ParallelWrapper):
 
         return ep_size_param_dict
 
-
     def _sync_ep_model_param(self):
         ep_info_dict = self.ep_context.parallel_info_dict
         if self.ep_context.has_setup and len(ep_info_dict) > 0:
@@ -284,5 +332,6 @@ class ExpertParallel(ParallelWrapper):
                     _, ep_info = self.ep_context.get_info(ep_size)
                     src_rank = dist.get_rank(ep_info.ep_group)
                     for param in param_dict[ep_size]:
-                        dist.broadcast(param, src=src_rank, group=param.ep_info.dp_group)
-
+                        dist.broadcast(
+                            param, src=src_rank, group=param.ep_info.dp_group
+                        )

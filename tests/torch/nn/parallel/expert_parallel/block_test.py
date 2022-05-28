@@ -31,43 +31,40 @@ use_residual = True
 
 
 def run_test(rank, port):
-    # 1. Generate Input
+    # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = "2"
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
-    token_inp = (
-        torch.empty(sent_len, batch_size, in_features).to(torch.float32).to(rank)
-    )
-
-    # 2. Create ExpertParallelFrontBlock
+    # 2. Set Parallel Context
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,
         pipeline_parallel_size=1,
         tensor_parallel_size=1,
         expert_parallel_size=2,
     )
+
+    # 3. Set Expert Parallel Context
     ep_context = ExpertParallelContext(parallel_context, use_kernel_optim=False)
     ep_context.setup(3)
     ep_context.reset_loss()
     num_local_experts, ep_info = ep_context.get_info(num_experts)
-    with seed(ParallelMode.TENSOR):
-        torch.nn.init.trunc_normal_(token_inp, std=1)
 
     global_rank = parallel_context.get_global_rank()
     print(f"ep_local_rank : {ep_info.ep_local_rank}")
     print(f"dp_local_rank : {ep_info.dp_local_rank}")
     print(f"GLOBAL RANK : {global_rank}, Num Local Experts : {num_local_experts}")
 
-    combine_info = dict()
+    # 4. Create ExpertParallelFrontBlock
+    link_info = dict()
     front = ExpertParallelFrontBlock(
         ep_context=ep_context,
         in_features=in_features,
         out_features=out_features,
         num_experts=num_experts,
-        combine_info=combine_info,
+        link_info=link_info,
         top_k=top_k,
         noisy_policy="Jitter",
         use_residual=use_residual,
@@ -78,26 +75,33 @@ def run_test(rank, port):
     activation = nn.GELU()
     drop_out = nn.Dropout(p=0.1)
 
+    # 5. Create ExpertParallelBehindBlock
     behind = ExpertParallelBehindBlock(
         ep_context=ep_context,
         in_features=out_features,
         out_features=in_features,
         num_experts=num_experts,
-        combine_info=combine_info,
+        link_info=link_info,
         use_residual=use_residual,
     )
     behind.to(rank)
 
+    # 6. Forward Propagation
+    token_inp = (
+        torch.empty(sent_len, batch_size, in_features).to(torch.float32).to(rank)
+    )
+    #with seed(ParallelMode.TENSOR):
+    #    torch.nn.init.trunc_normal_(token_inp, std=1)
     print(f"INPUT : {token_inp}")
     front_res = front(token_inp)
-    print(f"combine_info : {combine_info}")
+    print(f"link_info : {link_info}")
 
     with seed(ParallelMode.TENSOR):
         print("=" * 89)
         print("MIDDLE STEP")
         print(f"ACTIVATION INPUT : {front_res}")
         act_out = activation(front_res)
-        resid_act_out = activation(combine_info["residual_inter"])
+        resid_act_out = activation(link_info["residual_inter"])
         print(f"ACTIVATION OUTPUT : {act_out}")
         print(f"RESIDUAL ACT OUT : {resid_act_out}")
         dropped = drop_out(act_out)
@@ -121,7 +125,7 @@ def test_expert_parallel_block():
 
 
 if __name__ == "__main__":
-    # 1. Set Random Seed for Reproducibility
+    # Set Random Seed for Reproducibility
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)

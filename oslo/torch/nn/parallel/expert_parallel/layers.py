@@ -27,8 +27,18 @@ from oslo.torch.nn.parallel.expert_parallel.utils import (
 
 
 class Top1Router(nn.Module):
-    # TODO : Add Doc String
-    """ """
+    """
+    A class to route each token to only one expert
+    proposed by SWITCH TRANSFORMERS: SCALING TO TRILLION PARAMETER MODELS WITH SIMPLE AND EFFICIENT SPARSITY
+    Args:
+        ep_context: expert parallel context
+        capacity_factor_train: capacity of each expert for training
+        capacity_factor_eval: capacity of each expert for evaluation
+        min_capacity: Minimum capacity of each expert
+        select_policy: policy to select top-1 expert ("first" or "random")
+        noisy_func: function to generate and add noise (UniformNoiseSampler or NormalNoiseSampler)
+        drop_tks: flag to drop tokens in the case that the number of dispatched tokens is larger than capacity
+    """
 
     def __init__(
         self,
@@ -40,6 +50,7 @@ class Top1Router(nn.Module):
         noisy_func: Callable = None,
         drop_tks: bool = True,
     ):
+
         super().__init__()
 
         self.ep_context = ep_context
@@ -64,6 +75,15 @@ class Top1Router(nn.Module):
             ).rsample
 
     def get_capacity(self, logits_shape):
+        """
+        Calculate the capacity of tokens for each expert
+
+        Args:
+            logits_shape: Shape of logits for dispatch
+
+        Returns:
+            capacity: the number of tokens to be dispatched for each expert
+        """
 
         capacity_factor = (
             self.capacity_factor_train if self.training else self.capcity_factor_eval
@@ -127,8 +147,18 @@ class Top1Router(nn.Module):
 
 
 class Top2Router(nn.Module):
-    # TODO : Add Doc String
-    """ """
+    """
+    A class to route each token to two experts
+    proposed by OUTRAGEOUSLY LARGE NEURAL NETWORKS:THE SPARSELY-GATED MIXTURE-OF-EXPERTS LAYER
+
+    Args:
+        ep_context: Expert parallel context
+        capacity_factor_train: Capacity of each expert for training
+        capacity_factor_eval: Capacity of each expert for evaluation
+        min_capacity: Minimum capacity of each expert
+        noisy_func: Function to generate and add noise (UniformNoiseSampler or NormalNoiseSampler)
+        drop_tks: Flag to drop tokens in the case that the number of dispatched tokens is larger than capacity
+    """
 
     def __init__(
         self,
@@ -152,6 +182,15 @@ class Top2Router(nn.Module):
         self.drop_tks = drop_tks
 
     def get_capacity(self, logits_shape):
+        """
+        Calculate the capacity of tokens for each expert
+
+        Args:
+            logits_shape: Shape of logits for dispatch
+
+        Returns:
+            capacity: the number of tokens to be dispatched for each expert
+        """
 
         capacity_factor = (
             self.capacity_factor_train if self.training else self.capacity_factor_eval
@@ -229,6 +268,17 @@ class Top2Router(nn.Module):
 
 
 class FP32LinearGate(nn.Module):
+    """
+    A class to calculate score for each token to be routed and each tensor forcefully cast to float32
+    for stability of training proposed by Switch Transformers: Scaling to Trillion Parameter Models with
+    Simple and Efficient Sparsity
+
+    Args:
+        d_model: the size of tensor for each token in the model
+        num_experts: number of experts
+        scale: the scaling factor for initialization of weight
+    """
+
     def __init__(self, d_model: int, num_experts: int, scale: float = 0.1):
         super().__init__()
 
@@ -245,8 +295,28 @@ class FP32LinearGate(nn.Module):
 
 
 class ExpertParallelFrontBlock(nn.Module):
-    # TODO : Add Doc String
-    """ """
+    """
+    A class to wrap the front part of Feed Forward Network.
+
+    Args:
+        ep_context: expert parallel context
+        in_features: the size of tensor for each input token
+        out_features: the size of tensor for each output token
+        num_experts: the number of experts
+        link_info: dictionary for information to link the front and behind block
+        top_k: the number of experts for each token to be dispatched
+        capacity_factor_train: capacity of each expert for training
+        capacity_factor_eval: capacity of each expert for evaluation
+        min_capacity: minimum capacity of each expert
+        select_policy: policy to select top-1 expert ("first" or "random")
+        noisy_policy: policy to generate and add noise ("Jitter" or "Gaussian")
+        drop_tks: flag to drop tokens in the case that the number of dispatched tokens is larger than capacity
+        use_residual: flag to use residual network
+                      proposed by DeepSpeed-MoE:
+                      Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale
+        residual_instance: instance of residual network
+
+    """
 
     def __init__(
         self,
@@ -254,7 +324,7 @@ class ExpertParallelFrontBlock(nn.Module):
         in_features: int,
         out_features: int,
         num_experts: int,
-        combine_info: dict,
+        link_info: dict,
         top_k: int,
         capacity_factor_train: float = 1.25,
         capacity_factor_eval: float = 2.0,
@@ -265,6 +335,7 @@ class ExpertParallelFrontBlock(nn.Module):
         use_residual: bool = False,
         residual_instance: Optional[nn.Module] = None,
     ):
+
         assert noisy_policy in [
             "Jitter",
             "Gaussian",
@@ -314,7 +385,7 @@ class ExpertParallelFrontBlock(nn.Module):
                 in_features, 2, device=get_current_device()
             )
 
-        self.combine_info = combine_info
+        self.link_info = link_info
         self.num_local_experts, self.ep_info = ep_context.get_info(num_experts)
 
         self.weight = nn.Parameter(
@@ -425,24 +496,35 @@ class ExpertParallelFrontBlock(nn.Module):
             # |output| = (num_local_experts * ep_size * capacity + sent_len * batch_size, out_features)
         output = front_output
 
-        # Save Information for Combine
-        self.combine_info["inputs_shape"] = inputs.shape
+        # Save Information for Linking
+        self.link_info["inputs_shape"] = inputs.shape
 
-        self.combine_info["expert_shape"] = expert_shape
-        self.combine_info["a2a_shape"] = a2a_shape
+        self.link_info["expert_shape"] = expert_shape
+        self.link_info["a2a_shape"] = a2a_shape
 
-        self.combine_info["router_res"] = router_res
+        self.link_info["router_res"] = router_res
 
-        self.combine_info["front_output_shape"] = front_output_shape
-        self.combine_info["residual_inter_shape"] = residual_inter_shape
-        self.combine_info["residual_weight"] = residual_weight
+        self.link_info["front_output_shape"] = front_output_shape
+        self.link_info["residual_inter_shape"] = residual_inter_shape
+        self.link_info["residual_weight"] = residual_weight
 
         return output
 
 
 class ExpertParallelBehindBlock(nn.Module):
-    # TODO : Add Doc String
-    """ """
+    """
+    A class to wrap the behind part of Feed Forward Network.
+
+    Args:
+        ep_context: Expert parallel context
+        in_features: The size of tensor for each input token
+        out_features: The size of tensor for each output token
+        num_experts: The number of experts
+        link_info: Dictionary for information to link the front and behind block
+        use_residual: Flag to use residual network proposed by
+                      DeepSpeed-MoE: Advancing Mixture-of-Experts Inference and Training to Power Next-Generation AI Scale
+        residual_instance: Instance of residual network
+    """
 
     def __init__(
         self,
@@ -450,7 +532,7 @@ class ExpertParallelBehindBlock(nn.Module):
         in_features: int,
         out_features: int,
         num_experts: int,
-        combine_info: dict,
+        link_info: dict,
         use_residual: bool = False,
         residual_instance: Optional[nn.Module] = None,
     ):
@@ -471,7 +553,7 @@ class ExpertParallelBehindBlock(nn.Module):
             else:
                 self.expert_parallel_residual = residual_instance
 
-        self.combine_info = combine_info
+        self.link_info = link_info
         self.num_local_experts, self.ep_info = self.ep_context.get_info(num_experts)
 
         # Initialize Experts and Parallel Info
@@ -504,7 +586,7 @@ class ExpertParallelBehindBlock(nn.Module):
         # |behind_expert_output| = (num_local_experts, ep_size * capacity, out_features)
 
         behind_expert_output = behind_expert_output.reshape(
-            self.combine_info["expert_shape"]
+            self.link_info["expert_shape"]
         )
         # |behind_expert_output| = (num_local_experts, ep_size, capacity, out_features)
 
@@ -519,9 +601,7 @@ class ExpertParallelBehindBlock(nn.Module):
         behind_expert_output = self.behind_expert_process(front_expert_output)
         # |behind_expert_output| = (ep_size, num_local_experts, capacity, out_features)
 
-        behind_expert_output = behind_expert_output.reshape(
-            self.combine_info["a2a_shape"]
-        )
+        behind_expert_output = behind_expert_output.reshape(self.link_info["a2a_shape"])
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
         behind_expert_output = AllToAll.apply(
@@ -534,9 +614,9 @@ class ExpertParallelBehindBlock(nn.Module):
     def forward(self, inputs):
         # |inputs| = (sentence_len * batch_size, in_features)
 
-        dim0, dim1, _ = self.combine_info["front_output_shape"]
+        dim0, dim1, _ = self.link_info["front_output_shape"]
         front_output = inputs[: dim0 * dim1].reshape(
-            self.combine_info["front_output_shape"]
+            self.link_info["front_output_shape"]
         )
         # |front_output| = (num_local_experts, ep_size * capacity, in_features)
 
@@ -549,32 +629,31 @@ class ExpertParallelBehindBlock(nn.Module):
             # |expert_output| = (num_experts * capacity, out_features)
 
             output = EPCombine.apply(
-                behind_expert_output, *self.combine_info["router_res"]
+                behind_expert_output, *self.link_info["router_res"]
             )
             # |output| = (num_experts * capacity, out_features)
         else:
-            combine_weights = self.combine_info["router_res"][0].type_as(inputs)
+            combine_weights = self.link_info["router_res"][0].type_as(inputs)
             combine_weights = combine_weights.view(combine_weights.shape[0], -1)
             behind_expert_output = behind_expert_output.view(
                 -1, behind_expert_output.size(-1)
             )
             output = torch.matmul(combine_weights, behind_expert_output)
-        output = output.reshape(self.combine_info["inputs_shape"])
+        output = output.reshape(self.link_info["inputs_shape"])
         # |output| = (sent_len, batch_size, in_features )
 
         if self.use_residual:
             residual_inter = inputs[dim0 * dim1 :].reshape(
-                self.combine_info["residual_inter_shape"]
+                self.link_info["residual_inter_shape"]
             )
             # |residual_inter| = (sent_len, batch_size, in_features)
             residual_output = self.expert_parallel_residual(residual_inter)
             # |residual_output| = (sent_len, batch_size, out_features)
 
             output = (
-                output * self.combine_info["residual_weight"][..., 0:1]
-                + residual_output * self.combine_info["residual_weight"][..., 1:]
+                output * self.link_info["residual_weight"][..., 0:1]
+                + residual_output * self.link_info["residual_weight"][..., 1:]
             )
             # |output| = (sent_len, batch_size, out_features)
 
         return output
-

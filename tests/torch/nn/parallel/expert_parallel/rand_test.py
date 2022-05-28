@@ -25,20 +25,22 @@ top_k = 1
 
 
 def run_test(rank, port):
-    # 1. Generate Input
+    # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = "2"
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
-    # 2. Create ExpertParallelFrontBlock
+    # 2. Set Parallel Context
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,
         pipeline_parallel_size=1,
         tensor_parallel_size=1,
         expert_parallel_size=2,
     )
+
+    # 3. Set Expert Parallel Context
     ep_context = ExpertParallelContext(parallel_context, 2)
     ep_context.setup(1000)
     num_local_experts, ep_info = ep_context.get_info(num_experts)
@@ -49,6 +51,9 @@ def run_test(rank, port):
     print(f"GLOBAL RANK : {global_rank}, Num Local Experts : {num_local_experts}")
     print(f"_SEED_MANAGER._seeds : {_SEED_MANAGER._seeds}")
     print(f"_SEED_MANAGER._seed_states : {_SEED_MANAGER._seed_states}")
+
+
+    # 4. Set Parameters as the same way in the initialization of expert
     import torch.nn as nn
 
     weight = nn.Parameter(
@@ -72,7 +77,7 @@ def test_expert_parallel_block():
 
 
 if __name__ == "__main__":
-    # 1. Set Random Seed for Reproducibility
+    # Set Random Seed for Reproducibility
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)

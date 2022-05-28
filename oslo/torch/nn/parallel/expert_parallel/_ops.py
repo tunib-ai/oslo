@@ -8,13 +8,13 @@ from torch.distributed import ProcessGroup
 from oslo.torch._C import ExpertParallelBinder
 
 OSLO_EP_KERNEL_FLAG = False
-#try:
-#    oslo_expert_parallel_cuda = ExpertParallelBinder().bind()
-#    OSLO_EP_KERNEL_FLAG = True
-#except ImportError:
-#    print(
-#        "If you want to activate cuda kernel for Expert Parallel, Please install with cuda_extension."
-#    )
+try:
+    oslo_expert_parallel_cuda = ExpertParallelBinder().bind()
+    OSLO_EP_KERNEL_FLAG = True
+except ImportError:
+    print(
+        "If you want to activate cuda kernel for Expert Parallel, Please install with cuda_extension."
+    )
 
 
 class AllToAll(torch.autograd.Function):
@@ -115,4 +115,3 @@ class EPCombine(torch.autograd.Function):
         d_expert = d_expert.to(torch.float16) if context.fp16_flag else d_expert
 
         return d_expert, d_logits, None, None, None
-

@@ -28,6 +28,7 @@ top_k = 1
 
 use_residual = False
 
+# Class for Feed Forward Network
 class TestFFNBlock(nn.Module):
     def __init__(self, in_features, out_features):
         super().__init__()
@@ -44,7 +45,7 @@ class TestFFNBlock(nn.Module):
 
         return behind_out
 
-
+# Class for Entire Model
 class TestModel(nn.Module):
     def __init__(self, in_features, out_features, n_layers):
         super().__init__()
@@ -61,7 +62,7 @@ class TestModel(nn.Module):
             out = cur_block(out)
         return out
 
-
+# Class for Mapping information of Entire Model to expert parallelize
 class ExpertParallelMappingForTest(object):
     __MAPPING__ = {
             "TestModel": [
@@ -95,13 +96,14 @@ class ExpertParallelMappingForTest(object):
 
 
 def run_test(rank, port):
-    # 1. Generate Input
+    # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
+    # 2. Set Parallel Context
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,
         pipeline_parallel_size=1,
@@ -109,11 +111,14 @@ def run_test(rank, port):
         expert_parallel_size=world_size,
     )
 
+    # 3. Create Model to expert-parallelize
     model_ep = TestModel(in_features, out_features, n_layers)
     print(f'Rank # {rank} : {model_ep}')
 
+    # 4. Create Mapping Information used for expert-parallelization
     mapping = ExpertParallelMappingForTest()
 
+    # 5. Wrap Model
     wrapper_ep = ExpertParallel(
         model_ep,
         parallel_context,
@@ -123,6 +128,8 @@ def run_test(rank, port):
         use_residual=use_residual,
         mapping=mapping
     )
+
+    # 6. Print the result of wrapping
     print(f'Worker #{rank} : {wrapper_ep.device}')
     print(wrapper_ep)
     print('='*89)
@@ -142,7 +149,7 @@ def test_expert_parallel_block():
 
 
 if __name__ == "__main__":
-    # 1. Set Random Seed for Reproducibility
+    # Set Random Seed for Reproducibility
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)

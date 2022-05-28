@@ -2,6 +2,14 @@ import copy
 
 
 class ExpertParallelInfo(object):
+    """
+    A class to describe expert parallelization information.
+
+    Args:
+        name (Tuple[str]): the name of parameter
+        reverse (bool): reversed param or not
+    """
+
     def __init__(self, *name, reverse: bool = False):
         self.name = name
         self.reverse = reverse
@@ -46,6 +54,15 @@ class ExpertParallelMapping(object):
                     self.__MAPPING__[cls][elem.__class__.__qualname__] = [elem]
 
     def get_mapping(self, model):
+        """
+        Get mapping by model obj
+
+        Args:
+            model (PreTrainedModel): model object (e.g. BertForSequenceClassification)
+
+        Returns:
+            dict: mapping by model
+        """
 
         mapping_by_model = None
         for cls, mapping in self.__MAPPING__.items():
@@ -60,7 +77,15 @@ class ExpertParallelMapping(object):
         return mapping_by_model
 
     def search(self, model, param_name):
+        """
+        Get element by parameter name
 
+        Args:
+            model (PreTrainedModel): model obj
+
+        Returns:
+            ExpertParallelInfo: element by parameter name
+        """
         mapping = self.get_mapping(model)
         count_contain_elem_in_param = 0
         param_split = param_name.split(".")
@@ -97,13 +122,32 @@ class ExpertParallelMapping(object):
             return elem.reverse
 
     def is_front_parallel(self, model, param_name):
+        """
+        Check whether the parameter is front parallelizable or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            param_name (str): name of parameter
+
+        Returns:
+            bool: whether the param is front parallelizable or not
+        """
+
         elem = self.search(model, param_name)
         if elem is not None:
             return isinstance(elem, Front)
 
     def is_behind_parallel(self, model, param_name):
+        """
+        Check whether the parameter is behind parallelizable or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            param_name (str): name of parameter
+
+        Returns:
+            bool: whether the param is behind parallelizable or not
+        """
         elem = self.search(model, param_name)
         if elem is not None:
             return isinstance(elem, Behind)
-
-

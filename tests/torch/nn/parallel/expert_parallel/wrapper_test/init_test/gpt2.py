@@ -21,13 +21,14 @@ top_k = 1
 use_residual = False
 
 def run_test(rank, port):
-    # 1. Generate Input
+    # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = "2"
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
+    # 2. Set Parallel Context
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=1,
         pipeline_parallel_size=1,
@@ -35,10 +36,14 @@ def run_test(rank, port):
         expert_parallel_size=2,
     )
 
+    # 3. Create Tokenizer
     tokenizer = AutoTokenizer.from_pretrained("gpt2")
     tokenizer.pad_token = tokenizer.eos_token
 
+    # 4. Create Model to expert-parallelize
     model_ep = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
+
+    # 5. Wrap Model
     wrapper_ep = ExpertParallel(
         model_ep,
         parallel_context,
@@ -47,6 +52,8 @@ def run_test(rank, port):
         use_kernel_optim=False,
         use_residual=use_residual
     )
+
+    # 6. Print the result of wrapping
     print(f'Worker #{rank} : {wrapper_ep.device}')
     print(wrapper_ep)
     print('='*89)
@@ -67,7 +74,7 @@ def test_expert_parallel_block():
 
 
 if __name__ == "__main__":
-    # 1. Set Random Seed for Reproducibility
+    # Set Random Seed for Reproducibility
     random.seed(0)
     np.random.seed(0)
     torch.manual_seed(0)
