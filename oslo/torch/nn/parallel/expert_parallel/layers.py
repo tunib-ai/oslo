@@ -492,7 +492,6 @@ class ExpertParallelFrontBlock(nn.Module):
 
             output = torch.cat([output, residual_inter], dim=0)
             # |output| = (num_local_experts * ep_size * capacity + sent_len * batch_size, out_features)
-        output = front_output
 
         # Save Information for Linking
         self.link_info["inputs_shape"] = inputs.shape
@@ -601,7 +600,7 @@ class ExpertParallelBehindBlock(nn.Module):
 
         behind_expert_output = behind_expert_output.reshape(self.link_info["a2a_shape"])
         behind_expert_output = behind_expert_output.reshape(
-            self.combine_info["a2a_shape"]
+            self.link_info["a2a_shape"]
         )
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
