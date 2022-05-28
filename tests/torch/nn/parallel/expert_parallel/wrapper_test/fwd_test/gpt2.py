@@ -24,6 +24,7 @@ top_k = 1
 
 use_residual = False
 
+
 def run_test(rank, port):
     # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
@@ -54,7 +55,7 @@ def run_test(rank, port):
         num_experts=num_experts,
         top_k=1,
         use_kernel_optim=False,
-        use_residual=use_residual
+        use_residual=use_residual,
     ).to(rank)
 
     # 6. Prepare Dataset
@@ -64,9 +65,11 @@ def run_test(rank, port):
 
     # 7. Forward Propagation
     for data in dataloader:
-        inputs = tokenizer(data, return_tensors="pt", padding=True, truncation=True, max_length=512).to("cuda")
+        inputs = tokenizer(
+            data, return_tensors="pt", padding=True, truncation=True, max_length=512
+        ).to("cuda")
         loss = wrapper_ep(**inputs, labels=inputs["input_ids"]).loss
-        print(f'loss : {loss}')
+        print(f"loss : {loss}")
         break
 
     return
@@ -88,5 +91,3 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
 
     test_expert_parallel_block()
-
-

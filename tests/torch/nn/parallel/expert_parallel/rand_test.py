@@ -52,7 +52,6 @@ def run_test(rank, port):
     print(f"_SEED_MANAGER._seeds : {_SEED_MANAGER._seeds}")
     print(f"_SEED_MANAGER._seed_states : {_SEED_MANAGER._seed_states}")
 
-
     # 4. Set Parameters as the same way in the initialization of expert
     import torch.nn as nn
 

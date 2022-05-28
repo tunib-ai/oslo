@@ -50,7 +50,6 @@ class Top1Router(nn.Module):
         noisy_func: Callable = None,
         drop_tks: bool = True,
     ):
-
         super().__init__()
 
         self.ep_context = ep_context
@@ -335,7 +334,6 @@ class ExpertParallelFrontBlock(nn.Module):
         use_residual: bool = False,
         residual_instance: Optional[nn.Module] = None,
     ):
-
         assert noisy_policy in [
             "Jitter",
             "Gaussian",
@@ -602,6 +600,9 @@ class ExpertParallelBehindBlock(nn.Module):
         # |behind_expert_output| = (ep_size, num_local_experts, capacity, out_features)
 
         behind_expert_output = behind_expert_output.reshape(self.link_info["a2a_shape"])
+        behind_expert_output = behind_expert_output.reshape(
+            self.combine_info["a2a_shape"]
+        )
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
         behind_expert_output = AllToAll.apply(

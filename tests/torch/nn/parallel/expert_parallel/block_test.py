@@ -90,7 +90,7 @@ def run_test(rank, port):
     token_inp = (
         torch.empty(sent_len, batch_size, in_features).to(torch.float32).to(rank)
     )
-    #with seed(ParallelMode.TENSOR):
+    # with seed(ParallelMode.TENSOR):
     #    torch.nn.init.trunc_normal_(token_inp, std=1)
     print(f"INPUT : {token_inp}")
     front_res = front(token_inp)

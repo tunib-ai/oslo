@@ -97,4 +97,3 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("combine_backward", &moe_combine_backward,
         "Combine operation in MoE combine function");
 }
-

@@ -86,6 +86,7 @@ class ExpertParallelMapping(object):
         Returns:
             ExpertParallelInfo: element by parameter name
         """
+
         mapping = self.get_mapping(model)
         count_contain_elem_in_param = 0
         param_split = param_name.split(".")

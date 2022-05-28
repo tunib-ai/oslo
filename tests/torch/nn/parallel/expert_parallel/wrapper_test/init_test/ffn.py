@@ -22,11 +22,12 @@ in_features = 2
 out_features = 4
 n_layers = 2
 
-world_size = 4 
+world_size = 4
 num_experts = 2
 top_k = 1
 
 use_residual = False
+
 
 # Class for Feed Forward Network
 class TestFFNBlock(nn.Module):
@@ -45,6 +46,7 @@ class TestFFNBlock(nn.Module):
 
         return behind_out
 
+
 # Class for Entire Model
 class TestModel(nn.Module):
     def __init__(self, in_features, out_features, n_layers):
@@ -54,7 +56,9 @@ class TestModel(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
 
-        self.ffns = nn.ModuleList([ TestFFNBlock(in_features, out_features) for i in range(n_layers)])
+        self.ffns = nn.ModuleList(
+            [TestFFNBlock(in_features, out_features) for i in range(n_layers)]
+        )
 
     def forward(self, inp):
         out = inp
@@ -62,18 +66,15 @@ class TestModel(nn.Module):
             out = cur_block(out)
         return out
 
+
 # Class for Mapping information of Entire Model to expert parallelize
 class ExpertParallelMappingForTest(object):
-    __MAPPING__ = {
-            "TestModel": [
-                    Front("fc1"),
-                    Behind("fc2")
-            ]
-    }
+    __MAPPING__ = {"TestModel": [Front("fc1"), Behind("fc2")]}
 
     def __init__(self):
         cache_mapping = {}
-        import sys 
+        import sys
+
         for cls_name, mapping in self.__MAPPING__.items():
             cls = globals()[cls_name]
             if cls is not None:
@@ -94,7 +95,6 @@ class ExpertParallelMappingForTest(object):
         return mapping_by_model
 
 
-
 def run_test(rank, port):
     # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
@@ -113,7 +113,7 @@ def run_test(rank, port):
 
     # 3. Create Model to expert-parallelize
     model_ep = TestModel(in_features, out_features, n_layers)
-    print(f'Rank # {rank} : {model_ep}')
+    print(f"Rank # {rank} : {model_ep}")
 
     # 4. Create Mapping Information used for expert-parallelization
     mapping = ExpertParallelMappingForTest()
@@ -126,19 +126,24 @@ def run_test(rank, port):
         top_k=1,
         use_kernel_optim=False,
         use_residual=use_residual,
-        mapping=mapping
+        mapping=mapping,
     )
 
     # 6. Print the result of wrapping
-    print(f'Worker #{rank} : {wrapper_ep.device}')
+    print(f"Worker #{rank} : {wrapper_ep.device}")
     print(wrapper_ep)
-    print('='*89)
+    print("=" * 89)
 
-    for param_name, module in wrapper_ep.named_parameters() :
-        if wrapper_ep.expert_parallel_mapping.is_front_parallel(wrapper_ep.model, param_name)\
-        or wrapper_ep.expert_parallel_mapping.is_behind_parallel(wrapper_ep.model, param_name):
-            print(f'Worker #{rank} - param_name : {param_name}, param_size : {module.size()}')
-            print(f'Worker #{rank} - param  : {module}')
+    for param_name, module in wrapper_ep.named_parameters():
+        if wrapper_ep.expert_parallel_mapping.is_front_parallel(
+            wrapper_ep.model, param_name
+        ) or wrapper_ep.expert_parallel_mapping.is_behind_parallel(
+            wrapper_ep.model, param_name
+        ):
+            print(
+                f"Worker #{rank} - param_name : {param_name}, param_size : {module.size()}"
+            )
+            print(f"Worker #{rank} - param  : {module}")
 
     return
 
@@ -158,5 +163,3 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
 
     test_expert_parallel_block()
-
-

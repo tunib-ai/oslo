@@ -20,6 +20,7 @@ top_k = 1
 
 use_residual = False
 
+
 def run_test(rank, port):
     # 1. Configure for Parallelization
     os.environ["RANK"] = str(rank)
@@ -50,19 +51,24 @@ def run_test(rank, port):
         num_experts=num_experts,
         top_k=1,
         use_kernel_optim=False,
-        use_residual=use_residual
+        use_residual=use_residual,
     )
 
     # 6. Print the result of wrapping
-    print(f'Worker #{rank} : {wrapper_ep.device}')
+    print(f"Worker #{rank} : {wrapper_ep.device}")
     print(wrapper_ep)
-    print('='*89)
+    print("=" * 89)
 
-    for param_name, module in wrapper_ep.named_parameters() :
-        if wrapper_ep.expert_parallel_mapping.is_front_parallel(wrapper_ep.model, param_name)\
-        or wrapper_ep.expert_parallel_mapping.is_behind_parallel(wrapper_ep.model, param_name):
-            print(f'Worker #{rank} - param_name : {param_name}, param_size : {module.size()}')
-            print(f'Worker #{rank} - param  : {module}')
+    for param_name, module in wrapper_ep.named_parameters():
+        if wrapper_ep.expert_parallel_mapping.is_front_parallel(
+            wrapper_ep.model, param_name
+        ) or wrapper_ep.expert_parallel_mapping.is_behind_parallel(
+            wrapper_ep.model, param_name
+        ):
+            print(
+                f"Worker #{rank} - param_name : {param_name}, param_size : {module.size()}"
+            )
+            print(f"Worker #{rank} - param  : {module}")
 
     return
 
@@ -83,5 +89,3 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = False
 
     test_expert_parallel_block()
-
-
