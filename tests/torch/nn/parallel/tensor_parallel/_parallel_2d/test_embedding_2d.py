@@ -39,7 +39,7 @@ target = split_2d(parallel_context, target, summa_dim, col_first=True)
 # split weight into 0:[0], 1:[2], 2:[1], 3:[3]
 w = split_1d_twice(parallel_context, w, summa_dim, dim=1)
 
-embedding_2d = Embedding2D(10, 8, parallel_context)
+embedding_2d = Embedding2D(10, 8, parallel_context=parallel_context)
 embedding_2d.weight.data = w
 
 out = embedding_2d(input_)

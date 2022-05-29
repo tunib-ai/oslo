@@ -39,7 +39,7 @@ target = split_2d(parallel_context, target, summa_dim, col_first=True)
 # split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
 w = split_2d(parallel_context, w, summa_dim, col_first=False)
 
-vocab_embedding_2d = VocabParallelEmbedding2D(10, 8, parallel_context)
+vocab_embedding_2d = VocabParallelEmbedding2D(10, 8, parallel_context=parallel_context)
 vocab_embedding_2d.weight.data = w
 
 out = vocab_embedding_2d(input_)

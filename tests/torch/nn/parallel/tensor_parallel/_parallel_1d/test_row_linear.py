@@ -41,7 +41,7 @@ input_ = split_1d(parallel_context, input_, world_size, dim=1)
 # split weight into 0:[0], 1:[1], 2:[2], 3:[3]
 w = split_1d(parallel_context, w, world_size, dim=1)
 
-row_linear = RowParallelLinear(8, 4, parallel_context)
+row_linear = RowParallelLinear(8, 4, parallel_context=parallel_context)
 row_linear.weight.data = w
 row_linear.bias.data = b
 

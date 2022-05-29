@@ -45,7 +45,7 @@ w = split_2d(parallel_context, w, summa_dim, col_first=False)
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
 b = split_1d_twice(parallel_context, b, summa_dim, dim=0)
 
-linear_2d = Linear2D(4, 4, parallel_context)
+linear_2d = Linear2D(4, 4, parallel_context=parallel_context)
 linear_2d.weight.data = w
 linear_2d.bias.data = b
 

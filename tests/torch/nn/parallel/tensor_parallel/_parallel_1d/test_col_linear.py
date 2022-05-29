@@ -42,7 +42,7 @@ w = split_1d(parallel_context, w, world_size, dim=0)
 # split bias into 0:[0], 1:[1], 2:[2], 3:[3]
 b = split_1d(parallel_context, b, world_size, dim=0)
 
-col_linear = ColumnParallelLinear(8, 4, parallel_context)
+col_linear = ColumnParallelLinear(8, 4, parallel_context=parallel_context)
 col_linear.weight.data = w
 col_linear.bias.data = b
 

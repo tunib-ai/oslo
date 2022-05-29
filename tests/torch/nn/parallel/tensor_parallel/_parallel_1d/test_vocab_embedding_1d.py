@@ -37,7 +37,7 @@ if parallel_context.get_global_rank() == 0:
 # split weight into 0:[0], 1:[1], 2:[2], 3:[3]
 w = split_1d(parallel_context, w, world_size, dim=0)
 
-vocab_embedding_1d = VocabParallelEmbedding1D(8, 10, parallel_context)
+vocab_embedding_1d = VocabParallelEmbedding1D(8, 10, parallel_context=parallel_context)
 vocab_embedding_1d.weight.data = w
 
 out = vocab_embedding_1d(input_)

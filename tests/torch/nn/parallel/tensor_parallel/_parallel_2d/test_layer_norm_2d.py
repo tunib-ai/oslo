@@ -47,7 +47,7 @@ w = split_1d_twice(parallel_context, w, summa_dim, dim=0)
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
 b = split_1d_twice(parallel_context, b, summa_dim, dim=0)
 
-layernorm_2d = LayerNorm2D(4, parallel_context)
+layernorm_2d = LayerNorm2D(4, parallel_context=parallel_context)
 layernorm_2d.weight.data = w
 layernorm_2d.bias.data = b
 
