@@ -130,6 +130,40 @@ class PPPostFwdP2PCom(torch.autograd.Function):
         return _pp_pre_bwd_p2p_com(grad_output, module_rank, module_rank_parent, parallel_context)
 
 
+def add_hook(module):
+    forward = module.forward
+    parallel_context = get_parallel_context(module, parallel_context=None)
+
+    rank = None
+    rank_parent = None
+    if hasattr(module, "oslo_parallel"):
+        rank = module.oslo_parallel[ParallelMode.PIPELINE]
+    if hasattr(module, "oslo_pp_parent_rank"):
+        rank_parent = module.oslo_pp_parent_rank
+    if hasattr(module, "oslo_parallel") and hasattr(module, "oslo_pp_parent_rank"):
+        assert rank is not None and rank_parent is not None
+        pre_com = PPPreFwdP2PCom(rank, rank_parent).apply
+        post_com = PPPostFwdP2PCom(rank, rank_parent).apply
+
+    def new_forward(*args, **kwargs):
+        x = args[0]
+
+        if hasattr(module, "oslo_parallel") and hasattr(module, "oslo_pp_parent_rank"):
+            print("fwd0", dist.get_rank(), rank, rank_parent, type(x))
+
+            x = pre_com((x, rank, rank_parent, parallel_context))
+            print("fwd1", dist.get_rank(), rank, rank_parent, type(x))
+            x = forward(x, *args[1:], **kwargs)
+            print("fwd2", dist.get_rank(), rank, rank_parent, type(x))
+            x = post_com((x, rank, rank_parent, parallel_context))
+            print("fwd3", dist.get_rank(), rank, rank_parent, type(x))
+        else:
+            x = module(*args, **kwargs)
+        return x
+
+    module.forward = new_forward
+    setattr(module, 'has_hook', True)
+
 ### nn.Module wrapper
 
 class PPModuleWrapper(nn.Module):
@@ -171,8 +205,8 @@ class PPModuleWrapper(nn.Module):
 def wrap_nn_modules(m):
     """Wraps every nn.Module object in a PPModuleWrapper object."""
     for child_name, child in m.named_children():
-        if isinstance(child, nn.Module) and not(isinstance(child, PPModuleWrapper)):
-            setattr(m, child_name, PPModuleWrapper(child))
+        if isinstance(child, nn.Module) and not(hasattr(child, "has_hook")):
+            add_hook(child)
         wrap_nn_modules(child)
 
 
