@@ -113,3 +113,4 @@ HF_TO_OSLO = {
     transformers.GPT2ForSequenceClassification: oslo.transformers.GPT2ForSequenceClassification,
     transformers.GPT2ForTokenClassification: oslo.transformers.GPT2ForTokenClassification,
 }
+
