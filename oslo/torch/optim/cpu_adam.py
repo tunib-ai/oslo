@@ -2,12 +2,8 @@
 Copyright 2020 The Microsoft DeepSpeed Team
 """
 
-import math
 import torch
-import time
-from pathlib import Path
-from ..op_builder import CPUAdamBuilder
-from deepspeed.utils.logging import should_log_le
+from oslo.torch._C import CPUAdamBinder, get_cpu_adam_kernel
 
 
 class DeepSpeedCPUAdam(torch.optim.Optimizer):
@@ -69,6 +65,8 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
                         the precision of the parameters (default: True)
         """
 
+        import logging
+
         default_args = dict(
             lr=lr,
             betas=betas,
@@ -83,7 +81,7 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
         DeepSpeedCPUAdam.optimizer_id = DeepSpeedCPUAdam.optimizer_id + 1
         self.adam_w_mode = adamw_mode
         self.fp32_optimizer_states = fp32_optimizer_states
-        self.ds_opt_adam = CPUAdamBuilder().load()
+        self.ds_opt_adam = get_cpu_adam_kernel()
 
         self.ds_opt_adam.create_adam(
             self.opt_id,
@@ -93,7 +91,7 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
             eps,
             weight_decay,
             adamw_mode,
-            should_log_le("info"),
+            logging.INFO,
         )
 
     def __del__(self):
