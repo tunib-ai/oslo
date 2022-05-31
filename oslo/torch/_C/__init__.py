@@ -7,6 +7,7 @@ from torch.utils import cpp_extension
 from oslo.torch.jit._utils import _set_jit_fusion_options
 
 _SOFTMAX_KERNEL = None
+_ADAM_KERNEL = None
 
 
 def get_softmax_kernel():
@@ -23,6 +24,22 @@ def get_softmax_kernel():
         )
 
     return _SOFTMAX_KERNEL
+
+
+def get_adam_kernel():
+    global _ADAM_KERNEL
+
+    try:
+        if _ADAM_KERNEL is None:
+            _set_jit_fusion_options()
+            _ADAM_KERNEL = AdamBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _ADAM_KERNEL
 
 
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
@@ -157,3 +174,27 @@ class ExpertParallelBinder(Binder):
 
     def sources(self):
         return ["expert_parallel_cuda.cpp", "expert_parallel_cuda_kernel.cu"]
+
+
+class AdamBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_adam"
+
+    def sources(self):
+        return [
+            "multi_tensor_adam.cu",
+            "fused_adam_frontend.cpp",
+        ]
+
+
+class CPUAdamBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_cpu_adam"
+
+    def sources(self):
+        return [
+            "custom_cuda_kernel.cu",
+            "cpu_adam.cpp",
+        ]
