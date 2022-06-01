@@ -78,11 +78,10 @@ def with_seed(func, parallel_mode: ParallelMode):
     return wrapper
 
 
-def moe_set_seed(seed):
+def moe_set_seed(parallel_context, seed):
     if torch.cuda.is_available():
-        from oslo.torch.distributed import ParallelContext
 
-        global_rank = ParallelContext.get_instance().get_global_rank()
+        global_rank = parallel_context.get_global_rank()
         diff_seed = seed + global_rank
         add_seed(ParallelMode.TENSOR, diff_seed, True)
         print(
