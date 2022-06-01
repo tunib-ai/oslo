@@ -47,9 +47,7 @@ def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_contex
               parallel_context=parallel_context
             )
             print(f"pre_fwd-after_recv, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
-        if input_.device.index == rank:
-            return input_
-        elif module_rank == rank: # if the module rank is our rank we receive input_
+        if module_rank == rank: # if the module rank is our rank we receive input_
             return input_buffer
     else: # input_ and module are on the same rank
         print(f"pre_fwd-no_comm, {input_.requires_grad}, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
