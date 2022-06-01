@@ -1,6 +1,7 @@
 from typing import Optional, Dict, Any
 
 import torch
+import torch.distributed as dist
 import torch.nn as nn
 
 from oslo.torch.distributed.parallel_context import ParallelContext
@@ -8,9 +9,9 @@ from oslo.torch.distributed.parallel_mode import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
-#from oslo.torch.nn.parallel.pipeline_parallel._wrapper import (
+# from oslo.torch.nn.parallel.pipeline_parallel._wrapper import (
 #    _PipelineParallel,
-#)
+# )
 
 
 class PipelineParallel(nn.Module):
@@ -67,20 +68,29 @@ class PipelineParallel(nn.Module):
         if use_auto_partitioning:
             self.partitioner.partition()
 
-        #self.module = _pipeline_wrapper()
+        # self.module = _pipeline_wrapper()
 
     def forward(self, *args, **kwargs):
+        # TODO: Do we need a Zero stage check here?
 
-        #TODO: Do we need a Zero stage check here?
+        rank = dist.get_rank()
 
+        print(f"({rank})Len root params: {len(self.partitioner.root_node.parameters)}")
+        print(f"({rank})Root device: {self.partitioner.root_node.parameters[0].device}")
 
+        # TODO; what should be the return
+        if len(self.partitioner.root_node.parameters) == 0:
+            return None
 
-        #self.micro_batches = self._split_batches(kwargs)
+        print(f"{rank}, {self.partitioner.root_node.parameters[0].get_device()}")
 
-        
-
-        return self.module(*args, **kwargs)
-
+        if rank == self.partitioner.root_node.parameters[0].get_device():
+            res = self.module(*args, **kwargs)
+            dist.barrier()
+            return res
+        else:
+            dist.barrier()
+            return None
 
     def guess_batch_size(kwargs):
         """Guess global batch size dynamically from user input"""
