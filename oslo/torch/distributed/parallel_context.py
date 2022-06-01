@@ -155,16 +155,16 @@ class ParallelContext(object):
 
     @classmethod
     def from_torch(
-        cls,
-        data_parallel_size: int = 1,
-        sequence_parallel_size: int = 1,
-        expert_parallel_size: int = 1,
-        pipeline_parallel_size: int = 1,
-        tensor_parallel_size: int = 1,
-        tensor_parallel_depth: Optional[int] = None,
-        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
-        backend: str = "nccl",
-        seed: bool = 42,
+            cls,
+            data_parallel_size: int = 1,
+            sequence_parallel_size: int = 1,
+            expert_parallel_size: int = 1,
+            pipeline_parallel_size: int = 1,
+            tensor_parallel_size: int = 1,
+            tensor_parallel_depth: Optional[int] = None,
+            tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+            backend: str = "nccl",
+            seed: bool = 42,
     ):
         """
         Initialize parallel context from `torch.distributed.launch`.
@@ -196,6 +196,7 @@ class ParallelContext(object):
         rank = int(os.environ["RANK"])
         local_rank = int(os.environ["LOCAL_RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
+        local_world_size = int(os.environ["LOCAL_WORLD_SIZE"])
         host = os.environ["MASTER_ADDR"]
         port = int(os.environ["MASTER_PORT"])
 
@@ -203,6 +204,7 @@ class ParallelContext(object):
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -218,19 +220,19 @@ class ParallelContext(object):
 
     @classmethod
     def from_slurm(
-        cls,
-        host: str,
-        port: int,
-        data_parallel_size: int = 1,
-        sequence_parallel_size: int = 1,
-        expert_parallel_size: int = 1,
-        pipeline_parallel_size: int = 1,
-        tensor_parallel_size: int = 1,
-        tensor_parallel_depth: Optional[int] = None,
-        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
-        backend: str = "nccl",
-        seed: bool = 42,
-        local_rank: Optional[int] = None,
+            cls,
+            host: str,
+            port: int,
+            data_parallel_size: int = 1,
+            sequence_parallel_size: int = 1,
+            expert_parallel_size: int = 1,
+            pipeline_parallel_size: int = 1,
+            tensor_parallel_size: int = 1,
+            tensor_parallel_depth: Optional[int] = None,
+            tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+            backend: str = "nccl",
+            seed: bool = 42,
+            local_rank: Optional[int] = None,
     ):
         """
         Initialize parallel context from SLURM launcher.
@@ -266,11 +268,13 @@ class ParallelContext(object):
         """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
+        local_world_size = int(os.environ["SLURM_JOB_NUMNODES"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -286,18 +290,18 @@ class ParallelContext(object):
 
     @classmethod
     def from_openmpi(
-        cls,
-        host: str,
-        port: int,
-        data_parallel_size: int = 1,
-        sequence_parallel_size: int = 1,
-        expert_parallel_size: int = 1,
-        pipeline_parallel_size: int = 1,
-        tensor_parallel_size: int = 1,
-        tensor_parallel_depth: Optional[int] = None,
-        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
-        backend: str = "nccl",
-        seed: bool = 42,
+            cls,
+            host: str,
+            port: int,
+            data_parallel_size: int = 1,
+            sequence_parallel_size: int = 1,
+            expert_parallel_size: int = 1,
+            pipeline_parallel_size: int = 1,
+            tensor_parallel_size: int = 1,
+            tensor_parallel_depth: Optional[int] = None,
+            tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+            backend: str = "nccl",
+            seed: bool = 42,
     ):
         """
         Initialize parallel context from OpenMPI launcher.
@@ -333,11 +337,13 @@ class ParallelContext(object):
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
+        local_world_size = int(os.environ["OMPI_COMM_WORLD_LOCAL_SIZE"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -352,21 +358,22 @@ class ParallelContext(object):
         )
 
     def __init__(
-        self,
-        rank: int,
-        local_rank: Optional[int],
-        world_size: int,
-        host: str,
-        port: int,
-        data_parallel_size: int,
-        sequence_parallel_size: int,
-        expert_parallel_size: int,
-        pipeline_parallel_size: int,
-        tensor_parallel_size: int,
-        tensor_parallel_mode: Optional[str],
-        tensor_parallel_depth: Optional[int],
-        backend: str,
-        seed: int,
+            self,
+            rank: int,
+            local_rank: Optional[int],
+            world_size: int,
+            local_world_size: int,
+            host: str,
+            port: int,
+            data_parallel_size: int,
+            sequence_parallel_size: int,
+            expert_parallel_size: int,
+            pipeline_parallel_size: int,
+            tensor_parallel_size: int,
+            tensor_parallel_mode: Optional[str],
+            tensor_parallel_depth: Optional[int],
+            backend: str,
+            seed: int,
     ):
         if sequence_parallel_size > 1:
             assert tensor_parallel_size == 1, (
@@ -407,12 +414,12 @@ class ParallelContext(object):
             )
 
         assert (
-            world_size
-            == data_parallel_size
-            * pipeline_parallel_size
-            * tensor_parallel_size
-            * sequence_parallel_size
-            * expert_parallel_size
+                world_size
+                == data_parallel_size
+                * pipeline_parallel_size
+                * tensor_parallel_size
+                * sequence_parallel_size
+                * expert_parallel_size
         ), (
             f"Expected the world size {world_size} to be equal to data"
             f" parallel size ({data_parallel_size}) * pipeline parallel size "
@@ -439,6 +446,8 @@ class ParallelContext(object):
 
         # tensor parallel depth for 2.5d parallelism
         self.tensor_parallel_depth = tensor_parallel_depth
+
+        self.local_world_size = local_world_size
 
         self.init_global_dist(rank, world_size, backend, host, port)
         self.init_parallel_groups()
@@ -631,7 +640,7 @@ class ParallelContext(object):
         """
         parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         return (
-            self.get_local_rank(parallel_mode) == self.get_world_size(parallel_mode) - 1
+                self.get_local_rank(parallel_mode) == self.get_world_size(parallel_mode) - 1
         )
 
     # groups
@@ -740,12 +749,12 @@ class ParallelContext(object):
 
     # init distributed groups
     def init_global_dist(
-        self,
-        rank: int,
-        world_size: int,
-        backend: str,
-        host: str,
-        port: int,
+            self,
+            rank: int,
+            world_size: int,
+            backend: str,
+            host: str,
+            port: int,
     ):
         """
         Initialize global distributed process group
@@ -774,13 +783,13 @@ class ParallelContext(object):
         self.add_global_rank(ParallelMode.GLOBAL, rank)
 
     def _register_dist(
-        self,
-        local_rank: int,
-        group_world_size: int,
-        process_group: dist.ProcessGroup,
-        cpu_group: dist.ProcessGroup,
-        ranks_in_group: List[int],
-        mode: ParallelMode,
+            self,
+            local_rank: int,
+            group_world_size: int,
+            process_group: dist.ProcessGroup,
+            cpu_group: dist.ProcessGroup,
+            ranks_in_group: List[int],
+            mode: ParallelMode,
     ):
         """
         Register distributed setting by give parallel mode
@@ -826,9 +835,9 @@ class ParallelContext(object):
         ]
 
         if (
-            tensor_parallel_initializer_cls is not None
-            and self.tensor_parallel_mode != ParallelMode.TENSOR_1D
-            # tensor parallel 1d is same with total tensor parallel
+                tensor_parallel_initializer_cls is not None
+                and self.tensor_parallel_mode != ParallelMode.TENSOR_1D
+                # tensor parallel 1d is same with total tensor parallel
         ):
             _initializer_param = initializer_param.copy()
 
