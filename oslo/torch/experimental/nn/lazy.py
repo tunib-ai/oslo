@@ -139,16 +139,16 @@ class LazyEmbedding(LazyModuleMixin, nn.Embedding):
     bias: UninitializedParameter
 
     def __init__(
-            self,
-            num_embeddings: int,
-            embedding_dim: int,
-            padding_idx: Optional[int] = None,
-            max_norm: Optional[float] = None,
-            norm_type: float = 2.0,
-            scale_grad_by_freq: bool = False,
-            sparse: bool = False,
-            device=None,
-            dtype=None,
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        padding_idx: Optional[int] = None,
+        max_norm: Optional[float] = None,
+        norm_type: float = 2.0,
+        scale_grad_by_freq: bool = False,
+        sparse: bool = False,
+        device=None,
+        dtype=None,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super(LazyEmbedding, self).__init__(
@@ -221,13 +221,13 @@ class LazyLinear(LazyModuleMixin, Linear):
     bias: UninitializedParameter
 
     def __init__(
-            self,
-            in_features: int,
-            out_features: int,
-            bias: bool = True,
-            device: Optional[torch.device] = None,
-            dtype: Optional[torch.dtype] = None,
-            skip_bias_add: bool = False,
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        device: Optional[torch.device] = None,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
     ) -> None:
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__(0, 0, False)
