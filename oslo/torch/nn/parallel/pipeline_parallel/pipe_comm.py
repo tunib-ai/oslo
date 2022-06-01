@@ -48,9 +48,9 @@ def _pp_post_bwd_p2p_com(input_grad, module_rank, module_rank_parent, parallel_c
     rank = dist.get_rank()
     if input_grad.device.index != module_rank_parent:
         if module_rank == rank: # if input_grad is on our rank we send
-            send(data=input_grad, src_rank=module_rank_parent, dst_rank=module_rank_parent, parallel_context=parallel_context)
+            send(data=input_grad, src_rank=rank, dst_rank=module_rank_parent, parallel_context=parallel_context)
         elif module_rank_parent == rank: # if the parent rank is our rank we receive output
-            input_grad = recv(src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
+            input_grad = recv(src_rank=module_rank, dst_rank=rank, parallel_context=parallel_context)
         if module_rank_parent == rank: # if the parent rank is our rank we receive output
             return input_grad
     else: # data_out and module are on the same rank
@@ -91,9 +91,9 @@ def _pp_post_fwd_p2p_com(output_, module_rank, module_rank_parent, parallel_cont
     rank = dist.get_rank()
     if output_.device.index != module_rank_parent:
         if module_rank == rank: # if output_ is on our rank we send
-            send(data=output_, src_rank=module_rank_parent, dst_rank=module_rank_parent, parallel_context=parallel_context)
+            send(data=output_, src_rank=rank, dst_rank=module_rank_parent, parallel_context=parallel_context)
         elif module_rank_parent == rank: # if the parent rank is our rank we receive output_
-            output_ = recv(src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
+            output_ = recv(src_rank=module_rank, dst_rank=rank, parallel_context=parallel_context)
         if module_rank_parent == rank: # if the parent rank is our rank we receive output_
             return output_
     else: # data_out and module are on the same rank
@@ -104,9 +104,9 @@ def _pp_pre_bwd_p2p_com(output_grad, module_rank, module_rank_parent, parallel_c
     rank = dist.get_rank()
     if output_grad.device.index != module_rank:
         if output_grad.device.index == rank: # if output_grad is on our rank we send
-            send(data=output_grad, src_rank=module_rank, dst_rank=module_rank, parallel_context=parallel_context)
+            send(data=output_grad, src_rank=rank, dst_rank=module_rank, parallel_context=parallel_context)
         elif module_rank == rank: # if the module rank is our rank we receive output_grad
-            output_grad = recv(src_rank=output_grad.device.index, dst_rank=output_grad.device.index, parallel_context=parallel_context)
+            output_grad = recv(src_rank=output_grad.device.index, dst_rank=rank, parallel_context=parallel_context)
         if module_rank == rank: # if the module rank is our rank we receive output_grad
             return output_grad
     else: # data_out_grad and module are on the same rank
