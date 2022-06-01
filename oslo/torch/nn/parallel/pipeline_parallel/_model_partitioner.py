@@ -6,6 +6,7 @@ import torch.nn as nn
 from anytree import Node
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
+from oslo.torch.nn.parallel.utils import get_parallel_context
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
@@ -107,7 +108,7 @@ class ModelPartitioner(object):
         #for m in self.root_node.modules:
         #    print(m)
         #print(self.root_node.modules)
-        wrap_nn_modules(self.root_node.modules[0])
+        wrap_nn_modules(self.root_node.modules[0], get_parallel_context(self.root_node.modules[0], parallel_context=None))
         #print(self.root_node.modules)
 
     @staticmethod
