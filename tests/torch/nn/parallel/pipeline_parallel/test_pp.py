@@ -8,6 +8,14 @@ from oslo.torch.nn.parallel import PipelineParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
 
+_print = print
+
+
+def print(*args, **kw):
+    if dist.get_rank() == 0:
+        _print(*args, **kw)
+
+
 torch.manual_seed(42)
 
 parallel_context = ParallelContext.from_torch(
@@ -36,7 +44,11 @@ model_no_pp.load_state_dict(model.state_dict())
 model_no_pp.to(current_device)
 
 wrapper_pp = PipelineParallel(
-    model, parallel_context=parallel_context, micro_batch_size=4, use_auto_partitioning=True, memory_computation_balance=1.0
+    model,
+    parallel_context=parallel_context,
+    micro_batch_size=4,
+    use_auto_partitioning=True,
+    memory_computation_balance=1.0,
 )
 
 wrapper_pp.train()
@@ -48,6 +60,28 @@ optimizer_pp = Adam(wrapper_pp.parameters(), lr=3e-5)
 optimizer_no_pp = Adam(model_no_pp.parameters(), lr=3e-5)
 
 allocate_params(wrapper_pp, parallel_context)
+
+print(f"FC1 @ {fc1.weight.device}, FC2 @ {fc2.weight.device}")
+
+
+def hook_fn(m, i, o):
+    print(m)
+
+
+def get_all_layers(net):
+    for name, layer in net._modules.items():
+        # If it is a sequential, don't register a hook on it
+        # but recursively register hook on all it's module children
+        if isinstance(layer, nn.Sequential):
+            get_all_layers(layer)
+        else:
+            # it's a non sequential. Register a hook
+            layer.register_backward_hook(hook_fn)
+
+
+get_all_layers(wrapper_pp)
+
+
 """
 for rank in range(dist.get_world_size()):
     if dist.get_rank() == rank:
@@ -75,15 +109,27 @@ for i in range(n_steps):
 
     out_pp = wrapper_pp(sample_input)
     out_no_pp = model_no_pp(sample_input)
-    sample_output = sample_output.to(out_pp.device)
-    loss_pp = loss_fn(out_pp, sample_output)
-    loss_no_pp = loss_fn(out_no_pp, sample_output)
 
-    if parallel_context.get_global_rank() == 0:
-        print(f"rank: {dist.get_rank()}, pp:{loss_pp}, NOTHING:{loss_no_pp}")
+    if out_pp is not None:
+        sample_output = sample_output.to(out_pp.device)
+        loss_pp = loss_fn(out_pp, sample_output)
+        loss_no_pp = loss_fn(out_no_pp, sample_output)
 
-    loss_pp.backward()
-    loss_no_pp.backward()
+        # if parallel_context.get_global_rank() == 0:
+        _print(f"rank: {dist.get_rank()}, pp:{loss_pp}, NOTHING:{loss_no_pp}")
+    _print("AHHHHHHHHHHH!!!!!!!!!!!")
+
+    dist.barrier()
+
+    _print(f"rank: {dist.get_rank()}, barrier")
+
+    if out_pp is not None:
+        loss_pp.backward()
+        loss_no_pp.backward()
+
+    if out_pp is not None:
+        for n, p in wrapper_pp.named_parameters():
+            print(n, p.grad)
 
     optimizer_pp.step()
     optimizer_no_pp.step()
