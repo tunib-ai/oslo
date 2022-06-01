@@ -243,8 +243,6 @@ def add_hook(module, parallel_context):
 
         caller_module = frame.f_locals["self"]
         print(f'{caller_module.__class__.__qualname__} + {len(args)}')
-        x = args[0]
-        assert isinstance(x, torch.Tensor)
 
         forward = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][0]
         rank = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][1]
@@ -268,18 +266,6 @@ def add_hook(module, parallel_context):
 
             if wrapped:
                 (x,) = x
-            
-            print("fwd0", dist.get_rank(), rank, rank_parent, type(x))
-
-            x = pre_com((x, rank, rank_parent, parallel_context))
-            print("fwd1", dist.get_rank(), rank, rank_parent, type(x))
-            if len(args) > 1:
-                x = forward(x, *args[1:], **kwargs)
-            else:
-                x = forward(x, **kwargs)
-            print("fwd2", dist.get_rank(), rank, rank_parent, type(x))
-            x = post_com((x, rank, rank_parent, parallel_context))
-            print("fwd3", dist.get_rank(), rank, rank_parent, type(x))
         else:
             x = forward(*args, **kwargs)
         return x
