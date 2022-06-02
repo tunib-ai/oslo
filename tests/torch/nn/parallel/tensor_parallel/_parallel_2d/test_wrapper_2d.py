@@ -15,7 +15,7 @@ from _utils import split_batch_2d
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=16,
+    tensor_parallel_size=4,
     tensor_parallel_mode=ParallelMode.TENSOR_2D,
 )
 
@@ -38,14 +38,16 @@ optimizer_tp = Adam(wrapper_tp.parameters(), lr=3e-5)
 optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 
 # 데이터셋 생성
+batch_size = 16
 datasets = load_dataset("squad").data["train"]["context"]
-datasets = [str(sample) for sample in datasets[:2000]]
-dataloader = DataLoader(datasets, batch_size=16)
+datasets = [str(sample) for sample in datasets[:500]]
+dataloader = DataLoader(datasets, batch_size=batch_size)
 
 summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name="tp_exp")
+    wandb.init(project="oslo", name=f"tp2d_bs{batch_size}")
 
 # 모니터링 생성 대기
 dist.barrier()
@@ -79,3 +81,5 @@ for data in dataloader:
 
     optimizer_tp.step()
     optimizer_no_tp.step()
+
+dist.barrier()

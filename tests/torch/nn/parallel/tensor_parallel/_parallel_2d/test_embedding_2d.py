@@ -16,8 +16,8 @@ parallel_context = ParallelContext.from_torch(
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-input_ = torch.LongTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).cuda()
-target = torch.randn((2, 4, 8)).cuda()
+input_ = torch.LongTensor([[0, 1, 6, 3, 8], [5, 2, 7, 4, 9]]).cuda()
+target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 

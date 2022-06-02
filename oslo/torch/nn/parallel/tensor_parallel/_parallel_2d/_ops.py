@@ -126,6 +126,23 @@ def all_gather_tensor_2d(
     )
 
 
+def gather_batch_2d(
+    inputs: Tensor,
+    dim: int = 0,
+    parallel_context: Optional[ParallelContext] = None,
+) -> Tensor:
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
+    if world_size <= 1:
+        return inputs
+
+    return all_gather_tensor_2d(
+        inputs, 
+        dim=dim, 
+        parallel_context=parallel_context, 
+        parallel_mode=ParallelMode.TENSOR_2D_COL,
+    )
+
 def split_batch_2d(
     inputs: Tensor,
     dim: int = 0,

@@ -38,7 +38,7 @@ if parallel_context.get_global_rank() == 0:
     
 input_ = split_batch_2d(parallel_context, input_, summa_dim)
 # split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-target = split_2d(parallel_context, w, summa_dim, col_first=True)
+target = split_2d(parallel_context, target, summa_dim, col_first=True)
 # split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
 w = split_2d(parallel_context, w, summa_dim, col_first=False)
 
