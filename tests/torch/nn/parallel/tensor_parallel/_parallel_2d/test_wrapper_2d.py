@@ -9,7 +9,6 @@ from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
-from _utils import split_batch_2d
 
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
