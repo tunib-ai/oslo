@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import torch
 import torch.distributed as dist
@@ -43,23 +43,23 @@ def recv(
 def all_gather(
     tensor: Tensor,
     dim: int,
-    parallel_mode: ParallelMode,
-    parallel_context: ParallelContext,
     on_cpu: bool = False,
     async_op: bool = False,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ) -> Tensor:
 
-    depth = parallel_context.get_world_size(parallel_mode)
+    world_size = parallel_context.get_world_size(parallel_mode)
 
-    if depth == 1:
+    if world_size == 1:
         out = tensor
         work = None
     else:
         shape = list(tensor.shape)
         shape[0], shape[dim] = shape[dim], shape[0]
-        shape[0] *= depth
+        shape[0] *= world_size
         out = torch.empty(shape, dtype=tensor.dtype, device=tensor.device)
-        temp = list(torch.chunk(out, depth, dim=0))
+        temp = list(torch.chunk(out, world_size, dim=0))
         group = (
             parallel_context.get_cpu_group(parallel_mode)
             if on_cpu
@@ -81,19 +81,21 @@ def all_gather(
 def reduce_scatter(
     tensor: Tensor,
     dim: int,
-    parallel_mode: ParallelMode,
-    parallel_context: ParallelContext,
     op: ReduceOp = ReduceOp.SUM,
     on_cpu: bool = False,
     async_op: bool = False,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ) -> Tensor:
-    depth = parallel_context.get_world_size(parallel_mode)
+    world_size = parallel_context.get_world_size(parallel_mode)
 
-    if depth == 1:
+    if world_size == 1:
         out = tensor
         work = None
     else:
-        temp = list(map(lambda x: x.contiguous(), torch.chunk(tensor, depth, dim=dim)))
+        temp = list(
+            map(lambda x: x.contiguous(), torch.chunk(tensor, world_size, dim=dim))
+        )
         out = torch.empty(temp[0].shape, dtype=tensor.dtype, device=tensor.device)
         group = (
             parallel_context.get_cpu_group(parallel_mode)
@@ -111,14 +113,14 @@ def reduce_scatter(
 
 def all_reduce(
     tensor: Tensor,
-    parallel_mode: ParallelMode,
-    parallel_context: ParallelContext,
     op: ReduceOp = ReduceOp.SUM,
     on_cpu: bool = False,
     async_op: bool = False,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ) -> Tensor:
-    depth = parallel_context.get_world_size(parallel_mode)
-    if depth == 1:
+    world_size = parallel_context.get_world_size(parallel_mode)
+    if world_size == 1:
         out = tensor
         work = None
     else:
@@ -138,14 +140,14 @@ def all_reduce(
 def broadcast(
     tensor: Tensor,
     src: int,
-    parallel_context: ParallelContext,
-    parallel_mode: ParallelMode,
     on_cpu: bool = False,
     async_op: bool = False,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ):
-    depth = parallel_context.get_world_size(parallel_mode)
+    world_size = parallel_context.get_world_size(parallel_mode)
 
-    if depth == 1:
+    if world_size == 1:
         out = tensor
         work = None
     else:
@@ -165,14 +167,14 @@ def broadcast(
 def reduce(
     tensor: Tensor,
     dst: int,
-    parallel_context: ParallelContext,
-    parallel_mode: ParallelMode,
     op: ReduceOp = ReduceOp.SUM,
     on_cpu: bool = False,
     async_op: bool = False,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ):
-    depth = parallel_context.get_world_size(parallel_mode)
-    if depth == 1:
+    world_size = parallel_context.get_world_size(parallel_mode)
+    if world_size == 1:
         out = tensor
         work = None
     else:
@@ -189,23 +191,25 @@ def reduce(
         return out
 
 
-def scatter(inputs, parallel_context, dim=-1):
+def scatter(
+    tensor: Tensor, dim: int, parallel_context: Optional[ParallelContext] = None
+):
     world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
     rank = parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
 
     if world_size == 1:
-        return inputs
+        return tensor
 
-    tensor_size = inputs.size(dim)
+    tensor_size = tensor.size(dim)
     assert (
         tensor_size % world_size == 0
     ), "tensor_size must be divisible by world size for tensor parallelism"
     split_size_or_sections = tensor_size // world_size
 
-    inputs_list = torch.split(
-        inputs, split_size_or_sections=split_size_or_sections, dim=dim
+    tensor_list = torch.split(
+        tensor, split_size_or_sections=split_size_or_sections, dim=dim
     )
-    return inputs_list[rank].contiguous()
+    return tensor_list[rank].contiguous()
 
 
 def scatter_object_list(
@@ -277,9 +281,9 @@ def scatter_object_list(
     )
 
 
-def ring_qk(sub_q, sub_k, parallel_context):
+def ring_qk(sub_q: Tensor, sub_k: Tensor, parallel_context: ParallelContext):
     return _RingQK.apply(sub_q, sub_k, parallel_context)
 
 
-def ring_av(sub_attn, sub_v, parallel_context):
+def ring_av(sub_attn: Tensor, sub_v: Tensor, parallel_context: ParallelContext):
     return _RingAV.apply(sub_attn, sub_v, parallel_context)
