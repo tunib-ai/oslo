@@ -1,6 +1,4 @@
-from oslo.torch.distributed import parallel_context
-from oslo.torch.distributed.parallel_context import ParallelContext
-from typing import Any, Optional
+from typing import Any
 
 import torch
 from torch import Tensor
@@ -49,24 +47,25 @@ class _AllGather1D(torch.autograd.Function):
             ctx.dim = dim
             ctx.parallel_context = parallel_context
         return all_gather(
-                inputs,
-                dim=dim,
-                on_cpu=str(inputs.device) == "cpu",
-                async_op=False,
-                parallel_context=parallel_context,
-                parallel_mode=ParallelMode.TENSOR_1D,
-            )
+            inputs,
+            dim=dim,
+            on_cpu=str(inputs.device) == "cpu",
+            async_op=False,
+            parallel_context=parallel_context,
+            parallel_mode=ParallelMode.TENSOR_1D,
+        )
 
     def backward(ctx: Any, grad: Tensor):
         return (
             scatter(
-                grad, 
-                dim=ctx.dim, 
+                grad,
+                dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
             ),
             None,
             None,
         )
+
 
 class _Scatter1D(torch.autograd.Function):
     def forward(ctx: Any, inputs: Tensor, dim: int, parallel_context: ParallelContext):
@@ -81,7 +80,7 @@ class _Scatter1D(torch.autograd.Function):
             ),
             None,
         )
-    
+
     def backward(ctx, grad):
         return (
             all_gather(
@@ -92,7 +91,6 @@ class _Scatter1D(torch.autograd.Function):
             None,
             None,
         )
-
 
 
 def broadcast_1d(inputs: Tensor, parallel_context: ParallelContext):

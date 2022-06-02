@@ -93,7 +93,9 @@ def reduce_scatter(
         out = tensor
         work = None
     else:
-        temp = list(map(lambda x: x.contiguous(), torch.chunk(tensor, world_size, dim=dim)))
+        temp = list(
+            map(lambda x: x.contiguous(), torch.chunk(tensor, world_size, dim=dim))
+        )
         out = torch.empty(temp[0].shape, dtype=tensor.dtype, device=tensor.device)
         group = (
             parallel_context.get_cpu_group(parallel_mode)
@@ -190,9 +192,7 @@ def reduce(
 
 
 def scatter(
-    tensor: Tensor, 
-    dim: int, 
-    parallel_context: Optional[ParallelContext] = None
+    tensor: Tensor, dim: int, parallel_context: Optional[ParallelContext] = None
 ):
     world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
     rank = parallel_context.get_local_rank(ParallelMode.TENSOR_1D)

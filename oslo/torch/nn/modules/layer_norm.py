@@ -261,7 +261,7 @@ class LayerNorm2p5D(nn.Module):
 
 class LayerNorm3D(nn.Module):
     def __init__(
-        self, 
+        self,
         normalized_shape: int,
         eps: float = 1e-05,
         bias: bool = True,
@@ -284,9 +284,13 @@ class LayerNorm3D(nn.Module):
             "dtype": dtype,
         }
 
-        self.weight = Parameter(torch.ones(self.normalized_shape_per_partition, **factory_kwargs))
+        self.weight = Parameter(
+            torch.ones(self.normalized_shape_per_partition, **factory_kwargs)
+        )
         if bias:
-            self.bias = Parameter(torch.zeros(self.normalized_shape_per_partition, **factory_kwargs))
+            self.bias = Parameter(
+                torch.zeros(self.normalized_shape_per_partition, **factory_kwargs)
+            )
         else:
             self.bias = None
         self.eps = eps
@@ -295,15 +299,15 @@ class LayerNorm3D(nn.Module):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             layernorm_3d,
         )
+
         return layernorm_3d(
-            input, 
-            self.weight, 
-            self.bias, 
-            self.normalized_shape, 
+            input,
+            self.weight,
+            self.bias,
+            self.normalized_shape,
             self.eps,
             self.parallel_context,
-            self.input_parallel_mode, 
-            self.weight_parallel_mode, 
+            self.input_parallel_mode,
+            self.weight_parallel_mode,
             self.output_parallel_mode,
         )
-

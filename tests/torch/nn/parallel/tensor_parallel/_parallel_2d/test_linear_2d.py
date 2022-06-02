@@ -75,4 +75,3 @@ if parallel_context.get_global_rank() == 0:
     sse_update = torch.sum((out_update - pout_update) ** 2).item()
     print(f"output sse: \n{sse}\n")
     print(f"next output sse: \n{sse_update}\n")
-

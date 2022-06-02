@@ -37,16 +37,30 @@ if parallel_context.get_global_rank() == 0:
     print(f"original updated weight: \n{linear.weight.data}\n")
     print(f"original updated bias: \n{linear.bias.data}\n")
 
-input_ = torch.chunk(input_, cubic_dim, dim=-2)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)]
-input_ = torch.chunk(input_, cubic_dim, dim=-2)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)]
-input_ = torch.chunk(input_, cubic_dim, dim=-1)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)]
+input_ = torch.chunk(input_, cubic_dim, dim=-2)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
+]
+input_ = torch.chunk(input_, cubic_dim, dim=-2)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+]
+input_ = torch.chunk(input_, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+]
 
 
-w = torch.chunk(w, cubic_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)]
-w = torch.chunk(w, cubic_dim, dim=-1)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)]
-w = torch.chunk(w, cubic_dim, dim=-1)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)]
+w = torch.chunk(w, cubic_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+]
+w = torch.chunk(w, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+]
+w = torch.chunk(w, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
+]
 
-b = torch.chunk(b, cubic_dim, dim=0)[parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)]
+b = torch.chunk(b, cubic_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+]
 
 linear_3d = Linear3D(2, 4, parallel_context=parallel_context)
 linear_3d.weight.data.copy_(w)

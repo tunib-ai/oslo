@@ -35,7 +35,7 @@ out_update = vocab_embedding(input_)
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
-    
+
 input_ = split_batch_2d(parallel_context, input_, summa_dim)
 # split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
 target = split_2d(parallel_context, target, summa_dim, col_first=True)
@@ -65,4 +65,3 @@ if parallel_context.get_global_rank() == 0:
     sse_update = torch.sum((out_update - pout_update) ** 2).item()
     print(f"output sse: \n{sse}\n")
     print(f"next output sse: \n{sse_update}\n")
-

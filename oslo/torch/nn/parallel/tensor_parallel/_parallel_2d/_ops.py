@@ -137,11 +137,12 @@ def gather_batch_2d(
         return inputs
 
     return all_gather_tensor_2d(
-        inputs, 
-        dim=dim, 
-        parallel_context=parallel_context, 
+        inputs,
+        dim=dim,
+        parallel_context=parallel_context,
         parallel_mode=ParallelMode.TENSOR_2D_COL,
     )
+
 
 def split_batch_2d(
     inputs: Tensor,
@@ -879,7 +880,12 @@ class _AllGatherTensor2D(torch.autograd.Function):
 
 class _ReduceTensor2D(torch.autograd.Function):
     @staticmethod
-    def forward(ctx: Any, inputs: Tensor, parallel_context: ParallelContext, parallel_mode: ParallelMode):
+    def forward(
+        ctx: Any,
+        inputs: Tensor,
+        parallel_context: ParallelContext,
+        parallel_mode: ParallelMode,
+    ):
         return all_reduce(
             inputs,
             parallel_context=parallel_context,
@@ -893,7 +899,13 @@ class _ReduceTensor2D(torch.autograd.Function):
 
 class _ReduceScatterTensor2D(torch.autograd.Function):
     @staticmethod
-    def forward(ctx: Any, inputs: Tensor, dim: int, parallel_context: ParallelContext, parallel_mode: ParallelMode):
+    def forward(
+        ctx: Any,
+        inputs: Tensor,
+        dim: int,
+        parallel_context: ParallelContext,
+        parallel_mode: ParallelMode,
+    ):
         if ctx:
             ctx.dim = dim
             ctx.parallel_context = parallel_context
@@ -924,7 +936,10 @@ class _ReduceScatterTensor2D(torch.autograd.Function):
 class _ReduceByBatch2D(torch.autograd.Function):
     @staticmethod
     def symbolic(
-        graph: Any, inputs: Tensor, reduce_mean: bool = False, parallel_context: Optional[ParallelContext] = None
+        graph: Any,
+        inputs: Tensor,
+        reduce_mean: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         output = all_reduce(
             inputs,
@@ -939,7 +954,10 @@ class _ReduceByBatch2D(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float32)
     def forward(
-        ctx: Any, inputs: Tensor, reduce_mean: bool = False, parallel_context: Optional[ParallelContext] = None
+        ctx: Any,
+        inputs: Tensor,
+        reduce_mean: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         output = all_reduce(
             inputs,

@@ -66,7 +66,8 @@ for data in dataloader:
     ).to("cuda")
 
     inputs_tp = {
-        key: split_batch_2d(parallel_context, value, summa_dim) for key, value in inputs.items()
+        key: split_batch_2d(parallel_context, value, summa_dim)
+        for key, value in inputs.items()
     }
 
     loss_tp = wrapper_tp(**inputs_tp, labels=inputs_tp["input_ids"]).loss

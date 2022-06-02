@@ -201,8 +201,12 @@ class Embedding2D(nn.Embedding):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             all_gather_tensor_2d,
         )
+
         weight = all_gather_tensor_2d(
-            self.weight, -1, self.parallel_context, ParallelMode.TENSOR_2D_COL,
+            self.weight,
+            -1,
+            self.parallel_context,
+            ParallelMode.TENSOR_2D_COL,
         )
         output = F.embedding(
             input,
@@ -249,9 +253,10 @@ class VocabParallelEmbedding2D(nn.Embedding):
             gather_batch_2d,
             reduce_scatter_tensor_2d,
         )
+
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         input = gather_batch_2d(
-            input, 
+            input,
             dim=0,
             parallel_context=self.parallel_context,
         )
@@ -272,7 +277,6 @@ class VocabParallelEmbedding2D(nn.Embedding):
             self.norm_type,
             self.scale_grad_by_freq,
             self.sparse,
-
         )
         output[input_mask, :] = 0.0
         output = reduce_scatter_tensor_2d(
@@ -311,7 +315,10 @@ class Embedding2p5D(nn.Embedding):
 
         input = split_batch_2p5d(input, 0, self.parallel_context)
         weight = all_gather_tensor_2p5d(
-            self.weight, -1, self.parallel_context, ParallelMode.TENSOR_2P5D_COL,
+            self.weight,
+            -1,
+            self.parallel_context,
+            ParallelMode.TENSOR_2P5D_COL,
         )
 
         output = F.embedding(
@@ -415,18 +422,23 @@ class Embedding3D(nn.Embedding):
             split_tensor_3d,
             broadcast_weight_3d_from_diagonal,
         )
-        input = split_tensor_3d(input, 0, self.parallel_context, self.weight_parallel_mode)
-        input = split_tensor_3d(input, 0, self.parallel_context, self.input_parallel_mode)
+
+        input = split_tensor_3d(
+            input, 0, self.parallel_context, self.weight_parallel_mode
+        )
+        input = split_tensor_3d(
+            input, 0, self.parallel_context, self.input_parallel_mode
+        )
         weight = broadcast_weight_3d_from_diagonal(
-            self.weight, 
+            self.weight,
             self.parallel_context,
-            self.input_parallel_mode, 
+            self.input_parallel_mode,
             self.weight_parallel_mode,
             self.output_parallel_mode,
         )
         output = F.embedding(
-            input, 
-            weight, 
+            input,
+            weight,
             self.padding_idx,
             self.max_norm,
             self.norm_type,
@@ -454,16 +466,22 @@ class VocabParallelEmbedding3D(nn.Embedding):
         self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
         self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
 
-        vocab_parallel_rank = self.parallel_context.get_local_rank(self.input_parallel_mode)
+        vocab_parallel_rank = self.parallel_context.get_local_rank(
+            self.input_parallel_mode
+        )
 
         super().__init__(
-            num_embeddings=num_embeddings // (self.cubic_dim ** 2),
+            num_embeddings=num_embeddings // (self.cubic_dim**2),
             embedding_dim=embedding_dim // self.cubic_dim,
             device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
         )
-        self.vocab_start_index = vocab_parallel_rank * self.num_embeddings // self.cubic_dim
-        self.vocab_end_index = self.vocab_start_index + self.num_embeddings // self.cubic_dim
+        self.vocab_start_index = (
+            vocab_parallel_rank * self.num_embeddings // self.cubic_dim
+        )
+        self.vocab_end_index = (
+            self.vocab_start_index + self.num_embeddings // self.cubic_dim
+        )
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
@@ -471,22 +489,25 @@ class VocabParallelEmbedding3D(nn.Embedding):
             all_gather_tensor_3d,
             reduce_scatter_tensor_3d,
         )
-        input = split_tensor_3d(input, 0, self.parallel_context, self.weight_parallel_mode)
+
+        input = split_tensor_3d(
+            input, 0, self.parallel_context, self.weight_parallel_mode
+        )
 
         input_mask = (input < self.vocab_start_index) | (input >= self.vocab_end_index)
         masked_input = input.clone() - self.vocab_start_index
         masked_input[input_mask] = 0
 
         weight = all_gather_tensor_3d(
-            self.weight, 
-            0, 
-            self.parallel_context, 
+            self.weight,
+            0,
+            self.parallel_context,
             self.weight_parallel_mode,
         )
 
         output_parallel = F.embedding(
-            masked_input, 
-            weight, 
+            masked_input,
+            weight,
             self.padding_idx,
             self.max_norm,
             self.norm_type,
@@ -494,11 +515,11 @@ class VocabParallelEmbedding3D(nn.Embedding):
             self.sparse,
         )
 
-        output_parallel[input_mask, :] = 0.
+        output_parallel[input_mask, :] = 0.0
         output = reduce_scatter_tensor_3d(
-            output_parallel, 
-            0, 
-            self.parallel_context, 
+            output_parallel,
+            0,
+            self.parallel_context,
             self.input_parallel_mode,
         )
 
