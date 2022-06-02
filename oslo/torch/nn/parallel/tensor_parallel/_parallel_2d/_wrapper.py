@@ -80,7 +80,7 @@ class _TensorParallel2D(ParallelWrapper):
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
                 )
-                if value in BATCH_DIMENSIONS
+                if key in BATCH_DIMENSIONS
                 else value
                 for key, value in kwargs.items()
             }
