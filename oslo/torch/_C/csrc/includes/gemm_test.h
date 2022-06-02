@@ -9,6 +9,7 @@
 #include <ctime>
 #include <cuda_fp16.h>
 #include <cuda_profiler_api.h>
+#include <iostream>
 #include <limits>
 #include <memory>
 
