@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
 
 from oslo.transformers.tasks.data_base import BaseProcessor
-
+from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
     from transformers.data.data_collator import _torch_collate_batch
 except ImportError:
@@ -66,18 +66,37 @@ class DataCollatorForCausalLM:
         self,
         tokenizer: ProcessorForCausalLM,
         pad_to_multiple_of: Optional[int] = None,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = tokenizer._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
+        self.parallel_context = parallel_context
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
 
     def __call__(self, examples):
         examples = [example["input_ids"] for example in examples]
-        batch = {
-            "input_ids": _torch_collate_batch(
-                examples,
-                tokenizer=self.tokenizer,
-                pad_to_multiple_of=self.pad_to_multiple_of,
-            )
-        }
-        batch["labels"] = batch["input_ids"].clone()
-        return batch
+        if self.parallel_context is None:
+            batch = {
+                "input_ids": _torch_collate_batch(
+                    examples,
+                    tokenizer=self.tokenizer,
+                    pad_to_multiple_of=self.pad_to_multiple_of,
+                )
+            }
+            batch["labels"] = batch["input_ids"].clone()
+            return batch
+        else:
+            batch = {
+                "input_ids": _torch_collate_batch(
+                    examples,
+                    tokenizer=self.tokenizer,
+                    pad_to_multiple_of=self.local_world_size,
+                )
+            }
+            labels = batch["input_ids"].clone()
+            if self.tokenizer.pad_token_id is not None:
+                labels[labels == self.tokenizer.pad_token_id] = -100
+            batch["labels"] = labels
+            return batch

@@ -80,8 +80,9 @@ class DataCollatorForBartPretraining:
         self.pad_token_id = self.tokenizer.pad_token_id
         self.mask_token_id = processor._tokenizer.mask_token_id
         self.parallel_context = parallel_context
-        self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)

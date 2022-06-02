@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
     from transformers import (
         AutoTokenizer,
@@ -50,7 +51,7 @@ class ProcessorForT5Pretraining(BaseProcessor):
             padding=False,
             truncation=False,
             return_attention_mask=False,
-            return_special_tokens_mask=True,
+            return_special_tokens_mask=False,
             verbose=False,
         )["input_ids"]
 
@@ -118,6 +119,7 @@ class DataCollatorForT5Pretraining:
         self,
         processor: ProcessorForT5Pretraining,
         pad_to_multiple_of: Optional[int] = None,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = processor._tokenizer
         self.noise_density = processor.mlm_probability
@@ -125,6 +127,11 @@ class DataCollatorForT5Pretraining:
         self.input_length = processor._max_length
         self.target_length = processor.target_chunk_size
         self.pad_to_multiple_of = pad_to_multiple_of
+        self.pad_token_id = self.tokenizer.pad_token_id
+        self.parallel_context = parallel_context
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
     
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
@@ -148,7 +155,7 @@ class DataCollatorForT5Pretraining:
         if batch["input_ids"].shape[-1] != self.input_length:
             raise ValueError(
                 f"`input_ids` are incorrectly preprocessed. `input_ids` length is {batch['input_ids'].shape[-1]}, but"
-                f" should be {self.target_length}."
+                f" should be {self.input_length}."
             )
 
         if batch["labels"].shape[-1] != self.target_length:
@@ -157,7 +164,36 @@ class DataCollatorForT5Pretraining:
                 f" {self.target_length}."
             )
 
-        batch = {key: torch.from_numpy(value) for key, value in batch.items()}
+        if self.parallel_context is None:
+            batch = {key: torch.from_numpy(value) for key, value in batch.items()}
+        else:
+            for key, value in batch.items():
+                value = torch.from_numpy(value)
+                batch_size, seq_length = value.size()
+                
+                if seq_length % self.local_world_size != 0:
+                    required_length = ((seq_length // self.local_world_size) + 1) * self.local_world_size
+                    difference = required_length - seq_length
+
+                    if key == "labels":
+                        pads = torch.full([batch_size, difference], fill_value=-100, dtype=value.dtype)
+                    else:
+                        pads = torch.full([batch_size, difference], fill_value=self.pad_token_id, dtype=value.dtype)
+                    
+                    value = torch.cat([value, pads], axis=1)
+                
+                value = value.chunk(
+                    self.local_world_size,
+                    dim=1,
+                )[self.local_rank]
+
+                if not value.is_contiguous():
+                    value = value.contiguous()
+                
+                batch[key] = value
+        
+        batch["attention_mask"] = (batch["input_ids"] != self.pad_token_id).clone().detach().to(torch.int64)
+
         return batch
 
     def create_sentinel_ids(self, mask_indices):

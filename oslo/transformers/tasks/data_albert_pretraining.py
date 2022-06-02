@@ -1,10 +1,10 @@
 from typing import Any, Dict, List, Optional
 import random
-
+import torch
 from datasets.arrow_dataset import Batch
 
 from oslo.transformers.tasks.data_base import BaseProcessor
-
+from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
     from transformers import DataCollatorForLanguageModeling
 except ImportError:
@@ -55,10 +55,16 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         processor: ProcessorForAlbertPretraining,
         mlm_probability: float,
         pad_to_multiple_of: Optional[int] = None,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
+        self.parallel_context = parallel_context
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+        
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_sop_from_examples(examples)
@@ -68,7 +74,43 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
-        return batch
+        
+        if self.parallel_context is None:
+            return batch
+        else:
+            for key, value in batch.items():
+                if value.dim() < 2:
+                    continue
+
+                batch_size, seq_length = value.size()
+
+                if seq_length % self.local_world_size != 0:
+                    required_length = ((seq_length // self.local_world_size) + 1) * self.local_world_size
+                    difference = required_length - seq_length
+
+                    if key == "labels":
+                        pads = torch.full([batch_size, difference], fill_value=-100, dtype=value.dtype)
+                    elif key == "token_type_ids":
+                        pads = torch.full([batch_size, difference], fill_value=1, dtype=value.dtype)
+                    elif key == "attention_mask":
+                        pads = torch.full([batch_size, difference], fill_value=0, dtype=value.dtype)
+                    else:
+                        pads = torch.full([batch_size, difference], fill_value=self.tokenizer.pad_token_id, dtype=value.dtype)
+                    
+                    value = torch.cat([value, pads], axis=1)
+                
+                value = value.chunk(
+                    self.local_world_size,
+                    dim=1,
+                )[self.local_rank]
+
+                if not value.is_contiguous():
+                    value = value.contiguous()
+                
+                batch[key] = value
+
+            return batch
+
 
     def _prepare_sop_from_examples(self, examples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         output_examples = []
