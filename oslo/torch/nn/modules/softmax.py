@@ -14,7 +14,6 @@
 
 import torch.nn as nn
 from .functional import fused_scale_mask_softmax
-from oslo.torch._C import SoftmaxBinder
 
 
 class FusedScaleMaskSoftmax(nn.Module):

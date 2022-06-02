@@ -109,20 +109,20 @@ torch::Tensor bwd(torch::Tensor const &output_grads,
 } // end namespace multihead_attn
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("scaled_masked_softmax_forward",
+  m.def("fused_scaled_masked_softmax_forward",
         &multihead_attn::fused_softmax::scaled_masked_softmax::fwd,
         "Self Multihead Attention scaled, time masked softmax -- Forward.");
-  m.def("scaled_masked_softmax_backward",
+  m.def("fused_scaled_masked_softmax_backward",
         &multihead_attn::fused_softmax::scaled_masked_softmax::bwd,
         "Self Multihead Attention scaled, time masked softmax -- Backward.");
   m.def("get_batch_per_block",
         &multihead_attn::fused_softmax::scaled_masked_softmax::
             get_batch_per_block,
         "Return Batch per block size.");
-  m.def("scaled_upper_triang_masked_softmax_forward",
+  m.def("fused_scaled_upper_triang_masked_softmax_forward",
         &multihead_attn::fused_softmax::scaled_upper_triang_masked_softmax::fwd,
         "Self Multihead Attention scaled, time masked softmax -- Forward.");
-  m.def("scaled_upper_triang_masked_softmax_backward",
+  m.def("fused_scaled_upper_triang_masked_softmax_backward",
         &multihead_attn::fused_softmax::scaled_upper_triang_masked_softmax::bwd,
         "Self Multihead Attention scaled, time masked softmax -- Backward.");
 }
