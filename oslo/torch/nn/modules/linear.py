@@ -334,6 +334,12 @@ class Linear2D(Linear):
         if self.gather_output:
             outputs = all_gather_tensor_2d(
                 outputs,
+                dim=0,
+                parallel_mode=ParallelMode.TENSOR_2D_COL,
+                parallel_context=self.parallel_context,
+            ).clone()
+            outputs = all_gather_tensor_2d(
+                outputs,
                 dim=-1,
                 parallel_mode=ParallelMode.TENSOR_2D_ROW,
                 parallel_context=self.parallel_context,

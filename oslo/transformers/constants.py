@@ -4,5 +4,4 @@ BATCH_DIMENSIONS = {
     "token_type_ids": 0,
     "position_ids": 0,
     "inputs_embeds": 0,
-    "labels": 0,
 }

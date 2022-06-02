@@ -159,9 +159,9 @@ def split_batch_2d(
         dim_size % world_size == 0
     ), f"The batch size ({dim_size}) is not a multiple of 2D size ({world_size})."
 
-    return torch.chunk(
-        inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL), dim=dim
-    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)].contiguous()
+    return inputs.chunk(world_size, dim=dim)[
+        parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+    ].contiguous()
 
 
 def reduce_tensor_2d(

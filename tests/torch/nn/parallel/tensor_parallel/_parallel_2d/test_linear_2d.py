@@ -3,7 +3,7 @@ import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2D
-from _utils import split_2d, split_1d_twice, gather_2d, gather_1d_twice
+from _utils import split_2d, split_1d_twice, gather_2d
 
 
 parallel_context = ParallelContext.from_torch(
@@ -45,7 +45,7 @@ if parallel_context.get_global_rank() == 0:
 # split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
 input_ = split_2d(parallel_context, input_, summa_dim, col_first=True)
 # split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-target = split_2d(parallel_context, target, summa_dim, col_first=True)
+ptarget = split_2d(parallel_context, target, summa_dim, col_first=True)
 # split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
 w = split_2d(parallel_context, w, summa_dim, col_first=False)
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
@@ -57,7 +57,7 @@ linear_2d.bias.data.copy_(b)
 
 pout = linear_2d(input_)
 optimizer = torch.optim.Adam(linear_2d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
+logits = torch.nn.MSELoss()(pout, ptarget)
 logits.backward()
 optimizer.step()
 
@@ -75,3 +75,27 @@ if parallel_context.get_global_rank() == 0:
     sse_update = torch.sum((out_update - pout_update) ** 2).item()
     print(f"output sse: \n{sse}\n")
     print(f"next output sse: \n{sse_update}\n")
+
+linear_2d = Linear2D(
+    input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context
+)
+linear_2d.weight.data.copy_(w)
+linear_2d.bias.data.copy_(b)
+
+pout = linear_2d(input_)
+optimizer = torch.optim.Adam(linear_2d.parameters(), lr=1e-3)
+logits = torch.nn.MSELoss()(pout, target)
+logits.backward()
+optimizer.step()
+
+pout_update = linear_2d(input_)
+
+if parallel_context.get_global_rank() == 0:
+    print(f"parallel output (gather_output=True): \n{pout}\n")
+    print(f"parallel update output (gather_output=True): \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse (gather_output=True): \n{sse}\n")
+    print(f"next output sse (gather_output=True): \n{sse_update}\n")
