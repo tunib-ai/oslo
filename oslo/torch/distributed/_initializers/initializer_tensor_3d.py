@@ -62,8 +62,8 @@ class _TensorParallel3DInputGroupInitializer(ProcessGroupInitializer):
 
 
 class _TensorParallel3DWeightGroupInitializer(ProcessGroupInitializer):
-    def __init__(self, num_group: int, depth: int, *args):
-        super().__init__(*args)
+    def __init__(self, num_group: int, depth: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.num_group = num_group
         self.depth = depth
 
@@ -107,8 +107,8 @@ class _TensorParallel3DWeightGroupInitializer(ProcessGroupInitializer):
 
 
 class _TensorParallel3DOutputGroupInitializer(ProcessGroupInitializer):
-    def __init__(self, num_group: int, depth: int, *args):
-        super().__init__(*args)
+    def __init__(self, num_group: int, depth: int, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.num_group = num_group
         self.depth = depth
 
@@ -152,8 +152,8 @@ class _TensorParallel3DOutputGroupInitializer(ProcessGroupInitializer):
 
 
 class TensorParallel3DGroupInitializer(ProcessGroupInitializer):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.num_group = self.world_size // self.tensor_parallel_size
         self.depth = round(math.pow(self.tensor_parallel_size, 1 / 3))
         assert (
@@ -161,13 +161,13 @@ class TensorParallel3DGroupInitializer(ProcessGroupInitializer):
         ), f"3D depth ({self.depth}) if not cube root of tensor parallel size ({self.tensor_parallel_size})"
 
         self.input_initializer = _TensorParallel3DInputGroupInitializer(
-            self.num_group, self.depth, *args
+            self.num_group, self.depth, *args, **kwargs,
         )
         self.weight_initializer = _TensorParallel3DWeightGroupInitializer(
-            self.num_group, self.depth, *args
+            self.num_group, self.depth, *args, **kwargs,
         )
         self.output_initializer = _TensorParallel3DOutputGroupInitializer(
-            self.num_group, self.depth, *args
+            self.num_group, self.depth, *args, **kwargs,
         )
 
     def init_dist_group(self):

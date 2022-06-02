@@ -200,12 +200,9 @@ class Embedding2D(nn.Embedding):
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             all_gather_tensor_2d,
-            # split_batch_2d,
         )
-
-        # input = split_batch_2d(input, parallel_context=self.parallel_context)
         weight = all_gather_tensor_2d(
-            self.weight, -1, self.parallel_context, ParallelMode.TENSOR_2D_COL
+            self.weight, -1, self.parallel_context, ParallelMode.TENSOR_2D_COL,
         )
         output = F.embedding(
             input,
@@ -248,9 +245,9 @@ class VocabParallelEmbedding2D(nn.Embedding):
         )
 
     def forward(self, input: Tensor) -> Tensor:
-        # from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
-        #     reduce_scatter_tensor_2d,
-        # )
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
+            reduce_by_batch_2d,
+        )
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         if world_size > 1:
             input_mask = (input < self.vocab_start_index) | (
@@ -260,7 +257,7 @@ class VocabParallelEmbedding2D(nn.Embedding):
             masked_input[input_mask] = 0
         else:
             masked_input = input
-
+            
         output = F.embedding(
             masked_input,
             self.weight,
@@ -271,9 +268,11 @@ class VocabParallelEmbedding2D(nn.Embedding):
             self.sparse,
         )
         output[input_mask, :] = 0.0
-        # output = reduce_scatter_tensor_2d(
-        #     output, 0, self.parallel_context, ParallelMode.TENSOR_2D_COL,
-        # )
+        output = reduce_by_batch_2d(
+            output, 
+            False,
+            parallel_context=self.parallel_context,
+        )
         return output
 
 

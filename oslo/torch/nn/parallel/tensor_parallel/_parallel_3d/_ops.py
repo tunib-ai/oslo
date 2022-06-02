@@ -674,7 +674,7 @@ class _BroadcastWeight3D_FromDiagonal(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx, output_grad: Tensor) -> Tuple[Tensor, ...]:
-        input_grad = reduce(output_grad, ctx.src_rank, parallel_mode=ctx.parallel_context, parallel_mode=ctx.input_parallel_mode)
+        input_grad = reduce(output_grad, ctx.src_rank, parallel_context=ctx.parallel_context, parallel_mode=ctx.input_parallel_mode)
         if parallel_context.get_local_rank(ctx.input_parallel_mode) == parallel_context.get_local_rank(ctx.output_parallel_mode):
             input_grad = all_reduce(input_grad, parallel_context=ctx.parallel_context, parallel_mode=ctx.weight_parallel_mode)
         else:

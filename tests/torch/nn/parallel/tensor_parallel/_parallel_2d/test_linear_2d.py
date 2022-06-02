@@ -15,13 +15,18 @@ parallel_context = ParallelContext.from_torch(
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
+
+batch_size = 2
+seq_len = 2
+input_dim = 4
+hidden_dim = 8
 summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-input_ = torch.randn((4, 4)).cuda()
-target = torch.randn((4, 4)).cuda()
+input_ = torch.randn((batch_size, seq_len, input_dim)).cuda()
+target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-linear = torch.nn.Linear(4, 4).cuda()
+linear = torch.nn.Linear(input_dim, hidden_dim).cuda()
 w = deepcopy(linear.weight.data)
 b = deepcopy(linear.bias.data)
 
@@ -31,10 +36,11 @@ logits = torch.nn.MSELoss()(out, target)
 logits.backward()
 optimizer.step()
 
+out_update = linear(input_)
+
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
-    print(f"original updated weight: \n{linear.weight.data}\n")
-    print(f"original updated bias: \n{linear.bias.data}\n")
+    print(f"original update output: \n{out_update}\n")
 
 # split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
 input_ = split_2d(parallel_context, input_, summa_dim, col_first=True)
@@ -45,21 +51,28 @@ w = split_2d(parallel_context, w, summa_dim, col_first=False)
 # split bias into 0:[0], 1:[2], 2:[1], 3:[3]
 b = split_1d_twice(parallel_context, b, summa_dim, dim=0)
 
-linear_2d = Linear2D(4, 4, parallel_context=parallel_context)
-linear_2d.weight.data = w
-linear_2d.bias.data = b
+linear_2d = Linear2D(input_dim, hidden_dim, parallel_context=parallel_context)
+linear_2d.weight.data.copy_(w)
+linear_2d.bias.data.copy_(b)
 
-out = linear_2d(input_)
+pout = linear_2d(input_)
 optimizer = torch.optim.Adam(linear_2d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
+logits = torch.nn.MSELoss()(pout, target)
 logits.backward()
 optimizer.step()
 
-out = gather_2d(parallel_context, out, summa_dim, col_first=False)
-w = gather_2d(parallel_context, linear_2d.weight.data, summa_dim, col_first=True)
-b = gather_1d_twice(parallel_context, linear_2d.bias.data, summa_dim, dim=0)
+pout_update = linear_2d(input_)
+
+pout = gather_2d(parallel_context, pout, summa_dim, col_first=False)
+pout_update = gather_2d(parallel_context, pout_update, summa_dim, col_first=False)
 
 if parallel_context.get_global_rank() == 0:
-    print(f"parallel output: \n{out}\n")
-    print(f"parallel updated weight: \n{w}\n")
-    print(f"original updated bias: \n{b}\n")
+    print(f"parallel output: \n{pout}\n")
+    print(f"parallel update output: \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse: \n{sse}\n")
+    print(f"next output sse: \n{sse_update}\n")
+

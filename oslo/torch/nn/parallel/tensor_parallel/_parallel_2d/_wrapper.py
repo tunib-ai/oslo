@@ -127,10 +127,10 @@ class _TensorParallel2D(ParallelWrapper):
             reversed=reversed,
             fusion_degree=fusion_degree,
             orig_module=copy.deepcopy(module.__class__),
+            gather_output=False,
             skip_bias_add=module.skip_bias_add
             if hasattr(module, "skip_bias_add")
             else False,
-            gather_output=False,
         )
 
         if hasattr(module, "weight") and module.weight is not None:

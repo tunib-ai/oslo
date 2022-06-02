@@ -153,8 +153,8 @@ def reduce_tensor_2d(
 ) -> Tensor:
     return _ReduceTensor2D.apply(
         inputs,
-        parallel_mode,
         parallel_context,
+        parallel_mode,
     )
 
 
@@ -173,8 +173,8 @@ def reduce_scatter_tensor_2d(
     return _ReduceScatterTensor2D.apply(
         tensor,
         dim,
-        parallel_mode,
         parallel_context,
+        parallel_mode,
     )
 
 
@@ -751,8 +751,8 @@ class _Add_Bias_2D(torch.autograd.Function):
             grad = reduce_scatter(
                 reduce,
                 -1,
-                parallel_mode=col_parallel_mode,
                 parallel_context=parallel_context,
+                parallel_mode=col_parallel_mode,
             )
             return (
                 output_grad,

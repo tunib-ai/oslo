@@ -1,4 +1,3 @@
-from collections import OrderedDict
 from typing import Optional, Tuple, Union
 import torch
 from torch import Tensor
@@ -140,7 +139,6 @@ class ColumnParallelLinear(Linear):
             skip_bias_add=skip_bias_add,
             bias=bias,
             dtype=dtype,
-            device=torch.device(torch.cuda.current_device()),
         )
 
     def forward(
@@ -192,7 +190,6 @@ class RowParallelLinear(Linear):
             out_features=out_features,
             bias=bias,
             dtype=dtype,
-            device=torch.device(torch.cuda.current_device()),
             skip_bias_add=skip_bias_add,
         )
 
@@ -204,15 +201,7 @@ class RowParallelLinear(Linear):
             all_reduce_1d,
             scatter_1d,
         )
-        if self.parallel_input:
-            assert input.shape[-1] == self.weight.shape[-1], \
-            'Invalid shapes in Linear1D_Row forward: input={}, weight={}. Expected last dim of input {}.'.format(
-                input.shape, self.weight.shape, self.weight.shape[-1])
-            input = input
-        else:
-            assert input.shape[-1] // self.parallel_context.tensor_parallel_size == self.weight.shape[-1], \
-            'Invalid shapes in Linear1D_Row forward: input={}, weight={}. Expected last dim of input {}.'.format(
-                input.shape, self.weight.shape, self.weight.shape[-1] * self.parallel_context.tensor_parallel_size)
+        if not self.parallel_input:
             input = scatter_1d(input, -1, self.parallel_context)
 
         outputs = F.linear(input, self.weight)
@@ -238,8 +227,9 @@ class Linear2D(Linear):
         gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.parallel_context = parallel_context
         self.gather_output = gather_output
+        self.parallel_context = parallel_context
+        self.reversed = False
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
@@ -270,14 +260,13 @@ class Linear2D(Linear):
             in_features=in_features // self.summa_dim,
             out_features=out_features // self.summa_dim,
             bias=False,
-            device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
         if bias:
             self.bias = Parameter(
                 torch.empty(
-                    self.out_features // (self.summa_dim ** 2),
+                    out_features // (self.summa_dim ** 2),
                     device=self.weight.device,
                     dtype=dtype,
                 )
@@ -292,7 +281,6 @@ class Linear2D(Linear):
             add_bias_2d,
             all_gather_tensor_2d,
         )
-
         # input: [m/q, n/q, k/q]
         # output: [m/q, n/q, h/q]
         out_shape = input.shape[:-1] + (self.out_features,)
@@ -350,7 +338,7 @@ class Linear2D(Linear):
             outputs = all_gather_tensor_2d(
                 outputs,
                 dim=-1,
-                parallel_mode=ParallelMode.TENSOR_2D_COL,
+                parallel_mode=ParallelMode.TENSOR_2D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
         return outputs
@@ -367,6 +355,7 @@ class Linear2p5D(Linear):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        self.reversed = False
         self.tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
@@ -405,7 +394,6 @@ class Linear2p5D(Linear):
             in_features=int(in_features // self.tesseract_dim),
             out_features=int(out_features // self.tesseract_dim),
             bias=bias,
-            device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
@@ -489,6 +477,7 @@ class Linear3D(Linear):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        self.reversed = False
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         assert self.cubic_dim > 0, "CUBIC_DIM must be greater than zero"
@@ -507,14 +496,13 @@ class Linear3D(Linear):
             in_features=in_features // self.cubic_dim,
             out_features=out_features // (self.cubic_dim ** 2),
             bias=False,
-            device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
         if bias:
             self.bias = Parameter(
                 torch.empty(
-                    self.out_features // self.cubic_dim,
+                    out_features // self.cubic_dim,
                     device=self.weight.device,
                     dtype=dtype,
                 )

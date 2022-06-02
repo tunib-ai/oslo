@@ -48,25 +48,23 @@ class _AllGather1D(torch.autograd.Function):
         if ctx:
             ctx.dim = dim
             ctx.parallel_context = parallel_context
-        return (
-            all_gather(
+        return all_gather(
                 inputs,
                 dim=dim,
                 on_cpu=str(inputs.device) == "cpu",
                 async_op=False,
                 parallel_context=parallel_context,
                 parallel_mode=ParallelMode.TENSOR_1D,
-            ), 
-            None,
-        )
+            )
 
     def backward(ctx: Any, grad: Tensor):
         return (
             scatter(
                 grad, 
                 dim=ctx.dim, 
-                parallel_context=ctx.parallel_context
-            ), 
+                parallel_context=ctx.parallel_context,
+            ),
+            None,
             None,
         )
 
@@ -91,6 +89,7 @@ class _Scatter1D(torch.autograd.Function):
                 dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
             ),
+            None,
             None,
         )
 
