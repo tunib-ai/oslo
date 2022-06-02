@@ -17,6 +17,9 @@ from oslo.torch.nn.modules.linear import (
 from oslo.torch.nn.modules.layer_norm import (
     LayerNorm2D,
 )
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
+    split_batch_2d,
+)
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
@@ -29,6 +32,8 @@ from oslo.torch.nn.parallel.utils import (
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
+
+from oslo.transformers.constants import BATCH_DIMENSIONS
 
 
 class _TensorParallel2D(ParallelWrapper):
@@ -63,6 +68,22 @@ class _TensorParallel2D(ParallelWrapper):
         self._parallelize()
 
     def forward(self, *args, **kwargs):
+        assert len(args) == 0, (
+            "2D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
+            "If you wrote code like ``model(input_ids, labels)``, "
+            "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
+        )
+        if not is_oslo_model(self.module):
+            kwargs = {
+                key: split_batch_2d(
+                    value,
+                    dim=BATCH_DIMENSIONS[key],
+                    parallel_context=self.parallel_context,
+                )
+                if key in BATCH_DIMENSIONS
+                else value
+                for key, value in kwargs.items()
+            }
         return self.module(*args, **kwargs)
 
     @torch.no_grad()

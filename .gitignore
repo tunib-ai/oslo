@@ -388,3 +388,4 @@ dmypy.json
 usecases
 /usecases
 */usecases
+wandb/

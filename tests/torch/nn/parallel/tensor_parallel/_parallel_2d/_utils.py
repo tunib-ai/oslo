@@ -3,6 +3,13 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelMode
 
 
+def split_batch_2d(parallel_context, tensor, summa_dim):
+    tensor = tensor.chunk(summa_dim, dim=0)[
+        parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+    ]
+    return tensor
+
+
 def split_2d(parallel_context, tensor, summa_dim, col_first=True):
     if col_first:
         tensor = tensor.chunk(summa_dim, dim=0)[

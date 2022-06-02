@@ -1,6 +1,7 @@
 import torch.distributed as dist
 import wandb
 from datasets import load_dataset
+import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
@@ -8,6 +9,7 @@ from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
+from _utils import split_batch_2d
 
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
@@ -20,7 +22,6 @@ parallel_context = ParallelContext.from_torch(
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
 tokenizer.pad_token = tokenizer.eos_token
-
 # 모델 생성 및 병렬화 수행
 model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")).cuda()
 model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
@@ -37,13 +38,16 @@ optimizer_tp = Adam(wrapper_tp.parameters(), lr=3e-5)
 optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 
 # 데이터셋 생성
+batch_size = 16
 datasets = load_dataset("squad").data["train"]["context"]
 datasets = [str(sample) for sample in datasets[:500]]
-dataloader = DataLoader(datasets, batch_size=4)
+dataloader = DataLoader(datasets, batch_size=batch_size)
+
+summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name="tp_exp")
+    wandb.init(project="oslo", name=f"tp2d_bs{batch_size}")
 
 # 모니터링 생성 대기
 dist.barrier()
@@ -73,3 +77,5 @@ for data in dataloader:
 
     optimizer_tp.step()
     optimizer_no_tp.step()
+
+dist.barrier()

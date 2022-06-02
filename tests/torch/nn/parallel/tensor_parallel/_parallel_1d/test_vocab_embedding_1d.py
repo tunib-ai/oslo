@@ -30,24 +30,32 @@ logits = torch.nn.MSELoss()(out, target)
 logits.backward()
 optimizer.step()
 
+out_update = vocab_embedding(input_)
+
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
-    print(f"original updated weight: \n{vocab_embedding.weight.data}\n")
+    print(f"original next output: \n{out_update}\n")
 
 # split weight into 0:[0], 1:[1], 2:[2], 3:[3]
 w = split_1d(parallel_context, w, world_size, dim=0)
 
-vocab_embedding_1d = VocabParallelEmbedding1D(8, 10, parallel_context)
+vocab_embedding_1d = VocabParallelEmbedding1D(8, 10, parallel_context=parallel_context)
 vocab_embedding_1d.weight.data = w
 
-out = vocab_embedding_1d(input_)
+pout = vocab_embedding_1d(input_)
 optimizer = torch.optim.Adam(vocab_embedding_1d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
+logits = torch.nn.MSELoss()(pout, target)
 logits.backward()
 optimizer.step()
 
-w = gather_1d(parallel_context, vocab_embedding_1d.weight.data, world_size, dim=0)
+pout_update = vocab_embedding_1d(input_)
 
 if parallel_context.get_global_rank() == 0:
-    print(f"parallel output: \n{out}\n")
-    print(f"parallel updated weight: \n{w}\n")
+    print(f"parallel output: \n{pout}\n")
+    print(f"parallel next output: \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse: \n{sse}\n")
+    print(f"next output sse: \n{sse_update}\n")
