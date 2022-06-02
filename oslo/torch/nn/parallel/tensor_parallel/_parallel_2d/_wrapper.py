@@ -68,23 +68,22 @@ class _TensorParallel2D(ParallelWrapper):
         self._parallelize()
 
     def forward(self, *args, **kwargs):
-        if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            assert len(args) == 0, (
-                "2D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
-                "If you wrote code like ``model(input_ids, labels)``, "
-                "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
-            )
-            if not is_oslo_model(self.module):
-                kwargs = {
-                    key: split_batch_2d(
-                        value,
-                        dim=BATCH_DIMENSIONS[key],
-                        parallel_context=self.parallel_context,
-                    )
-                    if value in BATCH_DIMENSIONS
-                    else value
-                    for key, value in kwargs.items()
-                }
+        assert len(args) == 0, (
+            "2D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
+            "If you wrote code like ``model(input_ids, labels)``, "
+            "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
+        )
+        if not is_oslo_model(self.module):
+            kwargs = {
+                key: split_batch_2d(
+                    value,
+                    dim=BATCH_DIMENSIONS[key],
+                    parallel_context=self.parallel_context,
+                )
+                if value in BATCH_DIMENSIONS
+                else value
+                for key, value in kwargs.items()
+            }
         return self.module(*args, **kwargs)
 
     @torch.no_grad()
