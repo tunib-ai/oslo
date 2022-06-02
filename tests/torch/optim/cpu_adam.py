@@ -33,7 +33,7 @@ def check_equal(first, second, atol=1e-2, verbose=False):
     ],
 )  # yapf: disable
 def test_cpu_adam_opt(model_size):
-    from oslo.torch.optim.cpu_adam import DeepSpeedCPUAdam
+    from oslo.torch.optim.cpu_adam import CPUAdam
 
     device = "cpu"
     rng_state = torch.get_rng_state()
@@ -46,7 +46,7 @@ def test_cpu_adam_opt(model_size):
 
     optimizer1 = torch.optim.AdamW([param1])
     optimizer2 = FusedAdam([param2])
-    optimizer = DeepSpeedCPUAdam([param])
+    optimizer = CPUAdam([param])
 
     for i in range(10):
         rng_state = torch.get_rng_state()
@@ -66,11 +66,11 @@ def test_cpu_adam_opt(model_size):
 
 def test_cpu_adam_gpu_error():
     model_size = 64
-    from oslo.torch.optim.cpu_adam import DeepSpeedCPUAdam
+    from oslo.torch.optim.cpu_adam import CPUAdam
 
     device = "cuda:0"
     param = torch.nn.Parameter(torch.randn(model_size, device=device))
-    optimizer = DeepSpeedCPUAdam([param])
+    optimizer = CPUAdam([param])
 
     param.grad = torch.randn(model_size, device=device)
     with pytest.raises(AssertionError):

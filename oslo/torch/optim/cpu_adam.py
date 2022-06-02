@@ -6,7 +6,7 @@ import torch
 from oslo.torch._C import CPUAdamBinder, get_cpu_adam_kernel
 
 
-class DeepSpeedCPUAdam(torch.optim.Optimizer):
+class CPUAdam(torch.optim.Optimizer):
     optimizer_id = 0
 
     def __init__(
@@ -32,7 +32,7 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
 
         To train on a heterogeneous system, such as coordinating CPU and GPU, DeepSpeed offers
         the ZeRO-Offload technology which efficiently offloads the optimizer states into CPU memory,
-        with minimal impact on training throughput. DeepSpeedCPUAdam plays an important role to minimize
+        with minimal impact on training throughput. CPUAdam plays an important role to minimize
         the overhead of the optimizer's latency on CPU. Please refer to ZeRO-Offload tutorial
         (https://www.deepspeed.ai/tutorials/zero-offload/) for more information on how to enable this technology.
 
@@ -75,10 +75,10 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
             bias_correction=bias_correction,
             amsgrad=amsgrad,
         )
-        super(DeepSpeedCPUAdam, self).__init__(model_params, default_args)
+        super(CPUAdam, self).__init__(model_params, default_args)
 
-        self.opt_id = DeepSpeedCPUAdam.optimizer_id
-        DeepSpeedCPUAdam.optimizer_id = DeepSpeedCPUAdam.optimizer_id + 1
+        self.opt_id = CPUAdam.optimizer_id
+        CPUAdam.optimizer_id = CPUAdam.optimizer_id + 1
         self.adam_w_mode = adamw_mode
         self.fp32_optimizer_states = fp32_optimizer_states
         self.ds_opt_adam = get_cpu_adam_kernel()
@@ -100,7 +100,7 @@ class DeepSpeedCPUAdam(torch.optim.Optimizer):
         self.ds_opt_adam.destroy_adam(self.opt_id)
 
     def __setstate__(self, state):
-        super(DeepSpeedCPUAdam, self).__setstate__(state)
+        super(CPUAdam, self).__setstate__(state)
         for group in self.param_groups:
             group.setdefault("amsgrad", False)
 
