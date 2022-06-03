@@ -1,9 +1,9 @@
 from typing import Dict, List, Optional, Union
-
+import logging
 import torch
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
-
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.transformers.tasks.data_base import BaseProcessor
 
 try:
@@ -11,6 +11,9 @@ try:
     from transformers.file_utils import PaddingStrategy
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorForTokenClassification(BaseProcessor):
@@ -162,11 +165,16 @@ class DataCollatorForTokenClassification:
         padding: Union[bool, str, PaddingStrategy] = "longest",
         pad_to_multiple_of: Optional[int] = None,
         label_pad_token_id: int = -100,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = tokenizer._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
         self.padding = padding
+        self.parallel_context = parallel_context
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
 
     def __call__(self, features):
         label_name = "label" if "label" in features[0].keys() else "labels"
@@ -175,13 +183,28 @@ class DataCollatorForTokenClassification:
             if label_name in features[0].keys()
             else None
         )
-        batch = self.tokenizer.pad(
-            features,
-            padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            # Conversion to tensors will fail if we have labels as they are not of the same length yet.
-            return_tensors="pt" if labels is None else None,
-        )
+
+        if self.tokenizer.pad_token is None:
+            logger.warning(
+                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
+            )
+
+        if self.parallel_context is None:
+            batch = self.tokenizer.pad(
+                features,
+                padding=self.padding,
+                pad_to_multiple_of=self.pad_to_multiple_of,
+                # Conversion to tensors will fail if we have labels as they are not of the same length yet.
+                return_tensors="pt" if labels is None else None,
+            )
+        else:
+            batch = self.tokenizer.pad(
+                features,
+                padding=self.padding,
+                pad_to_multiple_of=self.local_world_size,
+                # Conversion to tensors will fail if we have labels as they are not of the same length yet.
+                return_tensors="pt" if labels is None else None,
+            )
 
         if labels is None:
             return batch
@@ -199,5 +222,19 @@ class DataCollatorForTokenClassification:
                 for label in labels
             ]
 
-        batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
-        return batch
+        if self.parallel_context is None:
+            batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
+            return batch
+        else:
+            for key, value in batch.items():
+                value = torch.tensor(value, dtype=torch.int64)
+                value = value.chunk(
+                    self.local_world_size,
+                    dim=1
+                )[self.local_rank]
+
+                if not value.is_contiguous():
+                    value = value.contiguous()
+                
+                batch[key] = value
+            return batch

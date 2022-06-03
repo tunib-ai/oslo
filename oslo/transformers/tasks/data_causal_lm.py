@@ -1,13 +1,16 @@
+import logging
+import torch
 from typing import Dict, List, Optional
-
 from datasets.arrow_dataset import Batch
-
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
     from transformers.data.data_collator import _torch_collate_batch
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -88,6 +91,10 @@ class DataCollatorForCausalLM:
             batch["labels"] = batch["input_ids"].clone()
             return batch
         else:
+            if self.tokenizer.pad_token is None:
+                logger.warning(
+                    "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying the SP."
+                )
             batch = {
                 "input_ids": _torch_collate_batch(
                     examples,
@@ -95,8 +102,21 @@ class DataCollatorForCausalLM:
                     pad_to_multiple_of=self.local_world_size,
                 )
             }
+            batch["attention_mask"] = (batch["input_ids"] != self.tokenizer.pad_token_id).clone().detach().to(torch.int64)
+            
             labels = batch["input_ids"].clone()
-            if self.tokenizer.pad_token_id is not None:
-                labels[labels == self.tokenizer.pad_token_id] = -100
+            labels[labels == self.tokenizer.pad_token_id] = -100
             batch["labels"] = labels
+            
+            for key, value in batch.items():
+                value = value.chunk(
+                    self.local_world_size,
+                    dim=1
+                )[self.local_rank]
+
+                if not value.is_contiguous():
+                    value = value.contiguous()
+
+                batch[key] = value
             return batch
+
