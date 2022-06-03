@@ -8,6 +8,11 @@ from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
+import torch.distributed as dist
+from copy import deepcopy
+from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn import Linear2D
+from _utils import split_2d, gather_2d
 
 tp_size = 8
 tp_depth = 2
@@ -17,7 +22,7 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
-    tensor_parallel_mode="2.5d",
+    tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
     tensor_parallel_depth=tp_depth,
 )
 
