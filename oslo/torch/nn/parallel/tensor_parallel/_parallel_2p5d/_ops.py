@@ -371,8 +371,8 @@ class Matmul_AB_2p5D(torch.autograd.Function):
                 B,
                 ctx.tesseract_dim,
                 ctx.A_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,
@@ -386,8 +386,8 @@ class Matmul_AB_2p5D(torch.autograd.Function):
                 output_grad,
                 ctx.tesseract_dim,
                 ctx.B_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,
@@ -514,6 +514,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
         out = C.reshape(out_shape)
 
         if ctx:
+            ctx.parallel_context = parallel_context
             ctx.tesseract_dim = tesseract_dim
             ctx.col_rank = col_rank
             ctx.row_rank = row_rank
@@ -538,9 +539,10 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 output_grad,
                 B,
                 ctx.tesseract_dim,
+                ctx.parallel_context,
                 ctx.A_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,
@@ -553,9 +555,10 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 output_grad,
                 A,
                 ctx.tesseract_dim,
+                ctx.parallel_context,
                 ctx.B_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,
@@ -704,8 +707,8 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
                 output_grad,
                 ctx.tesseract_dim,
                 ctx.A_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,
@@ -719,8 +722,8 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
                 output_grad,
                 ctx.tesseract_dim,
                 ctx.B_shape,
-                ctx.col_rank,
                 ctx.row_rank,
+                ctx.col_rank,
                 ctx.dep_rank,
                 ctx.row_parallel_mode,
                 ctx.col_parallel_mode,

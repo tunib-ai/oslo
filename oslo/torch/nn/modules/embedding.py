@@ -292,7 +292,7 @@ class Embedding2p5D(nn.Embedding):
             split_batch_2p5d,
         )
 
-        input_ = split_batch_2p5d(input_, 0, self.parallel_context)
+        # input_ = split_batch_2p5d(input_, 0, self.parallel_context)
         weight = all_gather_tensor_2p5d(
             self.weight, -1, ParallelMode.TENSOR_2P5D_COL, self.parallel_context
         )
@@ -361,7 +361,7 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
         # Mask the output embedding.
         output_parallel[input_mask, :] = 0.0
         # Reduce across all the model parallel GPUs.
-        output = reduce_scatter_tensor_2p5d(
-            output_parallel, 0, ParallelMode.TENSOR_2P5D_COL, self.parallel_context
-        )
-        return output
+        # output = reduce_scatter_tensor_2p5d(
+        #     output_parallel, 0, ParallelMode.TENSOR_2P5D_COL, self.parallel_context
+        # )
+        return output_parallel
