@@ -80,28 +80,16 @@ class _TensorParallel1D(ParallelWrapper):
                     setattr(module, elem.name, reduced_arg)
 
     @staticmethod
-    def _deconstruct_combined_qkv(tensor, world_size, fusion_degree):
+    def _deconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
         tensor = [
             tensor[i * world_size : (i + 1) * world_size] for i in range(fusion_degree)
         ]
-        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = list(map(lambda x: torch.cat([*x], dim=dim), zip(*tensor)))
         return tensor
 
     def _slice(self, module, reversed, fusion_degree, slice_bias, dim):
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-
-        _update_module_arguments(
-            module=module,
-            parallel_context=self.parallel_context,
-            reversed=reversed,
-            fusion_degree=fusion_degree,
-            orig_module=copy.deepcopy(module.__class__),
-            gather_output=False,
-            skip_bias_add=module.skip_bias_add
-            if hasattr(module, "skip_bias_add")
-            else False,
-        )
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
@@ -118,6 +106,7 @@ class _TensorParallel1D(ParallelWrapper):
                         weight_list,
                         world_size,
                         fusion_degree,
+                        dim=dim,
                     )
 
                 module.weight.data = weight_list[rank].contiguous()
@@ -142,6 +131,7 @@ class _TensorParallel1D(ParallelWrapper):
                         bias_list,
                         world_size,
                         fusion_degree,
+                        dim=0,
                     )
 
                 module.bias.data = bias_list[rank].contiguous()
@@ -154,6 +144,18 @@ class _TensorParallel1D(ParallelWrapper):
         return module
 
     def _column_slice(self, module: nn.Module, fusion_degree: int, reversed: bool):
+        _update_module_arguments(
+            module=module,
+            parallel_context=self.parallel_context,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            orig_module=copy.deepcopy(module.__class__),
+            gather_output=False,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
         return self._slice(
             module=module,
             reversed=reversed,
@@ -163,6 +165,18 @@ class _TensorParallel1D(ParallelWrapper):
         )
 
     def _row_slice(self, module: nn.Module, fusion_degree: int, reversed: bool):
+        _update_module_arguments(
+            module=module,
+            parallel_context=self.parallel_context,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            orig_module=copy.deepcopy(module.__class__),
+            parallel_input=True,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
         return self._slice(
             module=module,
             reversed=reversed,

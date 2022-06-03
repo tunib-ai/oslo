@@ -95,14 +95,10 @@ class ShardedDataParallel(ParallelWrapper):
 
     """
 
-    from oslo.torch.optim import ZeroRedundancyOptimizer
-
     def __init__(
         self,
         module: nn.Module,
-        sharded_optimizer: Union[
-            ZeroRedundancyOptimizer, List[ZeroRedundancyOptimizer]
-        ],
+        sharded_optimizer,
         parallel_context: Optional[ParallelContext] = None,
         broadcast_buffers: bool = True,
         sync_models_at_startup: bool = True,
