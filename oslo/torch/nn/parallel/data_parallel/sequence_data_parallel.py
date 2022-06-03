@@ -1,9 +1,11 @@
+from typing import Optional
+
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.utils import ParallelWrapper
+from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
 
 
 class _SequenceDataParallelState(object):
@@ -11,26 +13,30 @@ class _SequenceDataParallelState(object):
         self.parallel_context = parallel_context
 
 
+# based on `allreduce_hook` in
+# torch.distributed.algorithm.ddp_comm_hooks.default_hooks
 def _sequence_data_parallel_hook(
-    state: _SequenceDataParallelState, bucket: dist._GradBucket
-) -> torch.futures.Future:
+    state: _SequenceDataParallelState, bucket: dist.GradBucket
+) -> torch.futures.Future[torch.Tensor]:
     parallel_context = state.parallel_context
     group_to_use = parallel_context.get_group(ParallelMode.SEQUENCE_DP)
     div_factor = parallel_context.get_world_size(ParallelMode.DATA)
 
     # divide the tensor with DP size
-    tensor = bucket.get_tensors()[0]
+    # tensor = bucket.get_tensor()
+    tensor = bucket.buffer()
     tensor.div_(div_factor)
 
     fut = dist.all_reduce(tensor, group=group_to_use, async_op=True).get_future()
-    return fut
+
+    return fut.then(lambda x: x.value()[0])
 
 
 class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
     def __init__(
         self,
         module,
-        parallel_context: ParallelContext,
+        parallel_context: Optional[ParallelContext] = None,
         device_ids=None,
         output_device=None,
         dim=0,
@@ -40,10 +46,10 @@ class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
         check_reduction=False,
         gradient_as_bucket_view=False,
     ):
-        self._parallel_context = parallel_context
+        self.parallel_context = get_parallel_context(module, parallel_context)
         super(SequenceDataParallel, self).__init__(
             module,
-            process_group=self._parallel_context.get_group(ParallelMode.SEQUENCE_DP),
+            process_group=self.parallel_context.get_group(ParallelMode.SEQUENCE_DP),
             device_ids=device_ids,
             output_device=output_device,
             dim=dim,
@@ -55,6 +61,6 @@ class SequenceDataParallel(DistributedDataParallel, ParallelWrapper):
         )
 
         self.register_comm_hook(
-            state=_SequenceDataParallelState(self._parallel_context),
+            state=_SequenceDataParallelState(self.parallel_context),
             hook=_sequence_data_parallel_hook,
         )

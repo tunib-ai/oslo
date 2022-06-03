@@ -1,2 +1,0 @@
-class Scheduler(object):
-    pass

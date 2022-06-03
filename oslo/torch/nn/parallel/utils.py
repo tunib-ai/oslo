@@ -69,10 +69,34 @@ def allocate_params(model, parallel_context):
     for name, parameter in model.named_parameters():
         if hasattr(parameter, "oslo_parallel"):
             device = parallel_context.ranks2device(parameter.oslo_parallel)
-            parameter.data = parameter.to(f"cuda:{device}")
+            if device is not None:
+                parameter.data = parameter.to(
+                    f"cuda:{device % parallel_context.local_world_size}"
+                )
         else:
             parameter.data = parameter.to(torch.cuda.current_device())
 
     for name, buffer in model.named_buffers():
-        if not hasattr(buffer, "oslo_parallel"):
+        if hasattr(buffer, "oslo_parallel"):
+            device = parallel_context.ranks2device(buffer.oslo_parallel)
+            if device is not None:
+                buffer.data = buffer.to(
+                    f"cuda:{device % parallel_context.local_world_size}"
+                )
+        else:
             buffer.data = buffer.to(torch.cuda.current_device())
+
+
+def get_parallel_context(module, parallel_context):
+    if parallel_context is None:
+        if hasattr(module, "parallel_context"):
+            parallel_context = module.parallel_context
+        else:
+            raise ValueError(
+                "Please input parallel context. \n"
+                "There are two way to input parallel context: \n"
+                "1. model.from_pretrained('model_name', parallel_context=parallel_context) \n"
+                "2. model = XXXParallel(model, parallel_context=parallel_context)"
+            )
+
+    return parallel_context

@@ -3,7 +3,6 @@ import warnings
 from typing import Optional, Tuple
 
 import torch
-import torch.nn as nn
 from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.functional import (
@@ -14,12 +13,24 @@ from torch.nn.functional import (
     pad,
 )
 
+from oslo.torch._C import get_softmax_kernel
+from oslo.torch.distributed._seed.helper import seed
 from oslo.torch.distributed.nn.functional import ring_av, ring_qk
-from oslo.torch.nn.modules.linear import Linear
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 """
 Autograd Functions
 """
+global fused_layer_norm_cuda
+fused_layer_norm_cuda = None
+
+
+# Utils from apex
+def _cast_if_autocast_enabled(*args):
+    if not torch.is_autocast_enabled():
+        return args
+    else:
+        return torch.cuda.amp.autocast_mode._cast(args, torch.get_autocast_gpu_dtype())
 
 
 @torch.jit.script
@@ -86,9 +97,269 @@ class _FusedBiasGeLUFunction(torch.autograd.Function):
         return tmp, tmp
 
 
+class _FusedLayerNormAffineFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, weight, bias, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        weight_ = weight.contiguous()
+        bias_ = bias.contiguous()
+        output, mean, invvar = fused_layer_norm_cuda.layer_norm_forward_affine(
+            input_, ctx.normalized_shape, weight_, bias_, ctx.eps
+        )
+        ctx.save_for_backward(input_, weight_, bias_, mean, invvar)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_, weight_, bias_, mean, invvar = ctx.saved_tensors
+        grad_input = grad_weight = grad_bias = None
+        (
+            grad_input,
+            grad_weight,
+            grad_bias,
+        ) = fused_layer_norm_cuda.layer_norm_backward_affine(
+            grad_output.contiguous(),
+            mean,
+            invvar,
+            input_,
+            ctx.normalized_shape,
+            weight_,
+            bias_,
+            ctx.eps,
+        )
+        return grad_input, grad_weight, grad_bias, None, None
+
+
+class _FusedRMSNormAffineFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, weight, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        weight_ = weight.contiguous()
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward_affine(
+            input_, ctx.normalized_shape, weight_, ctx.eps
+        )
+        ctx.save_for_backward(input_, weight_, invvar)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_, weight_, invvar = ctx.saved_tensors
+        grad_input = grad_weight = None
+        grad_input, grad_weight = fused_layer_norm_cuda.rms_norm_backward_affine(
+            grad_output.contiguous(),
+            invvar,
+            input_,
+            ctx.normalized_shape,
+            weight_,
+            ctx.eps,
+        )
+        return grad_input, grad_weight, None, None
+
+
+class _FusedLayerNormAffineMixedDtypesFunction(_FusedLayerNormAffineFunction):
+    @staticmethod
+    def forward(ctx, input, weight, bias, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        weight_ = weight.contiguous()
+        bias_ = bias.contiguous()
+        (
+            output,
+            mean,
+            invvar,
+        ) = fused_layer_norm_cuda.layer_norm_forward_affine_mixed_dtypes(
+            input_, ctx.normalized_shape, weight_, bias_, ctx.eps
+        )
+        ctx.save_for_backward(input_, weight_, bias_, mean, invvar)
+        return output
+
+
+class _FusedRMSNormAffineMixedDtypesFunction(_FusedRMSNormAffineFunction):
+    @staticmethod
+    def forward(ctx, input, weight, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        weight_ = weight.contiguous()
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward_affine_mixed_dtypes(
+            input_, ctx.normalized_shape, weight_, ctx.eps
+        )
+
+        ctx.save_for_backward(input_, weight_, invvar)
+        return output
+
+
+class _FusedLayerNormFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        output, mean, invvar = fused_layer_norm_cuda.layer_norm_forward(
+            input_, ctx.normalized_shape, ctx.eps
+        )
+        ctx.save_for_backward(input_, mean, invvar)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_, mean, invvar = ctx.saved_tensors
+        grad_input = None
+        grad_input = fused_layer_norm_cuda.layer_norm_backward(
+            grad_output.contiguous(),
+            mean,
+            invvar,
+            input_,
+            ctx.normalized_shape,
+            ctx.eps,
+        )
+        return grad_input, None, None
+
+
+class _FusedRMSNormFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input, normalized_shape, eps):
+        global fused_layer_norm_cuda
+        if fused_layer_norm_cuda is None:
+            from oslo.torch._C import FusedLayerNormBinder
+
+            fused_layer_norm_cuda = FusedLayerNormBinder().bind()
+        ctx.normalized_shape = normalized_shape
+        ctx.eps = eps
+        input_ = input.contiguous()
+        output, invvar = fused_layer_norm_cuda.rms_norm_forward(
+            input_, ctx.normalized_shape, ctx.eps
+        )
+        ctx.save_for_backward(input_, invvar)
+        return output
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        input_, invvar = ctx.saved_tensors
+        grad_input = None
+        grad_input = fused_layer_norm_cuda.rms_norm_backward(
+            grad_output.contiguous(), invvar, input_, ctx.normalized_shape, ctx.eps
+        )
+        return grad_input, None, None
+
+
+class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inputs, scale):
+        scale_t = torch.tensor([scale])
+        softmax_results = (
+            get_softmax_kernel().fused_scaled_upper_triang_masked_softmax_forward(
+                inputs, scale_t[0]
+            )
+        )
+
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        softmax_results, scale_t = ctx.saved_tensors
+        input_grads = (
+            get_softmax_kernel().fused_scaled_upper_triang_masked_softmax_backward(
+                output_grads, softmax_results, scale_t[0]
+            )
+        )
+
+        return input_grads, None
+
+
+class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, inputs, mask, scale):
+        scale_t = torch.tensor([scale])
+
+        softmax_results = get_softmax_kernel().fused_scaled_masked_softmax_forward(
+            inputs, mask, scale_t[0]
+        )
+        ctx.save_for_backward(softmax_results, scale_t)
+        return softmax_results
+
+    @staticmethod
+    def backward(ctx, output_grads):
+        softmax_results, scale_t = ctx.saved_tensors
+
+        input_grads = get_softmax_kernel().fused_scaled_masked_softmax_backward(
+            output_grads, softmax_results, scale_t[0]
+        )
+        return input_grads, None, None
+
+
 """
 User Functions
 """
+
+
+def fused_layer_norm_affine(input, weight, bias, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, bias, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormAffineFunction.apply(*args)
+
+
+def fused_layer_norm(input, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormFunction.apply(*args)
+
+
+def mixed_dtype_fused_layer_norm_affine(
+    input, weight, bias, normalized_shape, eps=1e-6
+):
+    args = _cast_if_autocast_enabled(input, weight, bias, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedLayerNormAffineMixedDtypesFunction.apply(*args)
+
+
+def fused_rms_norm_affine(input, weight, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormAffineFunction.apply(*args)
+
+
+def fused_rms_norm(input, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormFunction.apply(*args)
+
+
+def mixed_dtype_fused_rms_norm_affine(input, weight, normalized_shape, eps=1e-6):
+    args = _cast_if_autocast_enabled(input, weight, normalized_shape, eps)
+    with torch.cuda.amp.autocast(enabled=False):
+        return _FusedRMSNormAffineMixedDtypesFunction.apply(*args)
 
 
 def fused_gelu(x):
@@ -116,6 +387,100 @@ def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
     # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tuple[Tensor, Tensor, Tensor]
     # References: `AIB` in https://arxiv.org/abs/2007.00072
     return q_out + q_bias, k_out + k_bias, v_out + v_bias
+
+
+def _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32):
+    assert input.dim() == 4, "input must be be `(batch, nhead, len_q, len_k)`."
+    assert scale is not None, "scale must not be None."
+    assert scale == 1.0 or softmax_in_fp32, "softmax should be in fp32 when scaled"
+
+
+def _is_fused_scale_mask_softmax_available(
+    input, scale, softmax_in_fp32, use_triang_mask
+):
+    bsz, np, sq, sk = input.size()
+    dtype = input.dtype
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32)
+
+    if dtype != torch.float16 and dtype != torch.bfloat16:
+        return False
+
+    if sk > 2048 or sk <= 0:
+        return False
+
+    if softmax_in_fp32 is True:
+        return False
+
+    bsz_per_block = get_softmax_kernel().get_batch_per_block(sq, sk, bsz, np)
+
+    if use_triang_mask:
+        if sq == sk and (sk <= 64 or sk % 4 == 0) and (bsz * np) % bsz_per_block == 0:
+            return True
+    else:
+        if sq > 1 and sq % bsz_per_block == 0:
+            return True
+
+    return False
+
+
+def _fused_scale_mask_softmax_torch(input, scale, softmax_in_fp32, mask):
+    original_input_dtype = input.dtype
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32)
+
+    if softmax_in_fp32 and original_input_dtype != torch.float32:
+        input = input.float()
+
+    input = input * scale
+    mask_output = input.masked_fill_(mask, -10000.0) if mask is not None else input
+    probs = torch.nn.Softmax(dim=-1)(mask_output)
+
+    if softmax_in_fp32 and original_input_dtype != torch.float32:
+        if original_input_dtype == torch.float16:
+            probs = probs.half()
+        else:
+            probs = probs.bfloat16()
+
+    return probs
+
+
+def _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask):
+    bsz, np, sq, sk = input.size()
+    _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32=False)
+
+    if use_triang_mask:
+        if pad_mask is not None:
+            input += pad_mask
+        output = _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
+            input.view(-1, sq, sk),
+            scale,
+        )
+        return output.view(bsz, np, sq, sk)
+    else:
+        if pad_mask is not None:
+            return _FusedScaleMaskSoftmaxFunction.apply(
+                input,
+                pad_mask.repeat(1, 1, sq, 1).bool(),
+                scale,
+            )
+        else:
+            pad_mask = torch.zeros(1, 1, sq, sk, device=input.device, dtype=input.dtype)
+            return _FusedScaleMaskSoftmaxFunction.apply(
+                input,
+                pad_mask.bool(),
+                scale,
+            )
+
+
+def fused_scale_mask_softmax(
+    input, scale, use_triang_mask, softmax_in_fp32, pad_mask=None
+):
+    scale = scale if scale is not None else 1.0
+    if _is_fused_scale_mask_softmax_available(
+        input, scale, softmax_in_fp32, use_triang_mask
+    ):
+        return _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask)
+    else:
+        return _fused_scale_mask_softmax_torch(input, scale, softmax_in_fp32, pad_mask)
 
 
 def multi_head_attention_forward(
@@ -402,70 +767,48 @@ def multi_head_attention_forward(
 
     # SP
     if use_sequence_parallel:
-        attention_scores = ring_qk(
-            sub_q=q.transpose(0, 1).contiguous(),
-            sub_k=k.transpose(0, 1).contiguous(),
+
+        # [batch_size, num_heads, sub_seq_len, seq_len]
+        attn_scores = ring_qk(
+            sub_q=q,
+            sub_k=k,
             parallel_context=parallel_context,
         )
 
-        attention_scores /= math.sqrt(embed_dim)
-
-        # context layer shape: [batch_size, num_heads, sub_seq_len, head_size]
-        output_size = (v.size(1), v.size(2), q.size(0), v.size(3))
-
-        # change view to [batch_size, num_heads, sub_seq_len, seq_len]
-        attention_scores = attention_scores.view(*output_size)
+        attn_scores /= math.sqrt(head_dim)
 
         # TODO: apply ScaleMaskSoftmax
-        # change shape to [batch_size, num_heads, sub_seq_len, seq_len]
-        # attention_probs = FusedScaleMaskSoftmax(attention_scores, attn_mask)
+        # TODO: test attn_mask
+        # attn_output_weights = FusedScaleMaskSoftmax(attn_scores, attn_mask)
+        attn_output_weights = torch.softmax(attn_scores, dim=-1)
 
-        attention_probs = attention_scores
-        # Remove this: I added to avoid black formatting (kevin.ko)
+        with seed(ParallelMode.TENSOR):
+            attn_output_weights = F.dropout(attn_output_weights, p=dropout_p)
 
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        # with seed(ParallelMode.TENSOR):
-        #     attention_probs = attention_dropout(attention_probs)
-        attention_probs = nn.Dropout(dropout_p)(attention_probs)
-
-        # change view [sub_seq_len, batch_size * num_heads, head_size]
-        v = v.contiguous().view(v.size(0), output_size[0] * output_size[1], -1)
-
-        # # change view [b * num_heads, sub_seq_len, seq_len]
-        attention_probs = attention_probs.view(
-            attention_probs.size(0) * attention_probs.size(1),
-            attention_probs.size(2),
-            attention_probs.size(3),
-        )
-
-        # matmul: [batch_size * num_heads, sub_seq_len, head_size]
-        # context_layer = RingAV.apply(
-        context_layer = ring_av(
-            sub_attn=attention_probs,
-            sub_v=v.transpose(0, 1).contiguous(),
+        attn_output = ring_av(
+            sub_attn=attn_output_weights,
+            sub_v=v,
             parallel_context=parallel_context,
         )
 
         # change view [batch_size, num_heads, sub_seq_len, head_size]
-        context_layer = context_layer.view(*output_size)
+        output_size = (bsz, num_heads, tgt_len, head_dim)
+        attn_output = attn_output.view(*output_size)
 
         # [batch_size, num_heads, sub_seq_len, head_size] -> [sub_seq_len, batch_size, num_heads, head_size]
-        context_layer = context_layer.permute(2, 0, 1, 3).contiguous()
+        attn_output = attn_output.permute(2, 0, 1, 3).contiguous()
 
         # [sub_seq_len, batch_size, num_heads, head_size] -> [sub_seq_len, batch_size, hidden_size]
-        new_context_layer_shape = context_layer.size()[:-2] + (head_dim * num_heads,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        new_attn_output_shape = attn_output.size()[:-2] + (head_dim * num_heads,)
+        attn_output = attn_output.view(*new_attn_output_shape)
 
-        dense = Linear(
-            in_features=embed_dim, out_features=embed_dim, bias=True, skip_bias_add=True
-        )
-        output, bias = dense(context_layer)
+        # linear projection
+        attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-        torch.distributed.barrier()
-
-        return output, bias
-
+        # change target length "query.shape[0]" to "sub_seq_len"
+        tgt_len = attn_scores.size(-2)
+        # change target length "k.size(1)" to "seq_len"
+        src_len = attn_scores.size(-1)
     else:
         #
         # (deep breath) calculate attention and out projection
@@ -476,25 +819,21 @@ def multi_head_attention_forward(
         attn_output = (
             attn_output.transpose(0, 1).contiguous().view(tgt_len, bsz, embed_dim)
         )
-        attn_output = F.linear(
-            in_features=attn_output, out_features=out_proj_weight, bias=out_proj_bias
-        )
+        attn_output = F.linear(attn_output, out_proj_weight, out_proj_bias)
 
-        if need_weights:
-            # optionally average attention weights over heads
-            attn_output_weights = attn_output_weights.view(
-                bsz, num_heads, tgt_len, src_len
-            )
-            if average_attn_weights:
-                attn_output_weights = attn_output_weights.sum(dim=1) / num_heads
+    if need_weights:
+        # optionally average attention weights over heads
+        attn_output_weights = attn_output_weights.view(bsz, num_heads, tgt_len, src_len)
+        if average_attn_weights and not use_sequence_parallel:
+            attn_output_weights = attn_output_weights.sum(dim=1) / num_heads
 
-            if not is_batched:
-                # squeeze the output if input was unbatched
-                attn_output = attn_output.squeeze(1)
-                attn_output_weights = attn_output_weights.squeeze(0)
-            return attn_output, attn_output_weights
-        else:
-            if not is_batched:
-                # squeeze the output if input was unbatched
-                attn_output = attn_output.squeeze(1)
-            return attn_output, None
+        if not is_batched:
+            # squeeze the output if input was unbatched
+            attn_output = attn_output.squeeze(1)
+            attn_output_weights = attn_output_weights.squeeze(0)
+        return attn_output, attn_output_weights
+    else:
+        if not is_batched:
+            # squeeze the output if input was unbatched
+            attn_output = attn_output.squeeze(1)
+        return attn_output, None

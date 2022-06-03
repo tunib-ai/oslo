@@ -27,8 +27,7 @@ from oslo.torch.nn.parallel.data_parallel._params import (
     Workhandle,
     get_global_rank,
 )
-from oslo.torch.nn.parallel.utils import ParallelWrapper
-from oslo.torch.optim import ZeroRedundancyOptimizer
+from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
 
 
 def _trainable(param: torch.Tensor) -> bool:
@@ -99,10 +98,8 @@ class ShardedDataParallel(ParallelWrapper):
     def __init__(
         self,
         module: nn.Module,
-        sharded_optimizer: Union[
-            ZeroRedundancyOptimizer, List[ZeroRedundancyOptimizer]
-        ],
-        parallel_context: ParallelContext,
+        sharded_optimizer,
+        parallel_context: Optional[ParallelContext] = None,
         broadcast_buffers: bool = True,
         sync_models_at_startup: bool = True,
         reduce_buffer_size: int = 2**23,
@@ -114,6 +111,7 @@ class ShardedDataParallel(ParallelWrapper):
 
         # This field needs to be exposed to insure interface parity with DDP
         self.module = module
+        self.parallel_context = get_parallel_context(module, parallel_context)
 
         self._sharded_optimizers = (
             [sharded_optimizer]

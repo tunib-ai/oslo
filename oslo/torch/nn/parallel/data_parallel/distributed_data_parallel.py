@@ -21,6 +21,7 @@ from torch.nn.parallel.scatter_gather import (
 )
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
 
 RPC_AVAILABLE = False
 if dist.is_available():
@@ -111,7 +112,7 @@ class _DDPUnevenInputsConfig(NamedTuple):
     ddp_join_divide_by_initial_world_size: bool
 
 
-class DistributedDataParallel(Module):
+class DistributedDataParallel(ParallelWrapper):
     r"""Implements distributed data parallelism that is based on
     ``torch.distributed`` package at the module level.
 
@@ -198,15 +199,19 @@ class DistributedDataParallel(Module):
         Example::
 
             >>> import torch.distributed.autograd as dist_autograd
-            >>> from torch.nn.parallel import DistributedDataParallel as DDP
             >>> from torch import optim
             >>> from torch.distributed.optim import DistributedOptimizer
             >>> from torch.distributed.rpc import RRef
+            >>> from oslo.torch.nn.parallel import DistributedDataParallel as DDP
+            >>> from oslo.torch.distributed import ParallelContext
+            >>> parallel_context = ParallelContext.from_torch(
+            >>>    data_parallel_size=2
+            >>> )
             >>>
             >>> t1 = torch.rand((3, 3), requires_grad=True)
             >>> t2 = torch.rand((3, 3), requires_grad=True)
             >>> rref = rpc.remote("worker1", torch.add, args=(t1, t2))
-            >>> ddp_model = DDP(my_model)
+            >>> ddp_model = DDP(my_model, parallel_context)
             >>>
             >>> # Setup optimizer
             >>> optimizer_params = [rref]
@@ -311,10 +316,8 @@ class DistributedDataParallel(Module):
         broadcast_buffers (bool): Flag that enables syncing (broadcasting)
                           buffers of the module at beginning of the ``forward``
                           function. (default: ``True``)
-        process_group: The process group to be used for distributed data
-                       all-reduction. If ``None``, the default process group, which
-                       is created by :func:`torch.distributed.init_process_group`,
-                       will be used. (default: ``None``)
+        parallel_context: This provides interface functions for users to get the parallel context.
+        parallel_mode: Mode for parallelization. Please refer to <oslo.torch.distributed.nn.parallel_mode.py> to check the list of mode.
         bucket_cap_mb: ``DistributedDataParallel`` will bucket parameters into
                        multiple buckets so that gradient reduction of each
                        bucket can potentially overlap with backward computation.
@@ -361,6 +364,7 @@ class DistributedDataParallel(Module):
         self,
         module,
         parallel_context: ParallelContext,
+        parallel_mode: ParallelMode = ParallelMode.DATA,
         device_ids=None,
         output_device=None,
         dim=0,
@@ -407,8 +411,8 @@ class DistributedDataParallel(Module):
 
             self.output_device = _get_device_index(output_device, True)
 
-        self.parallel_context = parallel_context
-        self.process_group = parallel_context.get_group(ParallelMode.DATA)
+        self.parallel_context = get_parallel_context(module, parallel_context)
+        self.process_group = parallel_context.get_group(parallel_mode)
         self.dim = dim
         self.module = module
         self.device = list(self.module.parameters())[0].device
