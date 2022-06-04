@@ -46,12 +46,12 @@ def checkpoint(function, *args, **kwargs):
         )
         assert params["process_group"].size() > 1, (
             "If the param `partitioned_checkpointing` is True, "
-            "the size of `process_group` must be greather than 1."
+            "the size of `process_group` must be greater than 1."
         )
 
     if params["contiguous_checkpointing"]:
         assert params["partitioned_checkpointing"] is True, (
-            "`contiguous_checkpointing` can be used if `partitioned_checkpointing` is Ture. "
+            "`contiguous_checkpointing` can be used if `partitioned_checkpointing` is True. "
             "Please set `partitioned_checkpointing` to True "
             "like `checkpoint(fn, *args, partitioned_checkpointing=True, contiguous_checkpointing=True)."
         )

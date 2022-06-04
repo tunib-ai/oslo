@@ -5,7 +5,7 @@ import torch.distributed as dist
 from oslo.torch.distributed._initializers.initializer import (
     ProcessGroupInitializer,
 )
-from oslo.torch.distributed._parallel_mode import ParallelMode
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 # i row, j col, k dep
@@ -24,7 +24,7 @@ class _TensorParallel2p5DRowGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -90,7 +90,7 @@ class _TensorParallel2p5DColumnGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -156,7 +156,7 @@ class _TensorParallel2p5DDepthGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dim = tesseract_dim
         self.tesseract_dep = tesseract_dep
         assert (
-            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -222,7 +222,7 @@ class _TensorParallel2p5DXZGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dep = tesseract_dep
         self.tesseract_dim = tesseract_dim
         assert (
-            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
         ), "Tensor parallel size should be depth * dim ** 2 in 2.5D parallel"
 
     def init_dist_group(self):
@@ -282,7 +282,7 @@ class TensorParallel2p5DGroupInitializer(ProcessGroupInitializer):
         self.tesseract_dep = depth
 
         assert (
-            self.tensor_parallel_size == self.tesseract_dim ** 2 * self.tesseract_dep
+            self.tensor_parallel_size == self.tesseract_dim**2 * self.tesseract_dep
         ), "2.5D tesseract dim should equal to (tensor parallel size / tesseract dep) ^ 0.5"
 
         self.col_initializer = _TensorParallel2p5DColumnGroupInitializer(

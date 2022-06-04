@@ -1,7 +1,9 @@
-from oslo.torch.distributed._initializers.initializer import ProcessGroupInitializer
 import torch.distributed as dist
 
-from oslo.torch.distributed._parallel_mode import ParallelMode
+from oslo.torch.distributed._initializers.initializer import (
+    ProcessGroupInitializer,
+)
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 
 class PipelineParallelGroupInitializer(ProcessGroupInitializer):
@@ -21,18 +23,18 @@ class PipelineParallelGroupInitializer(ProcessGroupInitializer):
                         self.pipeline_stage_size,
                     )
                 )
-                pipe_group_size = len(pipe_ranks)
-                pipe_group = dist.new_group(pipe_ranks)
+                group_size = len(pipe_ranks)
+                group = dist.new_group(pipe_ranks)
                 group_cpu = (
                     dist.new_group(pipe_ranks, backend="gloo")
                     if dist.get_backend() != "gloo"
-                    else pipe_group
+                    else group
                 )
 
                 if self.rank in pipe_ranks:
                     local_rank = pipe_ranks.index(self.rank)
-                    group_world_size = pipe_group_size
-                    process_group = pipe_group
+                    group_world_size = group_size
+                    process_group = group
                     cpu_group = group_cpu
                     ranks_in_group = pipe_ranks
                     dist_settings.append(

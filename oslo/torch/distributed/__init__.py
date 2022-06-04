@@ -1,6 +1,4 @@
-from oslo.torch.distributed._parallel_mode import ParallelMode
-from oslo.torch.distributed._parallel_context import ParallelContext
+from oslo.torch.distributed.parallel_context import ParallelContext
+from oslo.torch.distributed.parallel_mode import ParallelMode
 
 __ALL__ = [ParallelMode, ParallelContext]
-
-
