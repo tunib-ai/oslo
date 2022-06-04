@@ -50,6 +50,9 @@ def split_1d(parallel_context, tensor, summa_dim, dim=-1):
 
 
 def gather_2p5d(parallel_context, tensor, tesseract_dim, col_first=True):
+    tensor_list = [torch.zeros_like(tensor) for _ in range(tesseract_dim)]
+    dist.all_gather(tensor_list, tensor, parallel_context.get_group(ParallelMode.TENSOR_2P5D_DEP))
+    tensor = torch.cat(tensor_list, dim=0)
     if col_first:
         tensor_list = [torch.zeros_like(tensor) for _ in range(tesseract_dim)]
         dist.all_gather(
@@ -76,9 +79,6 @@ def gather_2p5d(parallel_context, tensor, tesseract_dim, col_first=True):
             parallel_context.get_group(ParallelMode.TENSOR_2P5D_COL),
         )
         tensor = torch.cat(tensor_list, dim=0)
-    tensor_list = [torch.zeros_like(tensor) for _ in range(tesseract_dim)]
-    dist.all_gather(tensor_list, tensor, parallel_context.get_group(ParallelMode.TENSOR_2P5D_DEP))
-    tensor = torch.cat(tensor_list, dim=0)
     return tensor
 
 
@@ -117,7 +117,7 @@ def gather_1d(parallel_context, tensor, summa_dim, dim=-1):
     dist.all_gather(
         tensor_list,
         tensor.contiguous(),
-        parallel_context.get_group(ParallelMode.TENSOR_2P5D_COL),
+        parallel_context.get_group(ParallelMode.TENSOR_2P5D_ROW),
     )
     tensor = torch.cat(tensor_list, dim=dim)
     return tensor

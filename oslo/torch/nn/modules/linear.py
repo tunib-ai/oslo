@@ -396,10 +396,19 @@ class Linear2p5D(Linear):
         super().__init__(
             in_features=int(in_features // self.tesseract_dim),
             out_features=int(out_features // self.tesseract_dim),
-            bias=bias,
+            bias=False,
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
+        if bias:
+            self.bias = Parameter(
+                torch.empty(
+                    out_features // self.tesseract_dim,
+                    device=self.weight.device,
+                    dtype=dtype,
+                    )
+            )
+            self.reset_parameters()
 
     def forward(self, input: Tensor) -> Tensor:
         # input: [m/dq, n/q, k/q]

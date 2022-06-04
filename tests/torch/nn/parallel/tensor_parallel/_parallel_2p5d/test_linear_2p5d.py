@@ -22,8 +22,8 @@ parallel_context = ParallelContext.from_torch(
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 tesseract_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-input_ = torch.randn((4, 4)).cuda()
-target = torch.randn((4, 4)).cuda()
+input_ = torch.randn((4, 3, 4)).cuda()
+target = torch.randn((4, 3, 4)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
@@ -46,17 +46,19 @@ if parallel_context.get_global_rank() == 0:
 # 0:[0, 0, 0], 1:[0, 0, 1], 2:[0, 1, 0], 3:[0, 1, 1], 4:[1, 0, 0], 5:[1, 0, 1], 6:[1, 1, 0], 7:[1, 1, 1]
 # input shape: (m/dq, n/q)
 input_ = split_2p5d(parallel_context, input_, tesseract_dim)
-# 0:[0, 0, 0], 1:[0, 0, 1], 2:[0, 1, 0], 3:[0, 1, 1], 4:[1, 0, 0], 5:[1, 0, 1], 6:[1, 1, 0], 7:[1, 1, 1]
 target = split_2p5d(parallel_context, target, tesseract_dim)
 
 # split weight into 0,4:[0, 0], 1,5:[1, 0], 2,6:[0, 1], 3,7:[1, 1]
 # input shape: (n/q, k/q)
-w = split_2d(parallel_context, linear.weight.data, tesseract_dim, False)
+w = split_2d(parallel_context, w, tesseract_dim, False)
 # split bias into 0,4:[0], 2,6:[1]
 # input shape: (k/q)
-b = split_1d(parallel_context, linear.bias, tesseract_dim, 0)
+# b = split_1d(parallel_context, b, tesseract_dim, 0)
+b = b.chunk(tesseract_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+]
 
-linear_2p5d = Linear2p5D(4, 4, parallel_context)
+linear_2p5d = Linear2p5D(4, 4, parallel_context=parallel_context)
 linear_2p5d.weight.data = w
 linear_2p5d.bias.data = b
 

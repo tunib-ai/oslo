@@ -308,7 +308,7 @@ class _TensorParallel2p5D(ParallelWrapper):
 
         _update_module_arguments(
             module=module,
-            normalized_shape=module.weight.size()[0] * (tesseract_dim ** 2),
+            normalized_shape=module.weight.size()[0] * tesseract_dim,
             partitioned_dim=module.weight.size()[0],
         )
 

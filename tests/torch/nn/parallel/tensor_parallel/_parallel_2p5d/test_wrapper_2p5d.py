@@ -70,8 +70,8 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
     loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss
+    loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
 
     if dist.get_rank() == 0:
         print(f"TP:{loss_tp}, NOTP:{loss_no_tp}")
