@@ -228,7 +228,16 @@ def add_hook(module, parallel_context):
         pre_com = PPPreFwdP2PCom.apply
         post_com = PPPostFwdP2PCom.apply
 
-    FORWARD_MAP[module.__class__.__qualname__ + str(id(module))] = (module.forward, rank, rank_parent, pre_com, post_com)
+    def get_module_id(module: nn.Module):
+        return module.__class__.__qualname__ + str(id(module))
+
+    FORWARD_MAP[get_module_id(module)] = dict(
+        forward=module.forward,
+        rank=rank,
+        rank_parent=rank_parent,
+        pre_com=pre_com,
+        post_com=post_com
+    )
 
     def new_forward(*args, **kwargs):
         frame = inspect.currentframe()
@@ -242,11 +251,11 @@ def add_hook(module, parallel_context):
         caller_module = frame.f_locals["self"]
         print(f'{caller_module.__class__.__qualname__} + {len(args)}')
 
-        forward = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][0]
-        rank = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][1]
-        rank_parent = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][2]
-        pre_com = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][3]
-        post_com = FORWARD_MAP[caller_module.__class__.__qualname__ + str(id(caller_module))][4]
+        forward = FORWARD_MAP[get_module_id(caller_module)]["forward"]
+        rank = FORWARD_MAP[get_module_id(caller_module)]["rank"]
+        rank_parent = FORWARD_MAP[get_module_id(caller_module)]["rank_parent"]
+        pre_com = FORWARD_MAP[get_module_id(caller_module)]["pre_com"]
+        post_com = FORWARD_MAP[get_module_id(caller_module)]["post_com"]
 
         if hasattr(module, "oslo_parallel") and hasattr(module, "oslo_pp_parent_rank"):
             assert pre_com is not None and post_com is not None
@@ -289,8 +298,8 @@ class PPModuleWrapper(nn.Module):
         # else:
         #    self.rank_parent = None
         if hasattr(module, "oslo_parallel") and hasattr(module, "oslo_pp_parent_rank"):
-            self.pre_com = PPPreFwdP2PCom(self.rank, self.rank_parent).apply
-            self.post_com = PPPostFwdP2PCom(self.rank, self.rank_parent).apply
+            self.pre_com = PPPreFwdP2PCom.apply
+            self.post_com = PPPostFwdP2PCom.apply
         # print(module)
 
     def __len__(self):
