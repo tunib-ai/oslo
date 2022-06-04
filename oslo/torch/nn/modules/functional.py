@@ -24,6 +24,9 @@ Autograd Functions
 global fused_layer_norm_cuda
 fused_layer_norm_cuda = None
 
+global ngram_repeat_block_cuda
+ngram_repeat_block_cuda = None
+
 
 # Utils from apex
 def _cast_if_autocast_enabled(*args):
@@ -315,6 +318,22 @@ class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
             output_grads, softmax_results, scale_t[0]
         )
         return input_grads, None, None
+
+
+class _NGramRepeatBlockFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size):
+        global ngram_repeat_block_cuda
+        if ngram_repeat_block_cuda is None:
+            from oslo.torch._C import NgramRepeatBlockBinder
+
+            ngram_repeat_block_cuda = NgramRepeatBlockBinder().bind()
+        return ngram_repeat_block_cuda.ngram_repeat_block_forward(
+            tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size
+        )
+
+    def backward(*args):
+        raise NotImplementedError
 
 
 """

@@ -45,3 +45,5 @@ from oslo.torch.nn.modules.fused_layer_norm import (
 from oslo.torch.nn.modules.softmax import FusedScaleMaskSoftmax
 
 from oslo.torch.nn.modules.ngram_repeat_block import NGramRepeatBlock
+
+from oslo.torch.nn.modules.functional import _NGramRepeatBlockFunction

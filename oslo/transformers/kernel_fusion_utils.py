@@ -1,15 +1,7 @@
 import torch
 
-
-class NGramRepeatBlockFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size):
-        return CUDA.ngram_repeat_block_forward(
-            tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size
-        )
-
-    def backward(*args):
-        raise NotImplementedError
+from oslo.torch.nn import _NGramRepeatBlockFunction
+from oslo.torch.nn import FusedRMSNorm
 
 
 def get_ngram_logit_processor(batch_size, num_beams):
@@ -33,7 +25,7 @@ def get_ngram_logit_processor(batch_size, num_beams):
             cur_len = input_ids.shape[-1]
 
             if input_ids.is_cuda and scores.is_cuda:
-                scores = NGramRepeatBlockFunction.apply(
+                scores = _NGramRepeatBlockFunction.apply(
                     input_ids,
                     scores.float(),
                     batch_size,
