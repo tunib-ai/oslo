@@ -116,21 +116,19 @@ class _TensorParallel2p5D(ParallelWrapper):
 
     @staticmethod
     def _deconstruct_combined_qkv(tensor, tessearct_dim, fusion_degree, is_bias=False):
-        if is_bias:
-            print(len(tensor))
-            print(len(tensor[0]))
-            col_dim = 1
-        else:
-            col_dim = tessearct_dim
-        row_dim = tessearct_dim
         tensor = [
-            [tensor[i][j * row_dim + k]
-                for i in range(col_dim)
-                for k in range(row_dim)]
-            for j in range(fusion_degree)]
-        if not is_bias:
-            tensor = list(map(lambda x: torch.cat(x, dim=0), zip(*tensor)))
-        tensor = [[tensor[i * col_dim + j] for j in range(col_dim)] for i in range(row_dim)]
+            [
+                tensor[i][j * tessearct_dim + k]
+                for i in range(tessearct_dim)
+                for k in range(tessearct_dim)
+            ]
+            for j in range(fusion_degree)
+        ]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = [
+            [tensor[i * tessearct_dim + j] for j in range(tessearct_dim)]
+            for i in range(tessearct_dim)
+        ]
         return tensor
 
     @staticmethod
