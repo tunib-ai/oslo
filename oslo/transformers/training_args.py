@@ -671,6 +671,10 @@ class TrainingArguments:
     adafactor: bool = field(
         default=False,
         metadata={"help": "Whether or not to replace AdamW by Adafactor."})
+    group_by_length: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to group samples of roughly the same length together when batching."},
+    )
     length_column_name: Optional[str] = field(
         default="length",
         metadata={

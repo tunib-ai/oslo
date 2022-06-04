@@ -79,3 +79,7 @@ def is_torch_tf32_available():
         return False
 
     return True
+
+
+def is_psutil_available():
+    return importlib.util.find_spec("psutil") is not None

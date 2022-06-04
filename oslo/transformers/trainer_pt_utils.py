@@ -4,9 +4,12 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import Dataset, IterableDataset, RandomSampler, Sampler
 from torch.utils.data.distributed import DistributedSampler
+from transformers import BatchEncoding
 import numpy as np
 import math
 import warnings
+
+from typing import Optional, List, Iterator, Any, Union
 
 
 @dataclass
@@ -187,6 +190,105 @@ def nested_truncate(tensors, limit):
     return tensors[:limit]
 
 
+def distributed_broadcast_scalars(
+    scalars: List[Union[int, float]],
+    num_total_examples: Optional[int] = None,
+    device: Optional[torch.device] = torch.device("cuda"),
+) -> torch.Tensor:
+    try:
+        tensorized_scalar = torch.tensor(scalars).to(device)
+        output_tensors = [tensorized_scalar.clone() for _ in range(dist.get_world_size())]
+        dist.all_gather(output_tensors, tensorized_scalar)
+        concat = torch.cat(output_tensors, dim=0)
+
+        # truncate the dummy elements added by SequentialDistributedSampler
+        if num_total_examples is not None:
+            concat = concat[:num_total_examples]
+        return concat
+    except AssertionError:
+        raise AssertionError("Not currently using distributed training")
+
+class DistributedLengthGroupedSampler(DistributedSampler):
+    r"""
+    Distributed Sampler that samples indices in a way that groups together features of the dataset of roughly the same
+    length while keeping a bit of randomness.
+    """
+    # Copied and adapted from PyTorch DistributedSampler.
+    def __init__(
+        self,
+        batch_size: int,
+        dataset: Optional[Dataset] = None,
+        num_replicas: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
+        drop_last: bool = False,
+        lengths: Optional[List[int]] = None,
+        model_input_name: Optional[str] = None,
+    ):
+        if dataset is None and lengths is None:
+            raise ValueError("One of dataset and lengths must be provided.")
+        if num_replicas is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            num_replicas = dist.get_world_size()
+        if rank is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            rank = dist.get_rank()
+
+        self.batch_size = batch_size
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.epoch = 0
+        self.drop_last = drop_last
+
+        if lengths is None:
+            model_input_name = model_input_name if model_input_name is not None else "input_ids"
+            if (
+                not (isinstance(dataset[0], dict) or isinstance(dataset[0], BatchEncoding))
+                or model_input_name not in dataset[0]
+            ):
+                raise ValueError(
+                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
+                    f"'{model_input_name}' key."
+                )
+            lengths = [len(feature[model_input_name]) for feature in dataset]
+        self.lengths = lengths
+
+        # If the dataset length is evenly divisible by # of replicas, then there
+        # is no need to drop any data, since the dataset will be split equally.
+        if self.drop_last and len(self.lengths) % self.num_replicas != 0:
+            # Split to nearest available length that is evenly divisible.
+            # This is to ensure each rank receives the same amount of data when
+            # using this Sampler.
+            self.num_samples = math.ceil((len(self.lengths) - self.num_replicas) / self.num_replicas)
+        else:
+            self.num_samples = math.ceil(len(self.lengths) / self.num_replicas)
+        self.total_size = self.num_samples * self.num_replicas
+        self.seed = seed
+
+    def __iter__(self) -> Iterator:
+        # Deterministically shuffle based on epoch and seed
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        indices = get_length_grouped_indices(self.lengths, self.batch_size, generator=g)
+
+        if not self.drop_last:
+            # add extra samples to make it evenly divisible
+            indices += indices[: (self.total_size - len(indices))]
+        else:
+            # remove tail of data to make it evenly divisible.
+            indices = indices[: self.total_size]
+        assert len(indices) == self.total_size
+
+        # subsample
+        indices = indices[self.rank : self.total_size : self.num_replicas]
+        assert len(indices) == self.num_samples
+
+        return iter(indices)
+
+
+
 class IterableDatasetShard(IterableDataset):
     """
     Wraps a PyTorch `IterableDataset` to generate samples for one of the processes only. Instances of this class will
@@ -294,6 +396,126 @@ class IterableDatasetShard(IterableDataset):
                 (self.batch_size * self.num_processes)) * self.batch_size
 
 
+class LengthGroupedSampler(Sampler):
+    r"""
+    Sampler that samples indices in a way that groups together features of the dataset of roughly the same length while
+    keeping a bit of randomness.
+    """
+
+    def __init__(
+        self,
+        batch_size: int,
+        dataset: Optional[Dataset] = None,
+        lengths: Optional[List[int]] = None,
+        model_input_name: Optional[str] = None,
+        generator=None,
+    ):
+        if dataset is None and lengths is None:
+            raise ValueError("One of dataset and lengths must be provided.")
+
+        self.batch_size = batch_size
+        if lengths is None:
+            model_input_name = model_input_name if model_input_name is not None else "input_ids"
+            if (
+                not (isinstance(dataset[0], dict) or isinstance(dataset[0], BatchEncoding))
+                or model_input_name not in dataset[0]
+            ):
+                raise ValueError(
+                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
+                    f"'{model_input_name}' key."
+                )
+            lengths = [len(feature[model_input_name]) for feature in dataset]
+        self.lengths = lengths
+        self.generator = generator
+
+    def __len__(self):
+        return len(self.lengths)
+
+    def __iter__(self):
+        indices = get_length_grouped_indices(self.lengths, self.batch_size, generator=self.generator)
+        return iter(indices)
+
+
+class DistributedLengthGroupedSampler(DistributedSampler):
+    r"""
+    Distributed Sampler that samples indices in a way that groups together features of the dataset of roughly the same
+    length while keeping a bit of randomness.
+    """
+    # Copied and adapted from PyTorch DistributedSampler.
+    def __init__(
+        self,
+        batch_size: int,
+        dataset: Optional[Dataset] = None,
+        num_replicas: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
+        drop_last: bool = False,
+        lengths: Optional[List[int]] = None,
+        model_input_name: Optional[str] = None,
+    ):
+        if dataset is None and lengths is None:
+            raise ValueError("One of dataset and lengths must be provided.")
+        if num_replicas is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            num_replicas = dist.get_world_size()
+        if rank is None:
+            if not dist.is_available():
+                raise RuntimeError("Requires distributed package to be available")
+            rank = dist.get_rank()
+
+        self.batch_size = batch_size
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.epoch = 0
+        self.drop_last = drop_last
+
+        if lengths is None:
+            model_input_name = model_input_name if model_input_name is not None else "input_ids"
+            if (
+                not (isinstance(dataset[0], dict) or isinstance(dataset[0], BatchEncoding))
+                or model_input_name not in dataset[0]
+            ):
+                raise ValueError(
+                    "Can only automatically infer lengths for datasets whose items are dictionaries with an "
+                    f"'{model_input_name}' key."
+                )
+            lengths = [len(feature[model_input_name]) for feature in dataset]
+        self.lengths = lengths
+
+        # If the dataset length is evenly divisible by # of replicas, then there
+        # is no need to drop any data, since the dataset will be split equally.
+        if self.drop_last and len(self.lengths) % self.num_replicas != 0:
+            # Split to nearest available length that is evenly divisible.
+            # This is to ensure each rank receives the same amount of data when
+            # using this Sampler.
+            self.num_samples = math.ceil((len(self.lengths) - self.num_replicas) / self.num_replicas)
+        else:
+            self.num_samples = math.ceil(len(self.lengths) / self.num_replicas)
+        self.total_size = self.num_samples * self.num_replicas
+        self.seed = seed
+
+    def __iter__(self) -> Iterator:
+        # Deterministically shuffle based on epoch and seed
+        g = torch.Generator()
+        g.manual_seed(self.seed + self.epoch)
+        indices = get_length_grouped_indices(self.lengths, self.batch_size, generator=g)
+
+        if not self.drop_last:
+            # add extra samples to make it evenly divisible
+            indices += indices[: (self.total_size - len(indices))]
+        else:
+            # remove tail of data to make it evenly divisible.
+            indices = indices[: self.total_size]
+        assert len(indices) == self.total_size
+
+        # subsample
+        indices = indices[self.rank : self.total_size : self.num_replicas]
+        assert len(indices) == self.num_samples
+
+        return iter(indices)
+
+
 def get_parameter_names(model, forbidden_layer_types):
     """
     Returns the names of the model parameters that are not inside a forbidden layer.
@@ -308,3 +530,153 @@ def get_parameter_names(model, forbidden_layer_types):
     # Add model specific parameters (defined with nn.Parameter) since they are not in any child.
     result += list(model._parameters.keys())
     return result
+
+
+def get_length_grouped_indices(lengths, batch_size, mega_batch_mult=None, generator=None):
+    """
+    Return a list of indices so that each slice of `batch_size` consecutive indices correspond to elements of similar
+    lengths. To do this, the indices are:
+
+    - randomly permuted
+    - grouped in mega-batches of size `mega_batch_mult * batch_size`
+    - sorted by length in each mega-batch
+
+    The result is the concatenation of all mega-batches, with the batch of `batch_size` containing the element of
+    maximum length placed first, so that an OOM happens sooner rather than later.
+    """
+    # Default for mega_batch_mult: 50 or the number to get 4 megabatches, whichever is smaller.
+    if mega_batch_mult is None:
+        mega_batch_mult = min(len(lengths) // (batch_size * 4), 50)
+        # Just in case, for tiny datasets
+        if mega_batch_mult == 0:
+            mega_batch_mult = 1
+
+    # We need to use torch for the random part as a distributed sampler will set the random seed for torch.
+    indices = torch.randperm(len(lengths), generator=generator)
+    megabatch_size = mega_batch_mult * batch_size
+    megabatches = [indices[i : i + megabatch_size].tolist() for i in range(0, len(lengths), megabatch_size)]
+    megabatches = [list(sorted(megabatch, key=lambda i: lengths[i], reverse=True)) for megabatch in megabatches]
+
+    # The rest is to get the biggest batch first.
+    # Since each megabatch is sorted by descending length, the longest element is the first
+    megabatch_maximums = [lengths[megabatch[0]] for megabatch in megabatches]
+    max_idx = torch.argmax(torch.tensor(megabatch_maximums)).item()
+    # Switch to put the longest element in first position
+    megabatches[0][0], megabatches[max_idx][0] = megabatches[max_idx][0], megabatches[0][0]
+
+    return [i for megabatch in megabatches for i in megabatch]
+
+
+def distributed_concat(tensor: Any, num_total_examples: Optional[int] = None) -> Any:
+    try:
+        if isinstance(tensor, (tuple, list)):
+            return type(tensor)(distributed_concat(t, num_total_examples) for t in tensor)
+        if len(tensor.shape) <= 0:
+            tensor = tensor[None]
+        output_tensors = [tensor.clone() for _ in range(dist.get_world_size())]
+        dist.all_gather(output_tensors, tensor)
+        concat = torch.cat(output_tensors, dim=0)
+
+        # truncate the dummy elements added by SequentialDistributedSampler
+        if num_total_examples is not None:
+            concat = concat[:num_total_examples]
+        return concat
+    except AssertionError:
+        raise AssertionError("Not currently using distributed training")
+
+
+def nested_truncate(tensors, limit):
+    "Truncate `tensors` at `limit` (even if it's a nested list/tuple of tensors)."
+    if isinstance(tensors, (list, tuple)):
+        return type(tensors)(nested_truncate(t, limit) for t in tensors)
+    return tensors[:limit]
+
+
+
+def torch_pad_and_concatenate(tensor1, tensor2, padding_index=-100):
+    """Concatenates `tensor1` and `tensor2` on first axis, applying padding on the second if necessary."""
+    if len(tensor1.shape) == 1 or tensor1.shape[1] == tensor2.shape[1]:
+        return torch.cat((tensor1, tensor2), dim=0)
+
+    # Let's figure out the new shape
+    new_shape = (tensor1.shape[0] + tensor2.shape[0], max(tensor1.shape[1], tensor2.shape[1])) + tensor1.shape[2:]
+
+    # Now let's fill the result tensor
+    result = tensor1.new_full(new_shape, padding_index)
+    result[: tensor1.shape[0], : tensor1.shape[1]] = tensor1
+    result[tensor1.shape[0] :, : tensor2.shape[1]] = tensor2
+    return result
+
+
+def numpy_pad_and_concatenate(array1, array2, padding_index=-100):
+    """Concatenates `array1` and `array2` on first axis, applying padding on the second if necessary."""
+    if len(array1.shape) == 1 or array1.shape[1] == array2.shape[1]:
+        return np.concatenate((array1, array2), axis=0)
+
+    # Let's figure out the new shape
+    new_shape = (array1.shape[0] + array2.shape[0], max(array1.shape[1], array2.shape[1])) + array1.shape[2:]
+
+    # Now let's fill the result tensor
+    result = np.full_like(array1, padding_index, shape=new_shape)
+    result[: array1.shape[0], : array1.shape[1]] = array1
+    result[array1.shape[0] :, : array2.shape[1]] = array2
+    return result
+
+
+def nested_concat(tensors, new_tensors, padding_index=-100):
+    """
+    Concat the `new_tensors` to `tensors` on the first dim and pad them on the second if needed. Works for tensors or
+    nested list/tuples of tensors.
+    """
+    assert type(tensors) == type(
+        new_tensors
+    ), f"Expected `tensors` and `new_tensors` to have the same type but found {type(tensors)} and {type(new_tensors)}."
+    if isinstance(tensors, (list, tuple)):
+        return type(tensors)(nested_concat(t, n, padding_index=padding_index) for t, n in zip(tensors, new_tensors))
+    elif isinstance(tensors, torch.Tensor):
+        return torch_pad_and_concatenate(tensors, new_tensors, padding_index=padding_index)
+    elif isinstance(tensors, np.ndarray):
+        return numpy_pad_and_concatenate(tensors, new_tensors, padding_index=padding_index)
+    else:
+        raise TypeError(f"Unsupported type for concatenation: got {type(tensors)}")
+
+
+def find_batch_size(tensors):
+    """
+    Find the first dimension of a tensor in a nested list/tuple/dict of tensors.
+    """
+    if isinstance(tensors, (list, tuple)):
+        for t in tensors:
+            result = find_batch_size(t)
+            if result is not None:
+                return result
+    elif isinstance(tensors, Mapping):
+        for key, value in tensors.items():
+            result = find_batch_size(value)
+            if result is not None:
+                return result
+    elif isinstance(tensors, torch.Tensor):
+        return tensors.shape[0] if len(tensors.shape) >= 1 else None
+    elif isinstance(tensors, np.ndarray):
+        return tensors.shape[0] if len(tensors.shape) >= 1 else None
+
+
+
+def nested_numpify(tensors):
+    "Numpify `tensors` (even if it's a nested list/tuple of tensors)."
+    if isinstance(tensors, (list, tuple)):
+        return type(tensors)(nested_numpify(t) for t in tensors)
+    t = tensors.cpu()
+    if t.dtype == torch.bfloat16:
+        # As of Numpy 1.21.4, NumPy does not support bfloat16 (see
+        # https://github.com/numpy/numpy/blob/a47ecdea856986cd60eabbd53265c2ca5916ad5d/doc/source/user/basics.types.rst ).
+        # Until Numpy adds bfloat16, we must convert float32.
+        t = t.to(torch.float32)
+    return t.numpy()
+
+
+def nested_detach(tensors):
+    "Detach `tensors` (even if it's a nested list/tuple of tensors)."
+    if isinstance(tensors, (list, tuple)):
+        return type(tensors)(nested_detach(t) for t in tensors)
+    return tensors.detach()
