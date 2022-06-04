@@ -281,7 +281,7 @@ class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
     def forward(ctx, inputs, scale):
         scale_t = torch.tensor([scale])
         softmax_results = (
-            get_softmax_kernel().scaled_upper_triang_masked_softmax_forward(
+            get_softmax_kernel().fused_scaled_upper_triang_masked_softmax_forward(
                 inputs, scale_t[0]
             )
         )
@@ -292,8 +292,10 @@ class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def backward(ctx, output_grads):
         softmax_results, scale_t = ctx.saved_tensors
-        input_grads = get_softmax_kernel().scaled_upper_triang_masked_softmax_backward(
-            output_grads, softmax_results, scale_t[0]
+        input_grads = (
+            get_softmax_kernel().fused_scaled_upper_triang_masked_softmax_backward(
+                output_grads, softmax_results, scale_t[0]
+            )
         )
 
         return input_grads, None
@@ -304,7 +306,7 @@ class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
     def forward(ctx, inputs, mask, scale):
         scale_t = torch.tensor([scale])
 
-        softmax_results = get_softmax_kernel().scaled_masked_softmax_forward(
+        softmax_results = get_softmax_kernel().fused_scaled_masked_softmax_forward(
             inputs, mask, scale_t[0]
         )
         ctx.save_for_backward(softmax_results, scale_t)
@@ -314,7 +316,7 @@ class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
     def backward(ctx, output_grads):
         softmax_results, scale_t = ctx.saved_tensors
 
-        input_grads = get_softmax_kernel().scaled_masked_softmax_backward(
+        input_grads = get_softmax_kernel().fused_scaled_masked_softmax_backward(
             output_grads, softmax_results, scale_t[0]
         )
         return input_grads, None, None

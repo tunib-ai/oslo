@@ -196,6 +196,7 @@ class ParallelContext(object):
         rank = int(os.environ["RANK"])
         local_rank = int(os.environ["LOCAL_RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
+        local_world_size = int(os.environ["LOCAL_WORLD_SIZE"])
         host = os.environ["MASTER_ADDR"]
         port = int(os.environ["MASTER_PORT"])
 
@@ -203,6 +204,7 @@ class ParallelContext(object):
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -266,11 +268,13 @@ class ParallelContext(object):
         """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
+        local_world_size = int(os.environ["SLURM_JOB_NUMNODES"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -333,11 +337,13 @@ class ParallelContext(object):
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
+        local_world_size = int(os.environ["OMPI_COMM_WORLD_LOCAL_SIZE"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
@@ -356,6 +362,7 @@ class ParallelContext(object):
         rank: int,
         local_rank: Optional[int],
         world_size: int,
+        local_world_size: int,
         host: str,
         port: int,
         data_parallel_size: int,
@@ -439,6 +446,8 @@ class ParallelContext(object):
 
         # tensor parallel depth for 2.5d parallelism
         self.tensor_parallel_depth = tensor_parallel_depth
+
+        self.local_world_size = local_world_size
 
         self.init_global_dist(rank, world_size, backend, host, port)
         self.init_parallel_groups()
