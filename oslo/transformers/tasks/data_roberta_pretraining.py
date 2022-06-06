@@ -71,7 +71,7 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
     def __init__(
         self,
         processor: ProcessorForRobertaPretraining,
-        mlm_probability: float,
+        mlm_probability: float = 0.15,
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
@@ -93,15 +93,9 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
 
         # If special token mask has been preprocessed, pop it from the dict.
         special_tokens_mask = batch.pop("special_tokens_mask", None)
-        if self.mlm:
-            batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
-                batch["input_ids"], special_tokens_mask=special_tokens_mask
-            )
-        else:
-            labels = batch["input_ids"].clone()
-            if self.tokenizer.pad_token_id is not None:
-                labels[labels == self.tokenizer.pad_token_id] = -100
-            batch["labels"] = labels
+        batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
+            batch["input_ids"], special_tokens_mask=special_tokens_mask
+        )
         
         if self.parallel_context is None:
             return batch

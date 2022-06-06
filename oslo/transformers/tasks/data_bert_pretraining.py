@@ -53,7 +53,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
     def __init__(
         self,
         processor: ProcessorForBertPretraining,
-        mlm_probability: float,
+        mlm_probability: float = 0.15,
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
