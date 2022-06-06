@@ -1,7 +1,6 @@
 from typing import Any, Dict, List, Optional
 import logging
 from datasets.arrow_dataset import Batch
-
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
@@ -34,6 +33,7 @@ class ProcessorForSequenceClassification(BaseProcessor):
             max_length=self._max_length,
             verbose=False,
         )
+
         dict_of_training_examples["labels"] = examples["labels"]
 
         return dict_of_training_examples

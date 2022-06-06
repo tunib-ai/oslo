@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 from datasets.arrow_dataset import Batch
@@ -7,7 +7,6 @@ from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
 try:
     from transformers import (
-        AutoTokenizer,
         T5Tokenizer,
         T5TokenizerFast,
     )
