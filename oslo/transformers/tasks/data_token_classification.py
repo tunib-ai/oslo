@@ -66,7 +66,7 @@ class ProcessorForTokenClassification(BaseProcessor):
         column_names = [k for k, v in examples.items()]
         assert (
             "tokens" in column_names
-        ), "The name of dataset column that you want to tokenize must be 'tokens'"
+        ), "The name of dataset column that you want to tokenize must be 'tokens' (not 'text')"
 
         dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
             examples["tokens"],
