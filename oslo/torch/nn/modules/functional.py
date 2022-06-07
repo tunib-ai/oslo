@@ -330,7 +330,7 @@ class _NGramRepeatBlockFunction(torch.autograd.Function):
             from oslo.torch._C import NgramRepeatBlockBinder
 
             ngram_repeat_block_cuda = NgramRepeatBlockBinder().bind()
-        return ngram_repeat_block_cuda.ngram_repeat_block_forward(
+        return ngram_repeat_block_cuda.forward(
             tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size
         )
 

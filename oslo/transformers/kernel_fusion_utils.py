@@ -62,7 +62,6 @@ def fused_no_repeat_ngram_logits_processor(model):
         generation_utils.NoRepeatNGramLogitsProcessor = get_ngram_logit_processor(
             num_beams=num_beams, batch_size=input_ids.size(0)
         )
-        print("my code")
 
         return orig_generate_fn(*args, **kwargs)
 
