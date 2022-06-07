@@ -19,7 +19,7 @@ class ProcessorForBartPretraining(BaseProcessor):
     def __init__(
         self,
         model_name_or_path: str, 
-        max_length: int, 
+        max_length: int = 1024, 
         ) -> None:
         super().__init__(model_name_or_path, max_length)
 
@@ -89,6 +89,14 @@ class DataCollatorForBartPretraining:
         
         if self.parallel_context is None:
             batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
+            if self.pad_to_multiple_of:
+                batch_size, label_seq_length = batch['labels'].size()
+                if label_seq_length % self.pad_to_multiple_of != 0:
+                    label_required_length = ((label_seq_length // self.pad_to_multiple_of) + 1) * self.pad_to_multiple_of
+                
+                    difference = label_required_length - label_seq_length
+                    label_pads = torch.full((batch_size, difference), fill_value=self.pad_token_id, dtype=batch['labels'].dtype)
+                    batch['labels'] = torch.cat([batch['labels'], label_pads], axis=1)
         else:
             batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size)
             

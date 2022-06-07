@@ -12,7 +12,7 @@ except ImportError:
 
 
 class ProcessorForAlbertPretraining(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+    def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
         self._chunk_size = max_length - 3
 

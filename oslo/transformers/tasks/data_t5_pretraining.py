@@ -19,7 +19,7 @@ class ProcessorForT5Pretraining(BaseProcessor):
     def __init__(
         self,
         model_name_or_path: str, 
-        max_length: int, 
+        max_length: int = 512, 
         mlm_probability: float = 0.15, 
         mean_noise_span_length: float = 3.0,
         ) -> None:
@@ -117,7 +117,6 @@ class DataCollatorForT5Pretraining:
     def __init__(
         self,
         processor: ProcessorForT5Pretraining,
-        pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = processor._tokenizer
@@ -125,12 +124,11 @@ class DataCollatorForT5Pretraining:
         self.mean_noise_span_length = processor.mean_noise_span_length
         self.input_length = processor._max_length
         self.target_length = processor.target_chunk_size
-        self.pad_to_multiple_of = pad_to_multiple_of
-        self.pad_token_id = self.tokenizer.pad_token_id
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
             self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+            self.pad_token_id = self.tokenizer.pad_token_id
     
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
@@ -191,7 +189,7 @@ class DataCollatorForT5Pretraining:
                 
                 batch[key] = value
         
-        batch["attention_mask"] = (batch["input_ids"] != self.pad_token_id).clone().detach().to(torch.int64)
+            batch["attention_mask"] = (batch["input_ids"] != self.pad_token_id).clone().detach().to(torch.int64)
 
         return batch
 

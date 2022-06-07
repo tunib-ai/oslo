@@ -12,7 +12,7 @@ except ImportError:
 
 
 class ProcessorForBertPretraining(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+    def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
         self._chunk_size = max_length - 3
 
@@ -70,6 +70,15 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         examples = self._prepare_wwm_and_sop_from_examples(examples)
         batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
         batch_mask = batch.pop("mask_label")
+
+        if self.pad_to_multiple_of:
+            batch_size, mask_seq_length = batch_mask.size()
+            if mask_seq_length % self.pad_to_multiple_of != 0:
+                required_length = ((mask_seq_length // self.pad_to_multiple_of) + 1) * self.pad_to_multiple_of
+                difference = required_length - mask_seq_length
+                mask_pads = torch.full([batch_size, difference], fill_value=0, dtype=batch_mask.dtype)
+                batch_mask = torch.cat([batch_mask, mask_pads], axis=1)
+
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(batch["input_ids"], batch_mask)
 
         if self.parallel_context is None:
