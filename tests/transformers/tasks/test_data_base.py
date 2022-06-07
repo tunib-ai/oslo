@@ -1,5 +1,6 @@
 from typing import Optional
 from torch.utils.data import DataLoader
+import torch
 
 
 class TestDataBinarization:
@@ -28,7 +29,9 @@ class TestDataBinarization:
             for key, value in batch.items():
                 if key == "input_ids":
                     print(f"input_ids decode: \n{self.tokenizer.decode(value[idx])}\n")
-                elif key == "labels":
+                elif key == "labels" and value.dim() != 1:
+                    if torch.any(value[idx] < 0):
+                        continue
                     print(f"labels decode: \n{self.tokenizer.decode(value[idx])}\n")
             
             if check_token:
@@ -40,28 +43,28 @@ class TestDataBinarization:
         key,
         max_length,
         pad_to_multiple_of: Optional[int],
-        must_equal_to_max_length: bool = False
+        must_be_equal_to_max_length: bool = False
         ):
         for batch in dataloader:
             seq_length = batch[key].size(1)
-            if must_equal_to_max_length:
+            if must_be_equal_to_max_length:
                 if pad_to_multiple_of is None:
                     assert (
                         seq_length == max_length
-                    ), f"sequence_length({seq_length}) must be equal to max_length({max_length})"
+                    ), f"{key} sequence_length({seq_length}) must be equal to max_length({max_length})"
                 else:
                     assert (
                         seq_length % pad_to_multiple_of == 0
-                    ), f"input_ids sequence length({seq_length}) must be equal to multiple of {pad_to_multiple_of}"
+                    ), f"{key} sequence length({seq_length}) must be equal to multiple of {pad_to_multiple_of}"
             else:
-                assert (
-                    seq_length <= max_length
-                ), f"sequence_length({seq_length}) must be shorter than max_length({max_length})"
-                
-                if pad_to_multiple_of is not None:
+                if pad_to_multiple_of is None:
+                    assert (
+                        seq_length <= max_length
+                    ), f"{key} sequence_length({seq_length}) must be shorter than max_length({max_length})"
+                else:
                     assert (
                         seq_length % pad_to_multiple_of == 0
-                    ), f"input_ids sequence length({seq_length}) must be equal to multiple of {pad_to_multiple_of}"
+                    ), f"{key} sequence length({seq_length}) must be equal to multiple of {pad_to_multiple_of}"
         
         print(f"---- {key} length check test pass ----\n")
     
@@ -70,8 +73,11 @@ class TestDataBinarization:
 
         if self.data_collator.tokenizer.pad_token is None:
             self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"}) 
-            self.sp_data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"}) 
             print("pad_token is set.")
+
+        if self.sp_data_collator.tokenizer.pad_token is None:
+            self.sp_data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"}) 
+            print("pad_token is set. (SP)")
 
         dataloader = DataLoader(
             processed_dataset['train'], batch_size=batch_size, shuffle=False, collate_fn=self.data_collator

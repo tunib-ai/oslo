@@ -5,113 +5,128 @@ from oslo.transformers.tasks.data_bart_pretraining import (
     ProcessorForBartPretraining,
     DataCollatorForBartPretraining,
 )
+from tests.transformers.tasks.test_data_base import TestDataBinarization
 try:
     from datasets import load_dataset
 except ImportError:
     print("You have to install 'datasets' to test data_sequence_classification.py")
 
-# export PYTHONPATH="${PYTHONPATH}:/Users/gimmaru/oslo"
 
-    
-def test_bart_pretraining(model_name, max_length, dataset, mlm_probability=0.15, possion_lambda=3):
-    print(f"---- {model_name} test ----\n")
-    processor = ProcessorForBartPretraining(model_name, max_length)
-    
-    processed_dataset = dataset.map(
-        processor,
-        batched=True,
-        remove_columns=dataset['train'].column_names,
-    )
-
-    data_collator = DataCollatorForBartPretraining(processor, mlm_probability=mlm_probability, possion_lambda=possion_lambda)
-    dataloader = DataLoader(processed_dataset['train'], batch_size=2048, collate_fn=data_collator, shuffle=True)
-    tokenizer = data_collator.tokenizer
-    
-    # Check batch after preprocessing and collection
-    print("---- batch check ----\n")
-    batch = next(iter(dataloader))
-    print(f"batch keys: {[key for key in batch.keys()]}\n")
-    for key, value in batch.items():
-        print(f"{key} size: {value.size()}")
-
-    for idx in range(dataloader.batch_size):
-        if idx == 2:
-            break
-        for key, value in batch.items():
-            print(f"{key}: \n{value[idx]}\n")
-
-        for key, value in batch.items():
-            if key == "input_ids":
-                print(f"input_ids decode: \n{tokenizer.decode(value[idx])}\n")
-            elif key == "labels":
-                print(f"labels decode: \n{tokenizer.decode(value[idx])}\n")
-
-    max_length = processor._max_length
-    mask_token_id = tokenizer.mask_token_id
-    pad_token_id = tokenizer.pad_token_id
-    for batch in dataloader:
-        seq_length = batch['input_ids'].size(1)
-        assert (seq_length <= max_length), f"sequence_length({seq_length}) must be shorter than max_length({max_length})"
-
-        # Verify that the mask token is aligned to a predetermined percentage
-        num_tokens = torch.sum(batch['labels'] != pad_token_id)
-        mean_num_mask_tokens = torch.sum(batch['input_ids'] == mask_token_id) * data_collator.possion_lambda
-        mlm_probability = torch.round(mean_num_mask_tokens / num_tokens, decimals=2)
-        assert(data_collator.mlm_probability == mlm_probability), f"{mlm_probability} != {data_collator.mlm_probability}"
-        
-    print("---- test pass ----\n")
-
-    return processor, processed_dataset
-
-def test_sp_collator(
-    processor,
-    processed_datasets, 
-    sequence_parallel_size: int = 3
+class TestDataBartPretraining(TestDataBinarization):
+    def __init__(
+        self,
+        model_name,
+        parallel_context = None,
     ):
+        self.processor = ProcessorForBartPretraining(model_name)
+        self.data_collator = DataCollatorForBartPretraining(self.processor)
+        self.sp_data_collator = DataCollatorForBartPretraining(
+            self.processor, parallel_context=parallel_context
+        )
+        self.model_name = model_name
+        self.tokenizer = self.processor._tokenizer
+        self.parallel_context = parallel_context
 
-    print("---- SP Collator test ----\n")
-    parallel_context = ParallelContext.from_torch(sequence_parallel_size=sequence_parallel_size)
-    data_collator = DataCollatorForBartPretraining(processor)
-    sp_data_collator = DataCollatorForBartPretraining(processor, parallel_context=parallel_context)
-    local_world_size = sp_data_collator.local_world_size
+    def __call__(
+        self,
+        max_length,
+        dataset,
+        mlm_probability=0.15,
+        possion_lambda=3,
+        batch_size = 1024,
+        pad_to_multiple_of = None,
+        batch_check_num_sample = 2,
+        batch_check_tokens = False,
+    ):
+        self.processor._chunk_size = max_length - 1
+        self.processor._max_length = max_length
+        self.data_collator.pad_to_multiple_of = pad_to_multiple_of
+        self.data_collator.mlm_probability = mlm_probability
+        self.data_collator.possion_lambda = possion_lambda
 
-    if data_collator.tokenizer.pad_token is None:
-        data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"}) 
-        sp_data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"}) 
-        print("pad_token is set now.")
+        print(
+            "---------- Test Start ----------",
+            f"Model: {self.model_name}",
+            f"Max Length: {max_length}",
+            f"Batch size: {batch_size}",
+            f"MLM probability: {mlm_probability}",
+            f"Possion Lambda: {possion_lambda}",
+            f"Pad to multiple of: {pad_to_multiple_of}\n",
+            sep="\n"
+        )
+        processed_dataset = dataset.map(
+            self.processor,
+            batched=True,
+            remove_columns = dataset['train'].column_names
+        )
+        processed_dataset.cleanup_cache_files()
 
-    dataloader = DataLoader(processed_datasets['train'], batch_size=8, shuffle=False, collate_fn=data_collator)
-    sp_dataloader = DataLoader(processed_datasets['train'], batch_size=8, shuffle=False, collate_fn=sp_data_collator)
+        if self.data_collator.tokenizer.pad_token is None:
+            self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+            self.tokenizer = self.data_collator.tokenizer
+            print("pad_token is set.")
 
-    print(f"---- SP batch check ----\n")
-    sp_batch = next(iter(sp_dataloader))
-    for key, value in sp_batch.items():
-        print(f"{key} size: {value.size()}")
-        print(f"{key} sample: \n{value[0]}\n")
+        dataloader = DataLoader(
+            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+        )
+        
+        batch = next(iter(dataloader))
+        self._batch_check(
+            batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
+        )
 
-    for batch, sp_batch in zip(dataloader, sp_dataloader):
-        seq_length = batch['input_ids'].size(1)
-        sq_seq_length = sp_batch['input_ids'].size(1)
-         
-        if seq_length % local_world_size != 0:
-            sp_desired_length = ((seq_length // local_world_size) + 1)
-        else:
-            sp_desired_length = seq_length
+        self._length_check(
+            dataloader, 
+            "input_ids", 
+            max_length, 
+            pad_to_multiple_of, 
+            must_be_equal_to_max_length=False
+        )
 
-        assert (sp_desired_length == sq_seq_length), f"Required length for SP({sp_desired_length} doesn't equal to SP sequence length({sq_seq_length}))"
+        self._length_check(
+            dataloader, 
+            "labels", 
+            max_length, 
+            pad_to_multiple_of, 
+            must_be_equal_to_max_length=True
+        )
 
-    print("---- test pass ----\n")
+        self.mask_ratio_check(dataloader)
+
+        if self.parallel_context is not None:
+            self._test_sp_collator(processed_dataset, batch_size)
+        
+        print("---------- Test Pass ----------\n")
+    
+    def mask_ratio_check(self, dataloader):
+        mask_token_id = self.tokenizer.mask_token_id
+        pad_token_id = self.tokenizer.pad_token_id
+
+        for batch in dataloader:
+            batch_size, seq_length = batch['labels'].size()
+
+            # Verify that the mask token ratio is aligned to a predetermined percentage
+            num_pad_tokens = torch.sum(batch['labels'] == pad_token_id)
+            num_tokens = batch_size * (seq_length - 1) - num_pad_tokens
+            mean_num_mask_tokens = torch.sum(batch['input_ids'] == mask_token_id) * self.data_collator.possion_lambda
+            mlm_probability = mean_num_mask_tokens / num_tokens
+            assert(
+                torch.isclose(mlm_probability, torch.tensor(self.data_collator.mlm_probability), atol=0.005)
+            ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.mlm_probability})"
+
+        print("---- mask ratio test pass ----\n")
+
 
 if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")
     dataset = dataset.rename_column("sentence", "text")
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 512, dataset)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 512, dataset, 0.2, 4)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 512, dataset, 0.2)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 256, dataset, 0.2)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 512, dataset, 0.3)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 256, dataset, 0.3)
-    processor, processed_dataset = test_bart_pretraining("facebook/bart-base", 256, dataset, 0.3, 2)
-    
-    # test_sp_collator(processor, processed_dataset)
-    # test_sp_collator(processor, processed_dataset)
+
+    bart_test = TestDataBartPretraining("facebook/bart-base")
+    # bart_test(1024, dataset)
+    bart_test(512, dataset, pad_to_multiple_of=3)
+    bart_test(512, dataset, 0.2)
+    bart_test(1024, dataset, 0.2, 4)
+    bart_test(512, dataset, 0.2, 2)
+    bart_test(512, dataset, 0.3)
+    # bart_test(256, dataset, 0.3)
+    # bart_test(256, dataset, 0.3, 2)

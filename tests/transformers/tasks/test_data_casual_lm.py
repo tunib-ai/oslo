@@ -16,42 +16,45 @@ class TestDataCausalLM(TestDataBinarization):
     def __init__(
         self,
         model_name,
-        max_length, 
-        dataset,
-        batch_size=1024,
-        pad_to_multiple_of=None,
-        parallel_context=None,
+        parallel_context = None,
     ):
-        self.processor = ProcessorForCausalLM(model_name, max_length)
-        self.data_collator = DataCollatorForCausalLM(
-            self.processor, pad_to_multiple_of=pad_to_multiple_of
-        )
+        self.processor = ProcessorForCausalLM(model_name)
+        self.data_collator = DataCollatorForCausalLM(self.processor)
         self.sp_data_collator = DataCollatorForCausalLM(
-            self.processor, pad_to_multiple_of=pad_to_multiple_of, parallel_context=parallel_context
+            self.processor, parallel_context=parallel_context
         )
         self.model_name = model_name
         self.tokenizer = self.processor._tokenizer
-        self.dataset = dataset
-        self.batch_size = batch_size
-        self.max_length = max_length
-        self.pad_to_multilple_of = pad_to_multiple_of
         self.parallel_context = parallel_context
 
-    def __call__(self):
+    def __call__(
+        self,
+        max_length, 
+        dataset,
+        batch_size = 1024,
+        pad_to_multiple_of = None,
+        batch_check_num_sample = 2,
+        batch_check_tokens = False,
+        must_be_equal_to_max_length = True,
+        ):
+        
+        self.processor._chunk_size = max_length
+        self.data_collator.pad_to_multiple_of = pad_to_multiple_of
+
         print(
             "---------- Test Start ----------",
             f"Model: {self.model_name}",
-            f"Max Length: {self.max_length}",
-            f"Batch size: {self.batch_size}",
-            f"Pad to multiple of: {self.pad_to_multilple_of}\n",
+            f"Max Length: {max_length}",
+            f"Batch size: {batch_size}",
+            f"Pad to multiple of: {pad_to_multiple_of}\n",
             sep="\n"
         )
-        self.processed_dataset = self.dataset.map(
+        processed_dataset = dataset.map(
             self.processor,
             batched=True,
-            remove_columns = self.dataset['train'].column_names
+            remove_columns = dataset['train'].column_names
         )
-        self.processed_dataset.cleanup_cache_files()
+        processed_dataset.cleanup_cache_files()
 
         if self.data_collator.tokenizer.pad_token is None:
             self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
@@ -59,29 +62,31 @@ class TestDataCausalLM(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            self.processed_dataset['train'], self.batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
         )
         
         batch = next(iter(dataloader))
-        self._batch_check(batch, num_samples=2, check_token=True)
+        self._batch_check(
+            batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
+        )
 
         self._length_check(
             dataloader, 
             "input_ids", 
-            self.max_length, 
-            self.pad_to_multilple_of, 
-            must_equal_to_max_length=True
+            max_length, 
+            pad_to_multiple_of, 
+            must_be_equal_to_max_length=must_be_equal_to_max_length
         )
         self._length_check(
             dataloader, 
             "labels", 
-            self.max_length, 
-            self.pad_to_multilple_of, 
-            must_equal_to_max_length=True
+            max_length, 
+            pad_to_multiple_of, 
+            must_be_equal_to_max_length=must_be_equal_to_max_length
         )
 
         if self.parallel_context is not None:
-            self._test_sp_collator(self.processed_dataset, self.batch_size)
+            self._test_sp_collator(processed_dataset, batch_size)
         
         print("---------- Test Pass ----------\n")
 
@@ -90,18 +95,16 @@ if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")
     dataset = dataset.rename_column("sentence", "text")
 
-    test_1 = TestDataCausalLM("gpt2", 256, dataset, 1024, 3)
-    test_1()
+    gpt2_test = TestDataCausalLM("gpt2")
+    gpt2_test(256, dataset, 1024, 3)
+    gpt2_test(512, dataset, 1024)
 
-    test_2 = TestDataCausalLM("gpt2", 512, dataset, 1024)
-    test_2()
+    bart_test = TestDataCausalLM("facebook/bart-base")
+    bart_test(64, dataset, 32)
 
-    test_3 = TestDataCausalLM("facebook/bart-base", 64, dataset, 32)
-    test_3()
-
-    test_4 = TestDataCausalLM("t5-small", 128, dataset, 1024)
-    test_4()
+    t5_test = TestDataCausalLM("t5-small")
+    t5_test(128, dataset, 1024)
 
     # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-    # test_sp = TestDataCausalLM("gpt2", 256, dataset, 1024, 3, parallel_context)
-    # test_sp()
+    # gpt2_sp_test = TestDataCausalLM("gpt2", parallel_context)
+    # gpt2_sp_test(256, dataset, 1024)
