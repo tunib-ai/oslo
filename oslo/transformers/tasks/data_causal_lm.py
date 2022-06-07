@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProcessorForCausalLM(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+    def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
         self._chunk_size = max_length
 
@@ -32,6 +32,7 @@ class ProcessorForCausalLM(BaseProcessor):
             truncation=False,
             return_attention_mask=False,
             return_special_tokens_mask=False,
+            add_special_tokens=False,
             verbose=False,
         )["input_ids"]
 
