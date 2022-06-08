@@ -1,4 +1,5 @@
 import inspect
+import copy
 
 import torch
 from torch import nn
@@ -6,7 +7,7 @@ import torch.distributed as dist
 from torch.cuda.amp import custom_fwd, custom_bwd
 
 from oslo.torch.distributed.nn.functional import send, recv
-from oslo.torch.distributed import ParallelMode
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
 FORWARD_MAP = {}
@@ -25,11 +26,15 @@ FORWARD_MAP = {}
 ### PP pre fwd p2p com
 
 
-def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_context):
+def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_context, send_first: bool = False):
     rank = dist.get_rank()
-    print(f"pre_fwd, {input_.requires_grad}, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
-    if input_.device.index != module_rank:  # device of input should be the same as module_rank
-        if input_.device.index == rank: # if input_ is on our rank we send
+    if input_ is None:
+        input_device = -1
+    else:
+        input_device = input_.device.index
+        print(f"pre_fwd, {input_.requires_grad}, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
+    if input_device != module_rank:  # device of input should be the same as module_rank
+        if input_device == rank and send_first: # if input_ is on our rank we send
             print(f"pre_fwd-before_send, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
             send(
               data=input_, 
@@ -42,7 +47,7 @@ def _pp_pre_fwd_p2p_com(input_, module_rank, module_rank_parent, parallel_contex
             print(f"pre_fwd-before_recv, rank: {rank}, module_rank: {module_rank}, module_rank_parent: {module_rank_parent}, input_.device.index: {input_.device.index}")
             #input_ = torch.empty(input_.shape, device=rank) # TO DO: Check buffer preallocation!
             input_buffer = recv(
-              src_rank=input_.device.index, 
+              src_rank=input_device,
               dst_rank=rank, 
               parallel_context=parallel_context
             )
@@ -80,17 +85,19 @@ class PPPreFwdP2PCom(torch.autograd.Function):
     @staticmethod
     @custom_fwd
     def forward(
-        ctx, module_rank, module_rank_parent, parallel_context, *args, **kwargs
+        ctx, module_rank, module_rank_parent, parallel_context, send_first, *args, **kwargs
     ):
         ctx.module_rank = module_rank
         ctx.module_rank_parent = module_rank_parent
         ctx.parallel_context = parallel_context
 
+        send_first = kwargs.get('send_first', False)
+
         output = []
         for x in args:
             if torch.is_tensor(x):
                 y = _pp_pre_fwd_p2p_com(
-                    x, module_rank, module_rank_parent, parallel_context
+                    x, module_rank, module_rank_parent, parallel_context, send_first
                 )
                 output.append(y)
             else:
@@ -100,7 +107,7 @@ class PPPreFwdP2PCom(torch.autograd.Function):
         for k, v in kwargs.items():
             if torch.is_tensor(v):
                 y = _pp_pre_fwd_p2p_com(
-                    v, module_rank, module_rank_parent, parallel_context
+                    v, module_rank, module_rank_parent, parallel_context, send_first
                 )
                 output_dict[k] = y
             else:
@@ -213,7 +220,9 @@ class PPPostFwdP2PCom(torch.autograd.Function):
         return (None, None, None) + tuple(output)
 
 
-def add_hook(module, parallel_context):
+prev_prev_layer_info = {"module_name": "", "device_type": ""}
+prev_layer_info = {"module_name": "", "device_type": ""}
+def add_hook(module: nn.Module, parallel_context: ParallelContext):
     rank = None
     rank_parent = None
     if hasattr(module, "oslo_parallel"):
@@ -257,9 +266,51 @@ def add_hook(module, parallel_context):
         pre_com = FORWARD_MAP[get_module_id(caller_module)]["pre_com"]
         post_com = FORWARD_MAP[get_module_id(caller_module)]["post_com"]
 
+        send_first = False
+
+        try:
+            device_type = next(caller_module.parameters()).device.type
+        except StopIteration:
+            device_type = None
+        print(f'rank: {parallel_context.get_global_rank()}, device: {device_type}')
+        global prev_layer_info, prev_prev_layer_info
+
+        def has_cuda_in_previous_two_layers() -> bool:
+            if prev_layer_info.get('module_name', '') in ("NewGELUActivation", "Dropout"):
+                if prev_prev_layer_info['device_type'] == 'cuda':
+                    return True
+            elif prev_layer_info.get('device_type', '') == 'cuda':
+                return True
+            return False
+        if device_type == 'cpu':
+            print(f"rank: {parallel_context.get_global_rank()}, prev_layer_info: {prev_layer_info}")
+            print(f"rank: {parallel_context.get_global_rank()}, prev_prev_layer_info: {prev_prev_layer_info}")
+            if has_cuda_in_previous_two_layers():
+                print('has_cuda_in_previous_two_layers')
+                send_first = True
+                pass
+            elif prev_layer_info.get('device_type', 'cpu') == 'cpu':
+                prev_prev_layer_info = copy.deepcopy(prev_layer_info)
+                prev_layer_info["module_name"] = caller_module.__class__.__qualname__
+                prev_layer_info["device_type"] = device_type
+                print(f"rank: {parallel_context.get_global_rank()}, apply prev_layer_info: {prev_layer_info}")
+                print(f"rank: {parallel_context.get_global_rank()}, apply prev_prev_layer_info: {prev_prev_layer_info}")
+
+                print('fake return')
+                batch_size = args[0].shape[0]
+                sequence_length = args[0].shape[1]
+                return torch.ones((batch_size, sequence_length, 768), dtype=torch.float32).to(device_type)
+        elif device_type is None:
+            print(f'Has no parameter: {caller_module.__class__.__qualname__}')
+        prev_prev_layer_info = copy.deepcopy(prev_layer_info)
+        prev_layer_info["module_name"] = caller_module.__class__.__qualname__
+        prev_layer_info["device_type"] = device_type
+        print(f"rank: {parallel_context.get_global_rank()}, apply prev_layer_info: {prev_layer_info}")
+        print(f"rank: {parallel_context.get_global_rank()}, apply prev_prev_layer_info: {prev_prev_layer_info}")
+
         if hasattr(module, "oslo_parallel") and hasattr(module, "oslo_pp_parent_rank"):
             assert pre_com is not None and post_com is not None
-            args, kwargs = pre_com(rank, rank_parent, parallel_context, *args, **kwargs)
+            args, kwargs = pre_com(rank, rank_parent, parallel_context, send_first, *args, **kwargs)
             x = forward(*args, **kwargs)
 
             # TODO; okay?

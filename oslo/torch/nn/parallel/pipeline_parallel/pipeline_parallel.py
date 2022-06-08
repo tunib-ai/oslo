@@ -84,13 +84,8 @@ class PipelineParallel(nn.Module):
 
         print(f"{rank}, {self.partitioner.root_node.parameters[0].get_device()}")
 
-        if rank == self.partitioner.root_node.parameters[0].get_device():
-            res = self.module(*args, **kwargs)
-            dist.barrier()
-            return res
-        else:
-            dist.barrier()
-            return None
+        # TODO: I want to 1. remove modules from forward_fns that are on CPU and 2. wait using recv until previous layer send its output to current layer.
+        return self.module(*args, **kwargs)
 
     def guess_batch_size(kwargs):
         """Guess global batch size dynamically from user input"""
