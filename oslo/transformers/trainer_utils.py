@@ -10,25 +10,47 @@ import inspect
 import threading
 from typing import Optional, Tuple, Union, NamedTuple, Dict
 
-from .utils import (ExplicitEnum)
+from .utils import ExplicitEnum
 from .utils.import_utils import is_torch_cuda_available, is_psutil_available
 
 PREFIX_CHECKPOINT_DIR = "checkpoint"
 _re_checkpoint = re.compile(r"^" + PREFIX_CHECKPOINT_DIR + r"\-(\d+)$")
 
 
+class ShardedDDPOption(ExplicitEnum):
+    # TODO change to fit oslo
+    SIMPLE = "simple"
+    ZERO_DP_2 = "zero_dp_2"
+    ZERO_DP_3 = "zero_dp_3"
+    OFFLOAD = "offload"
+    AUTO_WRAP = "auto_wrap"
+
+
+# class ParallelOption(ExplicitEnum):
+#     DATA_PARALLEL = "dp"
+#     MODEL_PARALLEL = "mp"
+#
+#
+# class DataParallelOption(ExplicitEnum):
+#     DistributedDP = "ddp"
+#     SequenceDP = "sp"
+#     ShardedDDP = "sddp"
+
+
 def get_last_checkpoint(folder):
     content = os.listdir(folder)
     checkpoints = [
-        path for path in content if _re_checkpoint.search(path) is not None and
-        os.path.isdir(os.path.join(folder, path))
+        path
+        for path in content
+        if _re_checkpoint.search(path) is not None
+        and os.path.isdir(os.path.join(folder, path))
     ]
     if len(checkpoints) == 0:
         return
     return os.path.join(
         folder,
-        max(checkpoints,
-            key=lambda x: int(_re_checkpoint.search(x).groups()[0])))
+        max(checkpoints, key=lambda x: int(_re_checkpoint.search(x).groups()[0])),
+    )
 
 
 class IntervalStrategy(ExplicitEnum):
@@ -41,15 +63,6 @@ class EvaluationStrategy(ExplicitEnum):
     NO = "no"
     STEPS = "steps"
     EPOCH = "epoch"
-
-
-class ShardedDDPOption(ExplicitEnum):
-    # TODO change to fit oslo
-    SIMPLE = "simple"
-    ZERO_DP_2 = "zero_dp_2"
-    ZERO_DP_3 = "zero_dp_3"
-    OFFLOAD = "offload"
-    AUTO_WRAP = "auto_wrap"
 
 
 def set_seed(seed: int):
@@ -267,7 +280,11 @@ class TrainerMemoryTracker:
             for t in ["alloc", "peaked"]:
                 if stage in self.cpu and t in self.cpu[stage]:
                     metrics[f"{stage}_mem_cpu_{t}_delta"] = self.cpu[stage][t]
-                if self.torch is not None and stage in self.gpu and t in self.gpu[stage]:
+                if (
+                    self.torch is not None
+                    and stage in self.gpu
+                    and t in self.gpu[stage]
+                ):
                     metrics[f"{stage}_mem_gpu_{t}_delta"] = self.gpu[stage][t]
             # if we need additional debug info, enable the following
             # for t in ["begin", "end"]:
@@ -300,6 +317,7 @@ class TrainerMemoryTracker:
         # init doesn't have metrics to update so we just save that data for later stages to retrieve
         if metrics is not None:
             self.update_metrics(stage, metrics)
+
 
 class EvalPrediction:
     """
@@ -351,13 +369,6 @@ def has_length(dataset):
         return False
 
 
-class ShardedDDPOption(ExplicitEnum):
-    SIMPLE = "simple"
-    ZERO_DP_2 = "zero_dp_2"
-    ZERO_DP_3 = "zero_dp_3"
-    OFFLOAD = "offload"
-    AUTO_WRAP = "auto_wrap"
-
 class EvalLoopOutput(NamedTuple):
     predictions: Union[np.ndarray, Tuple[np.ndarray]]
     label_ids: Optional[Union[np.ndarray, Tuple[np.ndarray]]]
@@ -369,7 +380,6 @@ class PredictionOutput(NamedTuple):
     predictions: Union[np.ndarray, Tuple[np.ndarray]]
     label_ids: Optional[Union[np.ndarray, Tuple[np.ndarray]]]
     metrics: Optional[Dict[str, float]]
-
 
 
 class TrainOutput(NamedTuple):
@@ -390,7 +400,6 @@ def unwrap_model(model: nn.Module) -> nn.Module:
         return unwrap_model(model.module)
     else:
         return model
-
 
 
 def denumpify_detensorize(metrics):

@@ -24,9 +24,10 @@ def is_wandb_available():
 
 
 def is_tensorboard_available():
-    return importlib.util.find_spec(
-        "tensorboard") is not None or importlib.util.find_spec(
-            "tensorboardX") is not None
+    return (
+        importlib.util.find_spec("tensorboard") is not None
+        or importlib.util.find_spec("tensorboardX") is not None
+    )
 
 
 def rewrite_logs(d):
@@ -104,8 +105,7 @@ class TensorBoardCallback(TrainerCallback):
                     self.tb_writer.add_text("model_config", model_config_json)
             # Version of TensorBoard coming from tensorboardX does not have this method.
             if hasattr(self.tb_writer, "add_hparams"):
-                self.tb_writer.add_hparams(args.to_sanitized_dict(),
-                                           metric_dict={})
+                self.tb_writer.add_hparams(args.to_sanitized_dict(), metric_dict={})
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         if not state.is_world_process_zero:
@@ -124,7 +124,8 @@ class TensorBoardCallback(TrainerCallback):
                         "Trainer is attempting to log a value of "
                         f'"{v}" of type {type(v)} for key "{k}" as a scalar. '
                         "This invocation of Tensorboard's writer.add_scalar() "
-                        "is incorrect so we dropped this attribute.")
+                        "is incorrect so we dropped this attribute."
+                    )
             self.tb_writer.flush()
 
     def on_train_end(self, args, state, control, **kwargs):
@@ -151,8 +152,8 @@ class WandbCallback(TrainerCallback):
         self._initialized = False
         # log outputs
         self._log_model = os.getenv(
-            "WANDB_LOG_MODEL",
-            "FALSE").upper() in ENV_VARS_TRUE_VALUES.union({"TRUE"})
+            "WANDB_LOG_MODEL", "FALSE"
+        ).upper() in ENV_VARS_TRUE_VALUES.union({"TRUE"})
 
     def setup(self, args, state, model, **kwargs):
         """
@@ -206,15 +207,17 @@ class WandbCallback(TrainerCallback):
             # define default x-axis (for latest wandb versions)
             if getattr(self._wandb, "define_metric", None):
                 self._wandb.define_metric("train/global_step")
-                self._wandb.define_metric("*",
-                                          step_metric="train/global_step",
-                                          step_sync=True)
+                self._wandb.define_metric(
+                    "*", step_metric="train/global_step", step_sync=True
+                )
 
             # keep track of model topology and gradients, unsupported on TPU
             if os.getenv("WANDB_WATCH") != "false":
-                self._wandb.watch(model,
-                                  log=os.getenv("WANDB_WATCH", "gradients"),
-                                  log_freq=max(100, args.logging_steps))
+                self._wandb.watch(
+                    model,
+                    log=os.getenv("WANDB_WATCH", "gradients"),
+                    log_freq=max(100, args.logging_steps),
+                )
 
     def on_train_begin(self, args, state, control, model=None, **kwargs):
         if self._wandb is None:
@@ -227,13 +230,7 @@ class WandbCallback(TrainerCallback):
         if not self._initialized:
             self.setup(args, state, model, **kwargs)
 
-    def on_train_end(self,
-                     args,
-                     state,
-                     control,
-                     model=None,
-                     tokenizer=None,
-                     **kwargs):
+    def on_train_end(self, args, state, control, model=None, tokenizer=None, **kwargs):
         if self._wandb is None:
             return
         if self._log_model and self._initialized and state.is_world_process_zero:
@@ -242,18 +239,21 @@ class WandbCallback(TrainerCallback):
             fake_trainer = Trainer(args=args, model=model, tokenizer=tokenizer)
             with tempfile.TemporaryDirectory() as temp_dir:
                 fake_trainer.save_model(temp_dir)
-                metadata = ({
-                    k: v
-                    for k, v in dict(self._wandb.summary).items()
-                    if isinstance(v, numbers.Number) and not k.startswith("_")
-                } if not args.load_best_model_at_end else {
-                    f"eval/{args.metric_for_best_model}": state.best_metric,
-                    "train/total_floss": state.total_flos,
-                })
+                metadata = (
+                    {
+                        k: v
+                        for k, v in dict(self._wandb.summary).items()
+                        if isinstance(v, numbers.Number) and not k.startswith("_")
+                    }
+                    if not args.load_best_model_at_end
+                    else {
+                        f"eval/{args.metric_for_best_model}": state.best_metric,
+                        "train/total_floss": state.total_flos,
+                    }
+                )
                 artifact = self._wandb.Artifact(
-                    name=f"model-{self._wandb.run.id}",
-                    type="model",
-                    metadata=metadata)
+                    name=f"model-{self._wandb.run.id}", type="model", metadata=metadata
+                )
                 for f in Path(temp_dir).glob("*"):
                     if f.is_file():
                         with artifact.new_file(f.name, mode="wb") as fa:
