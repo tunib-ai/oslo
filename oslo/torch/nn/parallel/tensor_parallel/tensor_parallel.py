@@ -10,6 +10,9 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._wrapper import (
 from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._wrapper import (
     _TensorParallel2D,
 )
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._wrapper import (
+    _TensorParallel2p5D,
+)
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
     unwrap_parallel,
@@ -53,6 +56,8 @@ class TensorParallel(ParallelWrapper):
             self.module = _TensorParallel1D(module, self.parallel_context)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
             self.module = _TensorParallel2D(module, self.parallel_context)
+        elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
+            self.module = _TensorParallel2p5D(module, self.parallel_context)
         else:
             raise ValueError("currently, only 1d tensor parallelism is supported.")
 

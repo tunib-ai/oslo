@@ -303,17 +303,14 @@ class Embedding2p5D(nn.Embedding):
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // (self.tesseract_dim**2),
-            device=torch.device(torch.cuda.current_device()),
-            dtype=dtype,
         )
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             all_gather_tensor_2p5d,
-            split_batch_2p5d,
+            gather_batch_2p5d,
         )
 
-        input = split_batch_2p5d(input, 0, self.parallel_context)
         weight = all_gather_tensor_2p5d(
             self.weight,
             -1,
@@ -366,15 +363,25 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
     def forward(self, x: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             reduce_scatter_tensor_2p5d,
+            gather_batch_2p5d,
         )
 
-        # Build the mask.
-        input_mask = (x < self.vocab_start_index) | (x >= self.vocab_end_index)
-        # Mask the input.
-        masked_input = x.clone() - self.vocab_start_index
-        masked_input[input_mask] = 0
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
+        input = gather_batch_2p5d(
+            x,
+            dim=0,
+            parallel_context=self.parallel_context,
+        )
+        if world_size > 1:
+            input_mask = (input < self.vocab_start_index) | (
+                input >= self.vocab_end_index
+            )
+            masked_input = input.clone() - self.vocab_start_index
+            masked_input[input_mask] = 0
+        else:
+            masked_input = input
 
-        output_parallel = F.embedding(
+        output = F.embedding(
             masked_input,
             self.weight,
             self.padding_idx,
@@ -383,12 +390,12 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
             self.scale_grad_by_freq,
             self.sparse,
         )
-
-        # Mask the output embedding.
-        output_parallel[input_mask, :] = 0.0
-        # Reduce across all the model parallel GPUs.
+        output[input_mask, :] = 0.0
         output = reduce_scatter_tensor_2p5d(
-            output_parallel, 0, self.parallel_context, ParallelMode.TENSOR_2P5D_COL
+            output,
+            dim=0,
+            parallel_context=self.parallel_context,
+            parallel_mode=ParallelMode.TENSOR_2P5D_COL,
         )
         return output
 

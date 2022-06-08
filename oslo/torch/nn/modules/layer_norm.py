@@ -151,7 +151,7 @@ class LayerNorm2p5D(nn.Module):
         ), "normalized_shape must be divisible by tessract dim."
 
         self.normalized_shape = normalized_shape
-        self.variance_epsilon = eps
+        self.eps = eps
 
         self.row_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_2P5D_ROW
@@ -210,7 +210,7 @@ class LayerNorm2p5D(nn.Module):
 
             Var_x = Var_x - E_x * E_x  # variance of x [b/q, s, 1]
             # this time 1/sqrt(Var_x + epsilon)
-            Var_x = 1.0 / torch.sqrt(Var_x + self.variance_epsilon)
+            Var_x = 1.0 / torch.sqrt(Var_x + self.eps)
 
         output = layernorm_2p5d(
             input,
