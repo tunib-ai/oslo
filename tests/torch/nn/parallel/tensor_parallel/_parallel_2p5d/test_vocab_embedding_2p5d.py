@@ -5,7 +5,7 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2p5D
 
 from copy import deepcopy
-from _utils import *
+from _utils import split_batch_2d, split_2d, gather_2d
 
 tp_size = 8
 tp_depth = 2

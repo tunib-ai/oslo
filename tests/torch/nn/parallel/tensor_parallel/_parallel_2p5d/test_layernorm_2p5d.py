@@ -4,7 +4,7 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import LayerNorm2p5D
 
-from _utils import *
+from _utils import split_2d, gather_2d
 from copy import deepcopy
 
 tp_size = 8

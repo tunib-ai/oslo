@@ -4,7 +4,7 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2p5D
 
-from _utils import *
+from _utils import split_2p5d, split_2d, gather_2p5d
 
 from copy import deepcopy
 

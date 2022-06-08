@@ -5,12 +5,10 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
-from oslo.torch.distributed import ParallelContext
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
-import torch.distributed as dist
-from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from copy import deepcopy
 from oslo.torch.nn import Linear2D
 from _utils import split_2d, gather_2d
 
