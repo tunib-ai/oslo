@@ -585,7 +585,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 ctx.tensor_parallel_size,
                 ctx.parallel_context,
                 ctx.row_parallel_mode,
-                ctx.col_parallel_mode
+                ctx.col_parallel_mode,
             )
             B_grad = Matmul_ATB_2p5D.apply(
                 output_grad,
