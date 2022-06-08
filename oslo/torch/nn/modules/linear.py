@@ -402,15 +402,6 @@ class Linear2p5D(Linear):
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
-        if bias:
-            self.bias = Parameter(
-                torch.empty(
-                    out_features // self.tesseract_dim,
-                    device=self.weight.device,
-                    dtype=dtype,
-                )
-            )
-            self.reset_parameters()
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         # input: [m/dq, n/q, k/q]
