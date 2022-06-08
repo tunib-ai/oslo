@@ -65,7 +65,7 @@ class _TensorParallel2p5D(ParallelWrapper):
 
     def forward(self, *args, **kwargs):
         assert len(args) == 0, (
-            "2p5D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
+            "2.5D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
             "If you wrote code like ``model(input_ids, labels)``, "
             "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
         )

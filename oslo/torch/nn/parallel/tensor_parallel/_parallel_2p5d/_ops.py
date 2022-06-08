@@ -585,25 +585,8 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 ctx.tensor_parallel_size,
                 ctx.parallel_context,
                 ctx.row_parallel_mode,
-                ctx.col_parallel_mode,  # TODO: check if this is correct
+                ctx.col_parallel_mode
             )
-            #     def forward(
-            #         ctx: Any,
-            #         A: Tensor,
-            #         B: Tensor,
-            #         tesseract_dim: int,
-            #         out_shape: Tuple[int, ...],
-            #         row_rank: int,
-            #         col_rank: int,
-            #         dep_rank: int,
-            #         data_parallel_rank: int,
-            #         pipeline_parallel_rank: int,
-            #         pipeline_parallel_size: int,
-            #         tensor_parallel_size: int,
-            #         parallel_context: ParallelContext,
-            #         row_parallel_mode: ParallelMode,
-            #         col_parallel_mode: ParallelMode,
-            #     ) -> Tensor:
             B_grad = Matmul_ATB_2p5D.apply(
                 output_grad,
                 A,
