@@ -37,6 +37,8 @@ logits = torch.nn.MSELoss()(out, target)
 logits.backward()
 optimizer.step()
 
+out_update = linear(input_)
+
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original updated weight: \n{linear.weight.data}\n")
@@ -46,33 +48,65 @@ if parallel_context.get_global_rank() == 0:
 # 0:[0, 0, 0], 1:[0, 0, 1], 2:[0, 1, 0], 3:[0, 1, 1], 4:[1, 0, 0], 5:[1, 0, 1], 6:[1, 1, 0], 7:[1, 1, 1]
 # input shape: (m/dq, n/q)
 input_ = split_2p5d(parallel_context, input_, tesseract_dim)
-target = split_2p5d(parallel_context, target, tesseract_dim)
+ptarget = split_2p5d(parallel_context, target, tesseract_dim)
 
 # split weight into 0,4:[0, 0], 1,5:[1, 0], 2,6:[0, 1], 3,7:[1, 1]
 # input shape: (n/q, k/q)
-w = split_2d(parallel_context, w, tesseract_dim, False)
+w = split_2d(parallel_context, w, tesseract_dim, col_first=False)
 # split bias into 0,4:[0], 2,6:[1]
 # input shape: (k/q)
-# b = split_1d(parallel_context, b, tesseract_dim, 0)
 b = b.chunk(tesseract_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
 ]
 
 linear_2p5d = Linear2p5D(4, 4, parallel_context=parallel_context)
-linear_2p5d.weight.data = w
-linear_2p5d.bias.data = b
+linear_2p5d.weight.data.copy_(w)
+linear_2p5d.bias.data.copy_(b)
 
-out = linear_2p5d(input_)
+pout = linear_2p5d(input_)
 optimizer = torch.optim.Adam(linear_2p5d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
+logits = torch.nn.MSELoss()(pout, ptarget)
 logits.backward()
 optimizer.step()
 
-out = gather_2p5d(parallel_context, out, tesseract_dim, False)
-w = gather_2d(parallel_context, linear_2p5d.weight.data, tesseract_dim, True)
-b = gather_1d(parallel_context, linear_2p5d.bias.data, tesseract_dim, 0)
+pout_update = linear_2p5d(input_)
+
+pout = gather_2p5d(parallel_context, pout, tesseract_dim, False)
+pout_update = gather_2p5d(parallel_context, pout_update, tesseract_dim, False)
+
+# w = gather_2d(parallel_context, linear_2p5d.weight.data, tesseract_dim, True)
+# b = gather_1d(parallel_context, linear_2p5d.bias.data, tesseract_dim, 0)
 
 if parallel_context.get_global_rank() == 0:
-    print(f"parallel output: \n{out}\n")
-    print(f"parallel updated weight: \n{w}\n")
-    print(f"parallel updated bias: \n{b}\n")
+    print(f"parallel output: \n{pout}\n")
+    print(f"parallel update output: \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse: \n{sse}\n")
+    print(f"next output sse: \n{sse_update}\n")
+
+linear_2p5d = Linear2p5D(
+    4, 4, gather_output=True, parallel_context=parallel_context
+)
+linear_2p5d.weight.data.copy_(w)
+linear_2p5d.bias.data.copy_(b)
+
+pout = linear_2p5d(input_)
+optimizer = torch.optim.Adam(linear_2p5d.parameters(), lr=1e-3)
+logits = torch.nn.MSELoss()(pout, target)
+logits.backward()
+optimizer.step()
+
+pout_update = linear_2p5d(input_)
+
+if parallel_context.get_global_rank() == 0:
+    print(f"parallel output (gather_output=True): \n{pout}\n")
+    print(f"parallel update output (gather_output=True): \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse (gather_output=True): \n{sse}\n")
+    print(f"next output sse (gather_output=True): \n{sse_update}\n")

@@ -48,7 +48,7 @@ optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 # 데이터셋 생성
 datasets = load_dataset("squad").data["train"]["context"]
 datasets = [str(sample) for sample in datasets[:500]]
-dataloader = DataLoader(datasets, batch_size=4)
+dataloader = DataLoader(datasets, batch_size=16)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
@@ -77,8 +77,10 @@ for data in dataloader:
         print(f"TP:{loss_tp}, NOTP:{loss_no_tp}")
         wandb.log({"tp": loss_tp, "notp": loss_no_tp})
 
-    loss_tp.backward()
     loss_no_tp.backward()
+    loss_tp.backward()
 
     optimizer_tp.step()
     optimizer_no_tp.step()
+
+dist.barrier()

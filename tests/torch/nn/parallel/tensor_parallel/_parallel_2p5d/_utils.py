@@ -3,6 +3,13 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelMode
 
 
+def split_batch_2d(parallel_context, tensor, tesseract_dim):
+    tensor = tensor.chunk(tesseract_dim, dim=0)[
+        parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+    ]
+    return tensor
+
+
 def split_2p5d(parallel_context, tensor, tesseract_dim, col_first=True):
     if col_first:
         tensor = tensor.chunk(tesseract_dim, dim=0)[

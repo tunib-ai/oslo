@@ -19,9 +19,15 @@ from oslo.torch.nn.modules.linear import (
     Linear2p5D
 )
 from oslo.torch.nn.modules.layer_norm import LayerNorm2p5D
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+    split_batch_2p5d
+)
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
+
+from oslo.transformers.constants import BATCH_DIMENSIONS
+
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
     _update_module_arguments,
@@ -62,6 +68,22 @@ class _TensorParallel2p5D(ParallelWrapper):
         self._parallelize()
 
     def forward(self, *args, **kwargs):
+        assert len(args) == 0, (
+            "2p5D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
+            "If you wrote code like ``model(input_ids, labels)``, "
+            "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
+        )
+        if not is_oslo_model(self.module):
+            kwargs = {
+                key: split_batch_2p5d(
+                    value,
+                    dim=BATCH_DIMENSIONS[key],
+                    parallel_context=self.parallel_context,
+                )
+                if key in BATCH_DIMENSIONS
+                else value
+                for key, value in kwargs.items()
+            }
         return self.module(*args, **kwargs)
 
     @torch.no_grad()
@@ -289,9 +311,11 @@ class _TensorParallel2p5D(ParallelWrapper):
 
                 if hasattr(module.weight, "oslo_parallel"):
                     module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
                 else:
                     module.weight.oslo_parallel = {
                         ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank
                     }
 
         if hasattr(module, "bias") and module.bias is not None:
@@ -301,9 +325,11 @@ class _TensorParallel2p5D(ParallelWrapper):
 
                 if hasattr(module.bias, "oslo_parallel"):
                     module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
                 else:
                     module.bias.oslo_parallel = {
                         ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank
                     }
 
         _update_module_arguments(
@@ -343,31 +369,19 @@ class _TensorParallel2p5D(ParallelWrapper):
                 assert hasattr(module, "weight"), "embedding must has `weight`."
                 module.initialize_parameters()
 
-            # w = module.weight.data.chunk(tesseract_dim, dim=1)[
-            #     self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-            # ]
-            # w = w.chunk(tesseract_dim, dim=1)[
-            #     self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
-            # ]
-
             weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
             weight_list = [weight.chunk(tesseract_dim, dim=0) for weight in weight_list]
 
-            if isinstance(module, LazyModuleMixin):
-                new_tensor = weight_list[row_rank][col_rank].clone()
-                del weight_list, module.weight
-                module.weight = nn.Parameter(new_tensor.contiguous())
-            else:
-                module.weight.data = weight_list[row_rank][col_rank].contiguous()
+            module.weight.data = weight_list[row_rank][col_rank].contiguous()
 
-                if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
-                else:
-                    module.weight.oslo_parallel = {
-                        ParallelMode.TENSOR_2D_ROW: row_rank,
-                        ParallelMode.TENSOR_2D_COL: col_rank,
-                    }
+            if hasattr(module.weight, "oslo_parallel"):
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+            else:
+                module.weight.oslo_parallel = {
+                    ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                    ParallelMode.TENSOR_2P5D_COL: col_rank,
+                }
 
             _update_module_arguments(
                 module=module,
@@ -419,12 +433,12 @@ class _TensorParallel2p5D(ParallelWrapper):
             module.weight.data = weight_list[row_rank][col_rank].contiguous()
 
             if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
             else:
                 module.weight.oslo_parallel = {
-                    ParallelMode.TENSOR_2D_ROW: row_rank,
-                    ParallelMode.TENSOR_2D_COL: col_rank,
+                    ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                    ParallelMode.TENSOR_2P5D_COL: col_rank,
                 }
 
             _update_module_arguments(
@@ -436,107 +450,3 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             if isinstance(module, nn.Embedding):
                 module.__class__ = Embedding2p5D
-
-        # while isinstance(module, ParallelWrapper):
-        #     module = module.module
-        #
-        # assert hasattr(module, "get_input_embeddings"), (
-        #     "model object must have `get_input_embeddings` and "
-        #     "`get_output_embeddings` method."
-        # )
-        #
-        # # world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
-        # tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-        # row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-        # col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
-        # embedding = module.get_input_embeddings()
-        #
-        # data_parallel_rank = self.parallel_context.get_local_rank(
-        #     ParallelMode.DATA
-        # )
-        # pipeline_parallel_rank=self.parallel_context.get_local_rank(
-        #     ParallelMode.PIPELINE
-        # )
-        # tensor_parallel_size = self.parallel_context.get_world_size(
-        #     ParallelMode.TENSOR
-        # )
-        # pipeline_parallel_size = self.parallel_context.get_world_size(
-        #     ParallelMode.PIPELINE
-        # )
-        #
-        # (
-        #     vocab_start_index,
-        #     vocab_end_index,
-        # ) = VocabUtility.vocab_range_from_global_vocab_size(
-        #     embedding.num_embeddings, col_rank, tesseract_dim
-        # )
-        # if isinstance(embedding, LazyModuleMixin):
-        #     assert hasattr(embedding, "weight"), "embedding must has `weight`."
-        #     embedding.initialize_parameters()
-        #
-        # w = embedding.weight.data.chunk(tesseract_dim, dim=1)[
-        #     self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-        # ]
-        # w = w.chunk(tesseract_dim, dim=1)[
-        #     self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
-        # ]
-        #
-        # if isinstance(embedding, LazyModuleMixin):
-        #     new_tensor = w.clone()
-        #     del w, embedding.weight
-        #     embedding.weight = nn.Parameter(new_tensor.contiguous())
-        # else:
-        #     embedding.weight.data = w.contiguous()
-        #
-        #     if hasattr(embedding.weight, "oslo_parallel"):
-        #         embedding.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-        #         embedding.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-        #     else:
-        #         embedding.weight.oslo_parallel = {
-        #             ParallelMode.TENSOR_2P5D_ROW: row_rank,
-        #             ParallelMode.TENSOR_2P5D_COL: col_rank,
-        #         }
-        #
-        # _update_module_arguments(
-        #     module=embedding,
-        #     vocab_start_index=vocab_start_index,
-        #     vocab_end_index=vocab_end_index,
-        #     parallel_context=self.parallel_context,
-        #     num_embeddings=embedding.weight.size()[0],
-        #     embedding_dim=embedding.weight.size()[1],
-        #     orig_module=copy.deepcopy(embedding.__class__),
-        # )
-        #
-        # if isinstance(embedding, nn.Embedding):
-        #     embedding.__class__ = VocabParallelEmbedding2p5D
-        #
-        # for name, _module in module.named_modules():
-        #     if (
-        #             hasattr(_module, "weight")
-        #             and _module.weight is embedding.weight
-        #             and not isinstance(_module, nn.Embedding)
-        #     ):
-        #         _update_module_arguments(
-        #             module=_module,
-        #             parallel_context=self.parallel_context,
-        #             row_rank=row_rank,
-        #             col_rank=col_rank,
-        #             tesseract_dim=tesseract_dim,
-        #             data_parallel_rank=data_parallel_rank,
-        #             pipeline_parallel_rank=pipeline_parallel_rank,
-        #             tensor_parallel_size=tensor_parallel_size,
-        #             pipeline_parallel_size=pipeline_parallel_size,
-        #             reversed=self.tensor_parallel_mapping.is_reversed_param(
-        #                 self.module, name
-        #             ),
-        #             fusion_degree=1,
-        #             orig_module=copy.deepcopy(_module.__class__),
-        #             out_features=embedding.weight.size()[0],
-        #         )
-        #
-        #         # Embedding : 1d parallel, Linear : 2.5d parallel
-        #         if isinstance(_module, nn.Linear):
-        #             _module.__class__ = Linear2p5D
-        #         else:
-        #             raise RuntimeError("Classifier layer must be `nn.Linear` class")
-        #
