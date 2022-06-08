@@ -396,8 +396,8 @@ class Linear2p5D(Linear):
         )
 
         super().__init__(
-            in_features=int(in_features // self.tesseract_dim),
-            out_features=int(out_features // self.tesseract_dim),
+            in_features=in_features // self.tesseract_dim,
+            out_features=out_features // self.tesseract_dim,
             bias=bias,
             dtype=dtype,
             skip_bias_add=skip_bias_add,
