@@ -87,9 +87,7 @@ if parallel_context.get_global_rank() == 0:
     print(f"output sse: \n{sse}\n")
     print(f"next output sse: \n{sse_update}\n")
 
-linear_2p5d = Linear2p5D(
-    4, 4, gather_output=True, parallel_context=parallel_context
-)
+linear_2p5d = Linear2p5D(4, 4, gather_output=True, parallel_context=parallel_context)
 linear_2p5d.weight.data.copy_(w)
 linear_2p5d.bias.data.copy_(b)
 

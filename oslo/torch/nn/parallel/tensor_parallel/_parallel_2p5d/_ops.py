@@ -91,9 +91,9 @@ def layernorm_2p5d(
 
 
 def gather_batch_2p5d(
-        inputs: Tensor,
-        dim: int = 0,
-        parallel_context: Optional[ParallelContext] = None,
+    inputs: Tensor,
+    dim: int = 0,
+    parallel_context: Optional[ParallelContext] = None,
 ) -> Tensor:
     world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 
@@ -160,7 +160,10 @@ def split_batch_2p5d(
     col_chunked = torch.chunk(
         inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
     )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
-    return torch.chunk(col_chunked, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_DEP), dim=dim
+    return torch.chunk(
+        col_chunked,
+        parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_DEP),
+        dim=dim,
     )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)].contiguous()
 
 
@@ -582,7 +585,7 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
                 ctx.tensor_parallel_size,
                 ctx.parallel_context,
                 ctx.row_parallel_mode,
-                ctx.col_parallel_mode, # TODO: check if this is correct
+                ctx.col_parallel_mode,  # TODO: check if this is correct
             )
             #     def forward(
             #         ctx: Any,

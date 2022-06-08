@@ -12,16 +12,12 @@ from oslo.torch.nn.parallel.tensor_parallel.mapping import (
 from oslo.torch.nn.modules.embedding import (
     VocabParallelEmbedding2p5D,
     VocabUtility,
-    Embedding2p5D
+    Embedding2p5D,
 )
 from oslo.torch.nn.modules.lazy import LazyModuleMixin
-from oslo.torch.nn.modules.linear import (
-    Linear2p5D
-)
+from oslo.torch.nn.modules.linear import Linear2p5D
 from oslo.torch.nn.modules.layer_norm import LayerNorm2p5D
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
-    split_batch_2p5d
-)
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import split_batch_2p5d
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
@@ -107,8 +103,9 @@ class _TensorParallel2p5D(ParallelWrapper):
 
     def _parallalize_linear(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name) \
-                    or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+            if self.tensor_parallel_mapping.is_column_parallel(
+                self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._slice_linear(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed_param(
@@ -156,10 +153,7 @@ class _TensorParallel2p5D(ParallelWrapper):
     @staticmethod
     def _deconstrunct_combined_qkv_bias(tensor, tessearct_dim, fusion_degree):
         tensor = [
-            [
-                tensor[j * tessearct_dim + k]
-                for k in range(tessearct_dim)
-            ]
+            [tensor[j * tessearct_dim + k] for k in range(tessearct_dim)]
             for j in range(fusion_degree)
         ]
         tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
@@ -170,17 +164,15 @@ class _TensorParallel2p5D(ParallelWrapper):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
-        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-
-        data_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.DATA
+        tesseract_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2P5D_COL
         )
+
+        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.TENSOR
-        )
+        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
         )
@@ -214,11 +206,16 @@ class _TensorParallel2p5D(ParallelWrapper):
                     module.weight.data = module.weight.data.t()
 
                 weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
-                weight_list = [weight.chunk(tesseract_dim * fusion_degree, dim=0) for weight in weight_list]
+                weight_list = [
+                    weight.chunk(tesseract_dim * fusion_degree, dim=0)
+                    for weight in weight_list
+                ]
 
                 if fusion_degree > 1:
                     weight_list = self._deconstruct_combined_qkv(
-                        weight_list, tesseract_dim, fusion_degree,
+                        weight_list,
+                        tesseract_dim,
+                        fusion_degree,
                     )
 
                 if isinstance(module, LazyModuleMixin):
@@ -275,17 +272,15 @@ class _TensorParallel2p5D(ParallelWrapper):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
-        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-
-        data_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.DATA
+        tesseract_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2P5D_COL
         )
-        pipeline_parallel_rank=self.parallel_context.get_local_rank(
+
+        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+        pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.TENSOR
-        )
+        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
         )
@@ -315,7 +310,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 else:
                     module.weight.oslo_parallel = {
                         ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
                     }
 
         if hasattr(module, "bias") and module.bias is not None:
@@ -329,7 +324,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 else:
                     module.bias.oslo_parallel = {
                         ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
                     }
 
         _update_module_arguments(
@@ -341,7 +336,9 @@ class _TensorParallel2p5D(ParallelWrapper):
         return module
 
     def _slice_embedding(self, module):
-        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+        tesseract_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_2P5D_COL
+        )
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
@@ -398,9 +395,9 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             for name, _module in self.module.named_modules():
                 if (
-                        hasattr(_module, "weight")
-                        and _module.weight is module.weight
-                        and not isinstance(_module, nn.Embedding)
+                    hasattr(_module, "weight")
+                    and _module.weight is module.weight
+                    and not isinstance(_module, nn.Embedding)
                 ):
                     _update_module_arguments(
                         module=_module,

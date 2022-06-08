@@ -408,7 +408,7 @@ class Linear2p5D(Linear):
                     out_features // self.tesseract_dim,
                     device=self.weight.device,
                     dtype=dtype,
-                    )
+                )
             )
             self.reset_parameters()
 
@@ -418,7 +418,7 @@ class Linear2p5D(Linear):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             Matmul_ABT_2p5D,
             add_bias_2p5d,
-            all_gather_tensor_2p5d
+            all_gather_tensor_2p5d,
         )
 
         out_shape = input.shape[:-1] + (self.out_features,)

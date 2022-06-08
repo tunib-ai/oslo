@@ -363,7 +363,7 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
     def forward(self, x: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             reduce_scatter_tensor_2p5d,
-            gather_batch_2p5d
+            gather_batch_2p5d,
         )
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
@@ -374,7 +374,7 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
         )
         if world_size > 1:
             input_mask = (input < self.vocab_start_index) | (
-                    input >= self.vocab_end_index
+                input >= self.vocab_end_index
             )
             masked_input = input.clone() - self.vocab_start_index
             masked_input[input_mask] = 0

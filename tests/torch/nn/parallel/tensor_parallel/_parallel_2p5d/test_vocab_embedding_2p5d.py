@@ -47,7 +47,9 @@ target = split_2d(parallel_context, target, tesseract_dim, col_first=True)
 # split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
 w = split_2d(parallel_context, w, tesseract_dim, col_first=False)
 
-vocab_embedding_2p5d = VocabParallelEmbedding2p5D(10, 16, parallel_context=parallel_context)
+vocab_embedding_2p5d = VocabParallelEmbedding2p5D(
+    10, 16, parallel_context=parallel_context
+)
 vocab_embedding_2p5d.weight.data.copy_(w)
 
 pout = vocab_embedding_2p5d(input_)
