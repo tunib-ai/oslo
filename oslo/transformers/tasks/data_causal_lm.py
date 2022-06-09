@@ -89,7 +89,13 @@ class DataCollatorForCausalLM:
                     pad_to_multiple_of=self.pad_to_multiple_of,
                 )
             }
-            batch["labels"] = batch["input_ids"].clone()
+            if self.tokenizer.pad_token_id in batch["input_ids"]:
+                batch["attention_mask"] = (batch["input_ids"] != self.tokenizer.pad_token_id).clone().detach().to(torch.int64)
+                labels = batch["input_ids"].clone()
+                labels[labels == self.tokenizer.pad_token_id] = -100
+                batch["labels"] = labels
+            else:
+                batch["labels"] = batch["input_ids"].clone()
             return batch
         else:
             if self.tokenizer.pad_token is None:
@@ -103,12 +109,14 @@ class DataCollatorForCausalLM:
                     pad_to_multiple_of=self.local_world_size,
                 )
             }
-            batch["attention_mask"] = (batch["input_ids"] != self.tokenizer.pad_token_id).clone().detach().to(torch.int64)
-            
-            labels = batch["input_ids"].clone()
-            labels[labels == self.tokenizer.pad_token_id] = -100
-            batch["labels"] = labels
-            
+            if self.tokenizer.pad_token_id in batch["input_ids"]:
+                batch["attention_mask"] = (batch["input_ids"] != self.tokenizer.pad_token_id).clone().detach().to(torch.int64)
+                labels = batch["input_ids"].clone()
+                labels[labels == self.tokenizer.pad_token_id] = -100
+                batch["labels"] = labels
+            else:
+                batch["labels"] = batch["input_ids"].clone()
+
             for key, value in batch.items():
                 value = value.chunk(
                     self.local_world_size,
