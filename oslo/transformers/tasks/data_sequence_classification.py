@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ProcessorForSequenceClassification(BaseProcessor):
     def __init__(
-        self, model_name_or_path: str, max_length: Optional[int] = None
+        self, model_name_or_path: str, max_length: int
     ) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
 

@@ -101,7 +101,6 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
             return batch
         else:
             for key, value in batch.items():
-                # value는 2차원이어야만 한다.
                 batch_size, seq_length = value.size()
 
                 if seq_length % self.local_world_size != 0:
