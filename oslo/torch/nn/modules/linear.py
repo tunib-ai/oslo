@@ -355,8 +355,10 @@ class Linear2p5D(Linear):
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
+        gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        self.gather_output = gather_output
         self.parallel_context = parallel_context
         self.reversed = False
         self.tesseract_dim = self.parallel_context.get_world_size(
@@ -394,19 +396,20 @@ class Linear2p5D(Linear):
         )
 
         super().__init__(
-            in_features=int(in_features // self.tesseract_dim),
-            out_features=int(out_features // self.tesseract_dim),
+            in_features=in_features // self.tesseract_dim,
+            out_features=out_features // self.tesseract_dim,
             bias=bias,
             dtype=dtype,
             skip_bias_add=skip_bias_add,
         )
 
-    def forward(self, input: Tensor) -> Tensor:
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         # input: [m/dq, n/q, k/q]
         # output: [m/dq, n/q, h/q]
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             Matmul_ABT_2p5D,
             add_bias_2p5d,
+            all_gather_tensor_2p5d,
         )
 
         out_shape = input.shape[:-1] + (self.out_features,)
@@ -464,9 +467,26 @@ class Linear2p5D(Linear):
                     self.parallel_context,
                     ParallelMode.TENSOR_2P5D_COL,
                 )
-                return output
-        else:
-            return output
+        if self.gather_output:
+            output = all_gather_tensor_2p5d(
+                output,
+                dim=0,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_DEP,
+                parallel_context=self.parallel_context,
+            ).clone()
+            output = all_gather_tensor_2p5d(
+                output,
+                dim=0,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
+                parallel_context=self.parallel_context,
+            ).clone()
+            output = all_gather_tensor_2p5d(
+                output,
+                dim=-1,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
+                parallel_context=self.parallel_context,
+            ).clone()
+        return output
 
 
 class Linear3D(Linear):
