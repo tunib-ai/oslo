@@ -90,7 +90,6 @@ class _TensorParallel2p5D(ParallelWrapper):
         self._parallelize_layernorm()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
-    # TODO: erase?
     def _update_mp_arguments(self):
         for module in self.module.modules():
             for elem in self.tensor_parallel_mapping.update_attrs(self.module):
@@ -105,7 +104,8 @@ class _TensorParallel2p5D(ParallelWrapper):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_column_parallel(
                 self.module, param_name
-            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name)\
+              or self.tensor_parallel_mapping.is_classification_parallel(self.module, param_name):
                 self._slice_linear(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed_param(
@@ -115,6 +115,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                         self.module, param_name, module
                     ),
                     slice_bias=True,
+                    gather_output=self.tensor_parallel_mapping.is_gather_output(self.module, param_name)
                 )
                 module.__class__ = Linear2p5D
 
@@ -160,7 +161,7 @@ class _TensorParallel2p5D(ParallelWrapper):
         tensor = [tensor[j] for j in range(tessearct_dim)]
         return tensor
 
-    def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
+    def _slice_linear(self, module, reversed, fusion_degree, slice_bias, gather_output=False):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
         dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
@@ -194,7 +195,7 @@ class _TensorParallel2p5D(ParallelWrapper):
             skip_bias_add=module.skip_bias_add
             if hasattr(module, "skip_bias_add")
             else False,
-            gather_output=False,
+            gather_output=gather_output,
         )
 
         if hasattr(module, "weight") and module.weight is not None:

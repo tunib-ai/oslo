@@ -6,7 +6,7 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 import oslo
-from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update
+from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update, ClassificationHead
 from oslo.torch.nn.parallel.expert_parallel.mapping import Front, Behind
 
 
@@ -112,6 +112,8 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
+            ClassificationHead("classifier.dense"),
+            ClassificationHead("classifier.out_proj", gather_output=True),
         ],
     }
 

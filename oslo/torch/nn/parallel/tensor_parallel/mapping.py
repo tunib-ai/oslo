@@ -12,10 +12,11 @@ class TensorParallelInfo(object):
         reverse (bool): reversed param or not
     """
 
-    def __init__(self, *name, combined_qkv: bool = False, reverse: bool = False):
+    def __init__(self, *name, combined_qkv: bool = False, reverse: bool = False, gather_output: bool = False):
         self.name = name
         self.combined_qkv = combined_qkv
         self.reverse = reverse
+        self.gather_output = gather_output
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -27,6 +28,7 @@ class TensorParallelInfo(object):
 Column = type("Column", (TensorParallelInfo,), {})
 Row = type("Row", (TensorParallelInfo,), {})
 Update = type("Update", (TensorParallelInfo,), {})
+ClassificationHead = type("CLSHead", (TensorParallelInfo,), {})
 
 
 class TensorParallelMapping(object):
@@ -184,6 +186,21 @@ class TensorParallelMapping(object):
             return bigger // smaller
         return 1
 
+    def is_gather_output(self, model, param_name):
+        """
+        Check whether the parameter is reversed or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            param_name (str): name of parameter
+
+        Returns:
+            bool: whether the param is reversed or not
+        """
+        elem = self.search(model, param_name)
+        if elem is not None:
+            return elem.gather_output
+
     def is_reversed_param(self, model, param_name):
         """
         Check whether the parameter is reversed or not
@@ -228,3 +245,18 @@ class TensorParallelMapping(object):
         elem = self.search(model, param_name)
         if elem is not None:
             return isinstance(elem, Row)
+
+    def is_classification_parallel(self, model, param_name):
+        """
+       Check whether the parameter is row parallelizable or not
+
+       Args:
+           model (PreTrainedModel): model obj
+           param_name (str): name of parameter
+
+       Returns:
+           bool: whether the param is row parallelizable or not
+       """
+        elem = self.search(model, param_name)
+        if elem is not None:
+            return isinstance(elem, ClassificationHead)
