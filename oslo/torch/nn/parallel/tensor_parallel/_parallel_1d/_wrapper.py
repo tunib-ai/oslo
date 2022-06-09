@@ -110,7 +110,6 @@ class _TensorParallel1D(ParallelWrapper):
                 )
                 module.__class__ = RowParallelLinear
 
-
     @staticmethod
     def _deconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
         tensor = [
@@ -148,18 +147,17 @@ class _TensorParallel1D(ParallelWrapper):
                 num_embeddings=module.weight.size()[0],
                 orig_module=copy.deepcopy(module.__class__),
             )
-            
 
             if isinstance(module, Embedding):
                 module.__class__ = VocabParallelEmbedding1D
 
             for name, _module in self.module.named_modules():
                 if self.tensor_parallel_mapping.is_lm_head(self.module, name):
-                    if not _module.weight is module.weight:
+                    if _module.weight is not module.weight:
                         self._slice_linear(
                             module=_module,
                             reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
+                                self.module, name
                             ),
                             fusion_degree=1,
                             slice_bias=False,
@@ -239,7 +237,9 @@ class _TensorParallel1D(ParallelWrapper):
 
         return module
 
-    def _column_slice_linear(self, module: nn.Module, reversed: bool, fusion_degree: int):
+    def _column_slice_linear(
+        self, module: nn.Module, reversed: bool, fusion_degree: int
+    ):
         _update_module_arguments(
             module=module,
             parallel_context=self.parallel_context,

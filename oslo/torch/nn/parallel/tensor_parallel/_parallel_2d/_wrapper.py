@@ -208,11 +208,11 @@ class _TensorParallel2D(ParallelWrapper):
 
             for name, _module in self.module.named_modules():
                 if self.tensor_parallel_mapping.is_lm_head(self.module, name):
-                    if not _module.weight is module.weight:
+                    if _module.weight is not module.weight:
                         self._slice_linear(
                             module=_module,
                             reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
+                                self.module, name
                             ),
                             fusion_degree=1,
                             slice_bias=False,
@@ -241,7 +241,7 @@ class _TensorParallel2D(ParallelWrapper):
                         _module.__class__ = Linear2D
                     else:
                         raise RuntimeError("Classifier layer must be `nn.Linear` class")
-                    break        
+                    break
 
         else:
             weight_list = module.weight.data.chunk(summa_dim, dim=1)

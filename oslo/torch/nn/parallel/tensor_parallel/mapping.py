@@ -229,7 +229,7 @@ class TensorParallelMapping(object):
         elem = self.search(model, param_name)
         if elem is not None:
             return isinstance(elem, Row)
-    
+
     def is_lm_head(self, model, param_name):
         """
         Check whether the parameter is lm head or not

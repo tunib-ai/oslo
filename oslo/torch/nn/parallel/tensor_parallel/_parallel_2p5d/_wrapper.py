@@ -218,11 +218,11 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             for name, _module in self.module.named_modules():
                 if self.tensor_parallel_mapping.is_lm_head(self.module, name):
-                    if not _module.weight is module.weight:
+                    if _module.weight is not module.weight:
                         self._slice_linear(
                             module=_module,
                             reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
+                                self.module, name
                             ),
                             fusion_degree=1,
                             slice_bias=False,
@@ -364,7 +364,10 @@ class _TensorParallel2p5D(ParallelWrapper):
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
-                        bias_list, tesseract_dim, fusion_degree, is_bias=True,
+                        bias_list,
+                        tesseract_dim,
+                        fusion_degree,
+                        is_bias=True,
                     )
 
                 if isinstance(module, LazyModuleMixin):
