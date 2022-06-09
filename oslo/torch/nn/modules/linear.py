@@ -480,7 +480,7 @@ class Linear3D(Linear):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
-        self.reversed = False
+        self.input_reversed = False
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         assert self.cubic_dim > 0, "CUBIC_DIM must be greater than zero"
@@ -513,14 +513,18 @@ class Linear3D(Linear):
             self.reset_parameters()
 
     def forward(self, input: Tensor) -> Tensor:
-        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import linear_3d
-
-        return linear_3d(
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+            Matmul_ABT_3D,
+        )
+        return Matmul_ABT_3D.apply(
             input,
             self.weight,
             self.bias,
-            parallel_context=self.parallel_context,
-            input_parallel_mode=self.input_parallel_mode,
-            weight_parallel_mode=self.weight_parallel_mode,
-            output_parallel_mode=self.output_parallel_mode,
+            0,
+            0,
+            0,
+            self.parallel_context,
+            self.input_parallel_mode,
+            self.weight_parallel_mode,
+            self.output_parallel_mode,
         )
