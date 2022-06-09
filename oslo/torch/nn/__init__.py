@@ -27,7 +27,14 @@ from oslo.torch.nn.modules.functional import (
     mixed_dtype_fused_rms_norm_affine,
     fused_rms_norm,
 )
-from oslo.torch.nn.modules.layer_norm import LayerNorm2D, LayerNorm2p5D
+from oslo.torch.nn.modules.layer_norm import (
+    LayerNorm2D,
+    LayerNorm2p5D,
+    FusedLayerNorm,
+    MixedFusedLayerNorm,
+    MixedFusedRMSNorm,
+    FusedRMSNorm,
+)
 from oslo.torch.nn.modules.linear import (
     ColumnParallelLinear,
     LazyLinear,
@@ -38,12 +45,6 @@ from oslo.torch.nn.modules.linear import (
     RowParallelLinear,
 )
 
-from oslo.torch.nn.modules.fused_layer_norm import (
-    FusedLayerNorm,
-    MixedFusedLayerNorm,
-    MixedFusedRMSNorm,
-    FusedRMSNorm,
-)
 
 from oslo.torch.nn.modules.softmax import FusedScaleMaskSoftmax
 
