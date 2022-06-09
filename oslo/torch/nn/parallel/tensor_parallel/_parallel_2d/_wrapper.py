@@ -104,6 +104,38 @@ class _TensorParallel2D(ParallelWrapper):
                     reduced_arg = getattr(module, elem.name) // summa_dim
                     setattr(module, elem.name, reduced_arg)
 
+    def _parallelize_embedding(self):
+        for module in self.module.modules():
+            if isinstance(module, nn.Embedding):
+                self._slice_embedding(
+                    module=module,
+                )
+
+    def _parallelize_linear(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(
+                self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._slice_linear(
+                    module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                        self.module, param_name
+                    ),
+                    fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
+                        self.module, param_name, module
+                    ),
+                    slice_bias=True,
+                )
+                module.__class__ = Linear2D
+
+    def _parallelize_layernorm(self):
+        for module in self.module.modules():
+            if isinstance(module, nn.LayerNorm):
+                self._slice_layernorm(
+                    module=module,
+                )
+                module.__class__ = LayerNorm2D
+
     @staticmethod
     def _deconstruct_combined_qkv(tensor, summa_dim, fusion_degree):
         tensor = [
@@ -120,6 +152,120 @@ class _TensorParallel2D(ParallelWrapper):
             for i in range(summa_dim)
         ]
         return tensor
+
+    def _slice_embedding(self, module):
+        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
+        if module is self.module.get_input_embeddings():
+            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+            pipeline_parallel_rank = self.parallel_context.get_local_rank(
+                ParallelMode.PIPELINE
+            )
+            tensor_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR
+            )
+            pipeline_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.PIPELINE
+            )
+
+            (
+                vocab_start_index,
+                vocab_end_index,
+            ) = VocabUtility.vocab_range_from_global_vocab_size(
+                module.num_embeddings,
+                col_rank,
+                summa_dim,
+            )
+
+            weight_list = module.weight.data.chunk(summa_dim, dim=1)
+            weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
+
+            module.weight.data = weight_list[row_rank][col_rank].contiguous()
+
+            if hasattr(module.weight, "oslo_parallel"):
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+            else:
+                module.weight.oslo_parallel = {
+                    ParallelMode.TENSOR_2D_ROW: row_rank,
+                    ParallelMode.TENSOR_2D_COL: col_rank,
+                }
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=vocab_start_index,
+                vocab_end_index=vocab_end_index,
+                parallel_context=self.parallel_context,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=copy.deepcopy(module.__class__),
+            )
+
+            if isinstance(module, Embedding):
+                module.__class__ = VocabParallelEmbedding2D
+
+            for name, _module in self.module.named_modules():
+                if self.tensor_parallel_mapping.is_lm_head(self.module, name):
+                    if not _module.weight is module.weight:
+                        self._slice_linear(
+                            module=_module,
+                            reversed=self.tensor_parallel_mapping.is_reversed_param(
+                            self.module, name
+                            ),
+                            fusion_degree=1,
+                            slice_bias=False,
+                        )
+                    _update_module_arguments(
+                        module=_module,
+                        parallel_context=self.parallel_context,
+                        row_rank=row_rank,
+                        col_rank=col_rank,
+                        summa_dim=summa_dim,
+                        data_parallel_rank=data_parallel_rank,
+                        pipeline_parallel_rank=pipeline_parallel_rank,
+                        tensor_parallel_size=tensor_parallel_size,
+                        pipeline_parallel_size=pipeline_parallel_size,
+                        reversed=self.tensor_parallel_mapping.is_reversed_param(
+                            self.module, name
+                        ),
+                        fusion_degree=1,
+                        orig_module=copy.deepcopy(_module.__class__),
+                        gather_output=not is_oslo_model(self.module),
+                        in_features=module.weight.size()[1],
+                        out_features=module.weight.size()[0],
+                        bias=None,
+                    )
+                    if isinstance(_module, nn.Linear):
+                        _module.__class__ = Linear2D
+                    else:
+                        raise RuntimeError("Classifier layer must be `nn.Linear` class")
+                    break        
+
+        else:
+            weight_list = module.weight.data.chunk(summa_dim, dim=1)
+            weight_list = [weight.chunk(summa_dim, dim=1) for weight in weight_list]
+            module.weight.data = weight_list[row_rank][col_rank].contiguous()
+
+            if hasattr(module.weight, "oslo_parallel"):
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
+                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+            else:
+                module.weight.oslo_parallel = {
+                    ParallelMode.TENSOR_2D_ROW: row_rank,
+                    ParallelMode.TENSOR_2D_COL: col_rank,
+                }
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=self.parallel_context,
+                embedding_dim=module.weight.size()[1],
+                orig_module=copy.deepcopy(module.__class__),
+            )
+
+            if isinstance(module, Embedding):
+                module.__class__ = Embedding2D
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
@@ -280,142 +426,3 @@ class _TensorParallel2D(ParallelWrapper):
         )
 
         return module
-
-    def _slice_embedding(self, module):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
-        if module is self.module.get_input_embeddings():
-            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-            pipeline_parallel_rank = self.parallel_context.get_local_rank(
-                ParallelMode.PIPELINE
-            )
-            tensor_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.TENSOR
-            )
-            pipeline_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.PIPELINE
-            )
-
-            (
-                vocab_start_index,
-                vocab_end_index,
-            ) = VocabUtility.vocab_range_from_global_vocab_size(
-                module.num_embeddings,
-                col_rank,
-                summa_dim,
-            )
-
-            weight_list = module.weight.data.chunk(summa_dim, dim=1)
-            weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
-
-            module.weight.data = weight_list[row_rank][col_rank].contiguous()
-
-            if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
-            else:
-                module.weight.oslo_parallel = {
-                    ParallelMode.TENSOR_2D_ROW: row_rank,
-                    ParallelMode.TENSOR_2D_COL: col_rank,
-                }
-
-            _update_module_arguments(
-                module=module,
-                vocab_start_index=vocab_start_index,
-                vocab_end_index=vocab_end_index,
-                parallel_context=self.parallel_context,
-                num_embeddings=module.weight.size()[0],
-                embedding_dim=module.weight.size()[1],
-                orig_module=copy.deepcopy(module.__class__),
-            )
-
-            if isinstance(module, Embedding):
-                module.__class__ = VocabParallelEmbedding2D
-
-            for name, _module in self.module.named_modules():
-                if (
-                    hasattr(_module, "weight")
-                    and _module.weight is module.weight
-                    and not isinstance(_module, Embedding)
-                ):
-                    _update_module_arguments(
-                        module=_module,
-                        parallel_context=self.parallel_context,
-                        row_rank=row_rank,
-                        col_rank=col_rank,
-                        summa_dim=summa_dim,
-                        data_parallel_rank=data_parallel_rank,
-                        pipeline_parallel_rank=pipeline_parallel_rank,
-                        tensor_parallel_size=tensor_parallel_size,
-                        pipeline_parallel_size=pipeline_parallel_size,
-                        reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
-                        ),
-                        fusion_degree=1,
-                        orig_module=copy.deepcopy(_module.__class__),
-                        gather_output=not is_oslo_model(self.module),
-                        in_features=module.weight.size()[1],
-                        out_features=module.weight.size()[0],
-                    )
-
-                    if isinstance(_module, nn.Linear):
-                        _module.__class__ = Linear2D
-                    else:
-                        raise RuntimeError("Classifier layer must be `nn.Linear` class")
-        else:
-            weight_list = module.weight.data.chunk(summa_dim, dim=1)
-            weight_list = [weight.chunk(summa_dim, dim=1) for weight in weight_list]
-            module.weight.data = weight_list[row_rank][col_rank].contiguous()
-
-            if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
-            else:
-                module.weight.oslo_parallel = {
-                    ParallelMode.TENSOR_2D_ROW: row_rank,
-                    ParallelMode.TENSOR_2D_COL: col_rank,
-                }
-
-            _update_module_arguments(
-                module=module,
-                parallel_context=self.parallel_context,
-                embedding_dim=module.weight.size()[1],
-                orig_module=copy.deepcopy(module.__class__),
-            )
-
-            if isinstance(module, Embedding):
-                module.__class__ = Embedding2D
-
-    def _parallelize_linear(self):
-        for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(
-                self.module, param_name
-            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
-                self._slice_linear(
-                    module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
-                        self.module, param_name
-                    ),
-                    fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
-                        self.module, param_name, module
-                    ),
-                    slice_bias=True,
-                )
-                module.__class__ = Linear2D
-
-    def _parallelize_layernorm(self):
-        for module in self.module.modules():
-            if isinstance(module, nn.LayerNorm):
-                self._slice_layernorm(
-                    module=module,
-                )
-                module.__class__ = LayerNorm2D
-
-    def _parallelize_embedding(self):
-        for module in self.module.modules():
-            if isinstance(module, nn.Embedding):
-                self._slice_embedding(
-                    module=module,
-                )
