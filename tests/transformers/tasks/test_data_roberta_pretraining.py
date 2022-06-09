@@ -12,7 +12,7 @@ except ImportError:
     print("You have to install 'datasets' to test data_sequence_classification.py")
 
 
-class TestDataBertPretraining(TestDataBinarization):
+class TestDataRobertaPretraining(TestDataBinarization):
     def __init__(
         self,
         model_name,
@@ -119,6 +119,8 @@ class TestDataBertPretraining(TestDataBinarization):
             assert(
                 torch.isclose(random_word_probability, torch.tensor(self.data_collator.mlm_probability*0.2), atol=0.002)
             ), f"Random word ratio({random_word_probability:.6f}) is different from the predefined one({(self.data_collator.mlm_probability*0.2)})"
+        
+        print(f"MLM Probability: {mlm_probability:.6f}")
         print("---- mask ratio test pass ----\n")
 
 
@@ -126,9 +128,13 @@ if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")
     dataset = dataset.rename_column("sentence", "text")
 
-    roberta_test = TestDataBertPretraining("roberta-base")
+    roberta_test = TestDataRobertaPretraining("roberta-base")
     roberta_test(512, dataset)
     roberta_test(512, dataset, mlm_probability=0.2)
     roberta_test(512, dataset, mlm_probability=0.3)
     roberta_test(512, dataset, pad_to_multiple_of=3)
     roberta_test(128, dataset)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # roberta_sp_test = TestDataRobertaPretraining("roberta-base", parallel_context)
+    # roberta_sp_test(256, dataset, 1024)

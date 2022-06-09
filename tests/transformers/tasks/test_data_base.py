@@ -68,7 +68,13 @@ class TestDataBinarization:
         
         print(f"---- {key} length check test pass ----\n")
     
-    def _test_sp_collator(self, processed_dataset, batch_size):
+    def _test_sp_collator(
+        self, 
+        processed_dataset, 
+        batch_size, 
+        num_samples=2, 
+        check_token=False
+        ):
         local_world_size = self.sp_data_collator.local_world_size
 
         if self.data_collator.tokenizer.pad_token is None:
@@ -85,6 +91,10 @@ class TestDataBinarization:
         sp_dataloader = DataLoader(
             processed_dataset['train'], batch_size=batch_size, shuffle=False, collate_fn=self.sp_data_collator
         )
+
+        sp_batch = next(iter(sp_dataloader))
+        print("(SP batch check)")
+        self._batch_check(sp_batch, num_samples=num_samples, check_token=check_token)
         
         for batch, sp_batch in zip(dataloader, sp_dataloader):
             seq_length = batch['input_ids'].size(1)

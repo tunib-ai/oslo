@@ -114,3 +114,7 @@ if "__main__" == __name__:
     t5_test = TestDataSequenceClassification("t5-small")
     t5_test(512, dataset, 1024, 3)
     t5_test(128, dataset, 1024)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # bert_sp_test = TestDataSequenceClassification("bert-base-cased", parallel_context)
+    # bert_sp_test(256, dataset, 1024)

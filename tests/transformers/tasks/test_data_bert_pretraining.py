@@ -114,6 +114,8 @@ class TestDataBertPretraining(TestDataBinarization):
             assert(
                 torch.isclose(random_word_probability, torch.tensor(self.data_collator.mlm_probability*0.2), atol=0.002)
             ), f"Random word ratio({random_word_probability:.6f}) is different from the predefined one({(self.data_collator.mlm_probability*0.2)})"
+        
+        print(f"MLM Probability: {mlm_probability:.6f}")
         print("---- mask ratio test pass ----\n")
 
 
@@ -126,3 +128,7 @@ if "__main__" == __name__:
     bert_test(512, dataset, mlm_probability=0.2)
     bert_test(512, dataset, mlm_probability=0.3)
     bert_test(128, dataset)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # bert_sp_test = TestDataBertPretraining("bert-base-cased", parallel_context)
+    # bert_sp_test(256, dataset, 1024)

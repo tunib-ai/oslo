@@ -114,14 +114,32 @@ if "__main__" == __name__:
     dataset = load_dataset("klue", "ner")
     dataset = dataset.rename_column("ner_tags", "labels")
 
+    # klue ner
     gpt2_test = TestDataTokenClassification("skt/kogpt2-base-v2", dataset)
     gpt2_test(512, 128)
+    gpt2_test(256, 128, 3)
     gpt2_test(32, 64)
 
     bert_test = TestDataTokenClassification("klue/bert-base", dataset)
     bert_test(512, 16)
+    gpt2_test(256, 128, 3)
     bert_test(32, 64)
 
     roberta_test = TestDataTokenClassification("klue/roberta-base", dataset)
     roberta_test(512, 1024)
+    gpt2_test(256, 128, 3)
     roberta_test(32, 64)
+
+    # conll2003 ner pos
+    dataset = load_dataset("conll2003")
+    conll_ner_dataset = dataset.rename_column("ner_tags", "labels")
+    conll_pos_dataset = dataset.rename_column("pos_tags", "labels")
+
+    bert_conll_ner_test = TestDataTokenClassification("bert-base-cased", conll_ner_dataset)
+    bert_conll_ner_test(32, 64)
+    bert_conll_pos_test = TestDataTokenClassification("bert-base-cased", conll_pos_dataset)
+    bert_conll_pos_test(32, 64)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # bert_sp_test = TestDataTokenClassification("bert-base-cased", conll_ner_dataset, parallel_context)
+    # bert_sp_test(256, dataset, 1024)
