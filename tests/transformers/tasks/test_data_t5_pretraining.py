@@ -98,7 +98,7 @@ class TestDataT5Pretraining(TestDataBinarization):
         )
 
         self.mask_ratio_check(
-            dataloader, mean_noise_span_length, min_additional_special_id
+            dataloader, min_additional_special_id
         )
 
         if self.parallel_context is not None:
@@ -147,20 +147,21 @@ class TestDataT5Pretraining(TestDataBinarization):
                 print(f"tokens: \n{self.tokenizer.convert_ids_to_tokens(batch['input_ids'][idx])}\n")
     
 
-    def mask_ratio_check(self, dataloader, mean_noise_span_length, min_additional_special_id):
-        multiple = lambda x, y : x * y
+    def mask_ratio_check(self, dataloader, min_additional_special_id):
         for batch in dataloader:
-            # Verify that the mask token ratio is aligned to a predetermined percentage
+            batch_size, input_seq_length = batch['input_ids'].size()
+            label_seq_length = batch['labels'].size(1)
+
             num_mask_span = torch.sum(batch['labels'] >= min_additional_special_id)
-            mean_mask_tokens = num_mask_span * mean_noise_span_length
-            num_input_ids = multiple(*batch['input_ids'].size())
-            num_labels = multiple(*batch['labels'].size())
-            total_num = num_input_ids + num_labels - 2*num_mask_span
-            mlm_probability = mean_mask_tokens / total_num
+            num_input_ids = batch_size * (input_seq_length - 1) - num_mask_span
+            num_labels = batch_size * (label_seq_length - 1) - num_mask_span
+            num_total = num_input_ids + num_labels
+            mlm_probability = num_labels / num_total
             assert(
                 torch.isclose(mlm_probability, torch.tensor(self.data_collator.noise_density), atol=0.005)
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.noise_density})"
 
+        print(f"MLM Probability: {mlm_probability:.6f}")
         print("---- mask ratio test pass ----\n")
 
 
@@ -172,6 +173,10 @@ if "__main__" == __name__:
     t5_test(512, dataset)
     t5_test(511, dataset)
     t5_test(253, dataset, 0.15, 4)
-    t5_test(128, dataset)
-    t5_test(256, dataset, 0.2)
-    t5_test(128, dataset, 0.3)
+    t5_test(128, dataset, batch_size=4)
+    t5_test(256, dataset, 0.2, batch_size=4)
+    t5_test(128, dataset, 0.3, batch_size=4)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # t5_sp_test = TestDataT5Pretraining("t5-small", parallel_context)
+    # t5_sp_test(256, dataset, 1024)

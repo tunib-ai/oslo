@@ -101,19 +101,22 @@ class TestDataBartPretraining(TestDataBinarization):
     def mask_ratio_check(self, dataloader):
         mask_token_id = self.tokenizer.mask_token_id
         pad_token_id = self.tokenizer.pad_token_id
-
+        
         for batch in dataloader:
-            batch_size, seq_length = batch['labels'].size()
+            batch_size_label, seq_length_label = batch['labels'].size()
+            batch_size_input, seq_length_input = batch['input_ids'].size()
 
             # Verify that the mask token ratio is aligned to a predetermined percentage
-            num_pad_tokens = torch.sum(batch['labels'] == pad_token_id)
-            num_tokens = batch_size * (seq_length - 1) - num_pad_tokens
-            mean_num_mask_tokens = torch.sum(batch['input_ids'] == mask_token_id) * self.data_collator.possion_lambda
-            mlm_probability = mean_num_mask_tokens / num_tokens
+            num_pad_tokens = torch.sum(batch['input_ids'] == pad_token_id)
+            num_mask_tokens = torch.sum(batch['input_ids'] == mask_token_id)
+            num_labels = batch_size_label * (seq_length_label - 1)
+            num_input_ids = batch_size_input * (seq_length_input - 2)
+            mlm_probability = 1 - (num_input_ids - num_mask_tokens - num_pad_tokens) / (num_labels)
             assert(
                 torch.isclose(mlm_probability, torch.tensor(self.data_collator.mlm_probability), atol=0.005)
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.mlm_probability})"
-
+        
+        print(f"MLM Probability: {mlm_probability:.6f}")
         print("---- mask ratio test pass ----\n")
 
 
@@ -122,11 +125,16 @@ if "__main__" == __name__:
     dataset = dataset.rename_column("sentence", "text")
 
     bart_test = TestDataBartPretraining("facebook/bart-base")
-    # bart_test(1024, dataset)
+    bart_test(1024, dataset)
     bart_test(512, dataset, pad_to_multiple_of=3)
     bart_test(512, dataset, 0.2)
     bart_test(1024, dataset, 0.2, 4)
-    bart_test(512, dataset, 0.2, 2)
-    bart_test(512, dataset, 0.3)
-    # bart_test(256, dataset, 0.3)
-    # bart_test(256, dataset, 0.3, 2)
+    bart_test(512, dataset, 0.2, 2, batch_size=4)
+    bart_test(512, dataset, 0.3, batch_size=4)
+    bart_test(256, dataset, batch_size=4)
+    bart_test(256, dataset, 0.3, batch_size=4)
+    bart_test(256, dataset, 0.3, 2, batch_size=4)
+
+    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
+    # bart_sp_test = TestDataBartPretraining("facebook/bart-base", parallel_context)
+    # bart_sp_test(256, dataset, 1024)
