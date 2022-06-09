@@ -127,7 +127,7 @@ class DataCollatorForBartPretraining:
             chunk_ids = example["input_ids"]
             labels = chunk_ids[:]
 
-            chunk_ids = self.replace_span(chunk_ids)
+            chunk_ids = self.text_infilling(chunk_ids)
             chunk_ids = self.sentence_permutation(chunk_ids)
             
             chunk_ids = self.tokenizer.build_inputs_with_special_tokens(chunk_ids)
@@ -142,7 +142,7 @@ class DataCollatorForBartPretraining:
             
         return output_examples
 
-    def replace_span(self, input_ids):
+    def text_infilling(self, input_ids: list):
         length = len(input_ids)
         num_noise_tokens = int(np.round(length * self.mlm_probability))
 
@@ -152,18 +152,25 @@ class DataCollatorForBartPretraining:
             while sum(segment_lengths) < num_noise_tokens:
                 span_length = np.random.poisson(lam=self.possion_lambda)
                 segment_lengths.append(span_length)
-
+            
+            difference = sum(segment_lengths) - num_noise_tokens
+            segment_lengths[-1] = segment_lengths[-1] - difference
             return segment_lengths
+        
+        temp_ids = input_ids
+        while len(temp_ids) >= length:
+            temp_ids = input_ids[:]
+            noise_span_lengths = _possion_segmentation(num_noise_tokens)
 
-        noise_span_lengths = _possion_segmentation(num_noise_tokens)
+            for noise_span_length in noise_span_lengths:
+                max_idx = len(temp_ids) - noise_span_length + 1
+                start_idx = np.random.choice(max_idx)
+                while self.mask_token_id in temp_ids[start_idx : start_idx+noise_span_length]:
+                    start_idx = np.random.choice(max_idx)
+                temp_ids = temp_ids[ : start_idx] + [self.mask_token_id] + temp_ids[start_idx+noise_span_length : ]
 
-        for noise_span_length in noise_span_lengths:
-            max_idx = len(input_ids) - noise_span_length
-            start_idx = np.random.choice(np.arange(max_idx))
-            while self.mask_token_id in input_ids[start_idx : start_idx+noise_span_length]:
-                start_idx = np.random.choice(np.arange(max_idx))
-            input_ids = input_ids[ : start_idx] + [self.mask_token_id] + input_ids[start_idx+noise_span_length : ]
-
+        input_ids = temp_ids
+        
         return input_ids
     
     def sentence_permutation(self, input_ids):
@@ -183,8 +190,8 @@ class DataCollatorForBartPretraining:
 
             random.shuffle(split_sentences)
             
-        input_ids = []
-        for split_sentence in split_sentences:
-            input_ids.extend(split_sentence)
+            input_ids = []
+            for split_sentence in split_sentences:
+                input_ids.extend(split_sentence)
         
         return input_ids
