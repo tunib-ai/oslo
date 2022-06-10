@@ -376,19 +376,6 @@ def fused_bias_dropout(x, bias, p, training, inplace):
     return F.dropout(x + bias, p=p, training=training, inplace=inplace)
 
 
-@torch.jit.script
-def fused_bias_dropout_residual(x, bias, residual, p, training, inplace):
-    # type: (Tensor, Tensor, Tensor, float, bool, bool) -> Tensor
-    return F.dropout(x + bias, p=p, training=training, inplace=inplace) + residual
-
-
-@torch.jit.script
-def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tuple[Tensor, Tensor, Tensor]
-    # References: `AIB` in https://arxiv.org/abs/2007.00072
-    return q_out + q_bias, k_out + k_bias, v_out + v_bias
-
-
 def _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32):
     assert input.dim() == 4, "input must be be `(batch, nhead, len_q, len_k)`."
     assert scale is not None, "scale must not be None."
