@@ -120,8 +120,8 @@ class ColumnParallelLinear(Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        skip_bias_add: bool = False,
         dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
         gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
@@ -171,8 +171,8 @@ class RowParallelLinear(Linear):
         out_features: int,
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
-        parallel_input: bool = True,
         skip_bias_add: bool = False,
+        parallel_input: bool = True,
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_input = parallel_input
@@ -533,14 +533,19 @@ class Linear3D(Linear):
             self.reset_parameters()
 
     def forward(self, input: Tensor) -> Tensor:
-        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import linear_3d
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+            Matmul_ABT_3D,
+        )
 
-        return linear_3d(
+        return Matmul_ABT_3D.apply(
             input,
             self.weight,
             self.bias,
-            parallel_context=self.parallel_context,
-            input_parallel_mode=self.input_parallel_mode,
-            weight_parallel_mode=self.weight_parallel_mode,
-            output_parallel_mode=self.output_parallel_mode,
+            0,
+            0,
+            0,
+            self.parallel_context,
+            self.input_parallel_mode,
+            self.weight_parallel_mode,
+            self.output_parallel_mode,
         )

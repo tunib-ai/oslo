@@ -1,21 +1,36 @@
-from lib2to3.pgen2.token import OP
 from typing import Any, Tuple, Optional
 
 import torch
 from torch import Tensor
+import torch.distributed as dist
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from oslo.torch.distributed import ParallelContext, ParallelMode, parallel_context
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.distributed.nn.functional import (
     all_gather,
     all_reduce,
-    reduce_scatter,
     broadcast,
     reduce,
+    reduce_scatter,
 )
 
 
-class _Linear3D(torch.autograd.Function):
+def transpose_3d(tensor, parallel_context: ParallelContext):
+    cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+    i = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
+    j = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+    l = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+    group = parallel_context.get_group(ParallelMode.TENSOR_3D)
+    rank = parallel_context.get_ranks_in_group(ParallelMode.TENSOR_3D)[
+        i + l * cubic_dim + j * (cubic_dim**2)
+    ]
+    if j != l:
+        dist.send(tensor, dst=rank, group=group)
+        dist.recv(tensor, src=rank, group=group)
+    return tensor
+
+
+class Matmul_AB_3D(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
     def forward(
@@ -31,7 +46,6 @@ class _Linear3D(torch.autograd.Function):
         weight_parallel_mode: Optional[ParallelMode] = None,
         output_parallel_mode: Optional[ParallelMode] = None,
     ) -> Tensor:
-
         inputs = all_gather(
             inputs,
             input_dim,
@@ -44,8 +58,7 @@ class _Linear3D(torch.autograd.Function):
             parallel_context=parallel_context,
             parallel_mode=weight_parallel_mode,
         )
-
-        output = torch.matmul(inputs, weight.t())
+        output = torch.matmul(inputs, weight)
         output = reduce_scatter(
             output,
             output_dim,
@@ -80,7 +93,132 @@ class _Linear3D(torch.autograd.Function):
                 parallel_context=ctx.parallel_context,
                 parallel_mode=ctx.output_parallel_mode,
             )
+            async_ops = list()
 
+            input_grad = torch.matmul(output_grad, weight.t())
+            input_grad, op = reduce_scatter(
+                input_grad,
+                ctx.input_dim,
+                async_op=True,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.input_parallel_mode,
+            )
+            async_ops.append(op)
+
+            weight_grad = torch.matmul(
+                inputs.reshape(-1, inputs.shape[-1]).t(),
+                output_grad.reshape(-1, output_grad.shape[-1]),
+            )
+            weight_grad, op = reduce_scatter(
+                weight_grad,
+                ctx.weight_dim,
+                async_op=True,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.weight_parallel_mode,
+            )
+            async_ops.append(op)
+
+            if ctx.use_bias:
+                bias_grad = torch.sum(
+                    output_grad, dim=tuple(range(len(output_grad.shape))[:-1])
+                )
+                bias_grad, op = all_reduce(
+                    bias_grad,
+                    async_op=True,
+                    parallel_context=ctx.parallel_context,
+                    parallel_mode=ctx.weight_parallel_mode,
+                )
+                async_ops.append(op)
+            else:
+                bias_grad = None
+
+            for op in async_ops:
+                if op is not None:
+                    op.wait()
+
+        return (
+            input_grad,
+            weight_grad,
+            bias_grad,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
+class Matmul_ABT_3D(torch.autograd.Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float16)
+    def forward(
+        ctx,
+        inputs: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        input_dim: int = 0,
+        weight_dim: int = 0,
+        output_dim: int = 0,
+        parallel_context: Optional[ParallelContext] = None,
+        input_parallel_mode: Optional[ParallelMode] = None,
+        weight_parallel_mode: Optional[ParallelMode] = None,
+        output_parallel_mode: Optional[ParallelMode] = None,
+    ) -> Tensor:
+        inputs = all_gather(
+            inputs,
+            input_dim,
+            parallel_context=parallel_context,
+            parallel_mode=input_parallel_mode,
+        )
+        weight = all_gather(
+            weight,
+            weight_dim,
+            parallel_context=parallel_context,
+            parallel_mode=weight_parallel_mode,
+        )
+        output = torch.matmul(inputs, weight.t())
+        output = reduce_scatter(
+            output,
+            output_dim,
+            parallel_context=parallel_context,
+            parallel_mode=output_parallel_mode,
+        )
+
+        if bias is not None:
+            output += bias
+
+        output = transpose_3d(output, parallel_context=parallel_context)
+
+        if ctx:
+            ctx.save_for_backward(inputs, weight)
+            ctx.use_bias = bias is not None
+            ctx.input_dim = input_dim
+            ctx.weight_dim = weight_dim
+            ctx.output_dim = output_dim
+            ctx.parallel_context = parallel_context
+            ctx.input_parallel_mode = input_parallel_mode
+            ctx.weight_parallel_mode = weight_parallel_mode
+            ctx.output_parallel_mode = output_parallel_mode
+
+        return output
+
+    @staticmethod
+    @custom_bwd
+    def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
+        inputs, weight = ctx.saved_tensors
+        with torch.no_grad():
+            output_grad = transpose_3d(
+                output_grad, parallel_context=ctx.parallel_context
+            )
+
+            output_grad = all_gather(
+                output_grad,
+                ctx.output_dim,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.output_parallel_mode,
+            )
             async_ops = list()
 
             input_grad = torch.matmul(output_grad, weight)
@@ -94,7 +232,7 @@ class _Linear3D(torch.autograd.Function):
             async_ops.append(op)
 
             weight_grad = torch.matmul(
-                output_grad.reshape(-1, output_grad.shape[-1]).transpose(0, 1),
+                output_grad.reshape(-1, output_grad.shape[-1]).t(),
                 inputs.reshape(-1, inputs.shape[-1]),
             )
             weight_grad, op = reduce_scatter(
@@ -138,6 +276,126 @@ class _Linear3D(torch.autograd.Function):
         )
 
 
+class Matmul_ATB_3D(torch.autograd.Function):
+    @staticmethod
+    @custom_fwd(cast_inputs=torch.float16)
+    def forward(
+        ctx,
+        inputs: Tensor,
+        weight: Tensor,
+        bias: Optional[Tensor],
+        input_dim: int = 0,
+        weight_dim: int = -1,
+        output_dim: int = 0,
+        parallel_context: Optional[ParallelContext] = None,
+        input_parallel_mode: Optional[ParallelMode] = None,
+        weight_parallel_mode: Optional[ParallelMode] = None,
+        output_parallel_mode: Optional[ParallelMode] = None,
+    ) -> Tensor:
+        inputs = all_gather(
+            inputs,
+            input_dim,
+            parallel_context=parallel_context,
+            parallel_mode=input_parallel_mode,
+        )
+        weight = all_gather(
+            weight.t(),
+            weight_dim,
+            parallel_context=parallel_context,
+            parallel_mode=weight_parallel_mode,
+        )
+        output = torch.matmul(inputs, weight)
+        output = reduce_scatter(
+            output,
+            output_dim,
+            parallel_context=parallel_context,
+            parallel_mode=output_parallel_mode,
+        )
+
+        if bias is not None:
+            output += bias
+
+        if ctx:
+            ctx.save_for_backward(inputs, weight)
+            ctx.use_bias = bias is not None
+            ctx.input_dim = input_dim
+            ctx.weight_dim = weight_dim
+            ctx.output_dim = output_dim
+            ctx.parallel_context = parallel_context
+            ctx.input_parallel_mode = input_parallel_mode
+            ctx.weight_parallel_mode = weight_parallel_mode
+            ctx.output_parallel_mode = output_parallel_mode
+
+        return output
+
+    @staticmethod
+    @custom_bwd
+    def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
+        inputs, weight = ctx.saved_tensors
+        with torch.no_grad():
+            output_grad = all_gather(
+                output_grad,
+                ctx.output_dim,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.output_parallel_mode,
+            )
+            async_ops = list()
+
+            input_grad = torch.matmul(output_grad, weight.t())
+            input_grad, op = reduce_scatter(
+                input_grad,
+                ctx.input_dim,
+                async_op=True,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.input_parallel_mode,
+            )
+            async_ops.append(op)
+
+            weight_grad = torch.matmul(
+                inputs.reshape(-1, inputs.shape[-1]).t(),
+                output_grad.reshape(-1, output_grad.shape[-1]),
+            )
+            weight_grad, op = reduce_scatter(
+                weight_grad,
+                ctx.weight_dim,
+                async_op=True,
+                parallel_context=ctx.parallel_context,
+                parallel_mode=ctx.weight_parallel_mode,
+            )
+            async_ops.append(op)
+
+            if ctx.use_bias:
+                bias_grad = torch.sum(
+                    output_grad, dim=tuple(range(len(output_grad.shape))[:-1])
+                )
+                bias_grad, op = all_reduce(
+                    bias_grad,
+                    async_op=True,
+                    parallel_context=ctx.parallel_context,
+                    parallel_mode=ctx.weight_parallel_mode,
+                )
+                async_ops.append(op)
+            else:
+                bias_grad = None
+
+            for op in async_ops:
+                if op is not None:
+                    op.wait()
+
+        return (
+            input_grad,
+            weight_grad.t(),
+            bias_grad,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+
+
 def linear_3d(
     inputs: Tensor,
     weight: Tensor,
@@ -150,7 +408,7 @@ def linear_3d(
     weight_parallel_mode: Optional[ParallelMode] = None,
     output_parallel_mode: Optional[ParallelMode] = None,
 ) -> Tensor:
-    return _Linear3D.apply(
+    return Matmul_ABT_3D.apply(
         inputs,
         weight,
         bias,
@@ -495,7 +753,7 @@ def split_batch_3d(
 
     assert (
         dim_size % (input_world_size * weight_world_size) == 0
-    ), f"The batch size ({dim_size}) is not a multiple of square of 3D depth ({input_world_size*weight_world_size})."
+    ), f"The batch size ({dim_size}) is not a multiple of square of 3D cubic dim ({input_world_size*weight_world_size})."
 
     if inputs.size(dim) <= 1:
         return inputs
@@ -641,7 +899,7 @@ def reduce_scatter_tensor_3d(
     world_size = parallel_context.get_world_size(parallel_mode)
     assert (
         dim_size % world_size == 0
-    ), f"The batch size ({dim_size}) is not a multiple of square of 3D depth ({world_size})."
+    ), f"The batch size ({dim_size}) is not a multiple of square of 3D cubic dim ({world_size})."
 
     return _ReduceScatterTensor3D.apply(tensor, dim, parallel_context, parallel_mode)
 
@@ -755,9 +1013,9 @@ class _BroadcastWeight3D_FromDiagonal(torch.autograd.Function):
             parallel_context=ctx.parallel_context,
             parallel_mode=ctx.input_parallel_mode,
         )
-        if parallel_context.get_local_rank(
+        if ctx.parallel_context.get_local_rank(
             ctx.input_parallel_mode
-        ) == parallel_context.get_local_rank(ctx.output_parallel_mode):
+        ) == ctx.parallel_context.get_local_rank(ctx.output_parallel_mode):
             input_grad = all_reduce(
                 input_grad,
                 parallel_context=ctx.parallel_context,

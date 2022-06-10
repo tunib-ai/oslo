@@ -14,90 +14,129 @@ parallel_context = ParallelContext.from_torch(
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
-cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
-input_ = torch.randn((4, 2)).cuda()
-# target = torch.randn((4, 4)).cuda()
-dist.broadcast(input_, src=0)
-# dist.broadcast(target, src=0)
 
-linear = torch.nn.Linear(2, 4).cuda()
+batch_size = 4
+seq_len = 2
+input_dim = 4
+hidden_dim = 8
+cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+input_ = torch.randn((batch_size, seq_len, input_dim)).cuda()
+target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
+dist.broadcast(input_, src=0)
+dist.broadcast(target, src=0)
+
+linear = torch.nn.Linear(input_dim, hidden_dim).cuda()
 w = deepcopy(linear.weight.data)
 b = deepcopy(linear.bias.data)
-dist.broadcast(w, src=0)
-dist.broadcast(b, src=0)
+orig_input_ = input_
+orig_target = target
 
 out = linear(input_)
-# optimizer = torch.optim.Adam(linear.parameters(), lr=1e-3)
-# logits = torch.nn.MSELoss()(out, target)
-# logits.backward()
-# optimizer.step()
+optimizer = torch.optim.Adam(linear.parameters(), lr=1e-3)
+logits = torch.nn.MSELoss()(out, target)
+logits.backward()
+optimizer.step()
+
+out_update = linear(input_)
 
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
-    print(f"original updated weight: \n{linear.weight.data}\n")
-    print(f"original updated bias: \n{linear.bias.data}\n")
+    print(f"original update output: \n{out_update}\n")
 
-input_ = torch.chunk(input_, cubic_dim, dim=-2)[
+input_ = torch.chunk(input_, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
 ]
-input_ = torch.chunk(input_, cubic_dim, dim=-2)[
+input_ = torch.chunk(input_, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
 ]
 input_ = torch.chunk(input_, cubic_dim, dim=-1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
 ]
-
-
-w = torch.chunk(w, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=-1)[
+target = torch.chunk(target, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
 ]
+target = torch.chunk(target, cubic_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+]
+target = torch.chunk(target, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+]
 
+w = torch.chunk(w, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+]
+w = torch.chunk(w, cubic_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+]
+w = torch.chunk(w, cubic_dim, dim=0)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
+]
 b = torch.chunk(b, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
 ]
 
-linear_3d = Linear3D(2, 4, parallel_context=parallel_context)
+linear_3d = Linear3D(input_dim, hidden_dim, parallel_context=parallel_context)
 linear_3d.weight.data.copy_(w)
-# if parallel_context.get_global_rank() == 0:
-#     import ipdb; ipdb.set_trace()
-# dist.barrier()
 linear_3d.bias.data.copy_(b)
 
-out = linear_3d(input_)
-# optimizer = torch.optim.Adam(linear_2d.parameters(), lr=1e-3)
-# logits = torch.nn.MSELoss()(out, target)
-# logits.backward()
-# optimizer.step()
+pout = linear_3d(input_)
+optimizer = torch.optim.Adam(linear_3d.parameters(), lr=1e-3)
+logits = torch.nn.MSELoss()(pout, target)
+logits.backward()
+optimizer.step()
 
-out_list = [torch.zeros_like(out) for _ in range(cubic_dim)]
+pout_update = linear_3d(input_)
+
+pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
 dist.all_gather(
-    out_list,
-    out.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
-)
-out = torch.cat(out_list, dim=-2)
-out_list = [torch.zeros_like(out) for _ in range(cubic_dim)]
-dist.all_gather(
-    out_list,
-    out.contiguous(),
+    pout_list,
+    pout.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
 )
-out = torch.cat(out_list, dim=-1)
-out_list = [torch.zeros_like(out) for _ in range(cubic_dim)]
+pout = torch.cat(pout_list, dim=-1)
+pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
 dist.all_gather(
-    out_list,
-    out.contiguous(),
+    pout_list,
+    pout.contiguous(),
+    parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
+)
+pout = torch.cat(pout_list, dim=0)
+pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
+dist.all_gather(
+    pout_list,
+    pout.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_WEIGHT),
 )
-out = torch.cat(out_list, dim=-2)
+pout = torch.cat(pout_list, dim=0)
+
+pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
+dist.all_gather(
+    pout_update_list,
+    pout_update.contiguous(),
+    parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
+)
+pout_update = torch.cat(pout_update_list, dim=-1)
+pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
+dist.all_gather(
+    pout_update_list,
+    pout_update.contiguous(),
+    parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
+)
+pout_update = torch.cat(pout_update_list, dim=0)
+pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
+dist.all_gather(
+    pout_update_list,
+    pout_update.contiguous(),
+    parallel_context.get_group(ParallelMode.TENSOR_3D_WEIGHT),
+)
+pout_update = torch.cat(pout_update_list, dim=0)
 
 if parallel_context.get_global_rank() == 0:
-    print(f"parallel output: \n{out}\n")
-    # print(f"parallel updated weight: \n{w}\n")
-    # print(f"original updated bias: \n{b}\n")
+    print(f"parallel output: \n{pout}\n")
+    print(f"parallel update output: \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse: \n{sse}\n")
+    print(f"next output sse: \n{sse_update}\n")
