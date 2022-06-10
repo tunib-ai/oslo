@@ -6,6 +6,7 @@ import warnings
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
+
 try:
     from transformers import (
         BartTokenizer,
@@ -18,9 +19,9 @@ except ImportError:
 class ProcessorForBartPretraining(BaseProcessor):
     def __init__(
         self,
-        model_name_or_path: str, 
-        max_length: int = 1024, 
-        ) -> None:
+        model_name_or_path: str,
+        max_length: int = 1024,
+    ) -> None:
         super().__init__(model_name_or_path, max_length)
 
         if not isinstance(self._tokenizer, (BartTokenizer, BartTokenizerFast)):
@@ -58,7 +59,7 @@ class ProcessorForBartPretraining(BaseProcessor):
                 self._buffer = self._buffer[self._chunk_size :]
 
         return dict_of_training_examples
-    
+
 
 class DataCollatorForBartPretraining:
     """
@@ -68,7 +69,7 @@ class DataCollatorForBartPretraining:
     def __init__(
         self,
         processor: ProcessorForBartPretraining,
-        mlm_probability: float = 0.15, 
+        mlm_probability: float = 0.15,
         possion_lambda: float = 3.0,
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
@@ -82,31 +83,51 @@ class DataCollatorForBartPretraining:
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)
-        
+
         if self.parallel_context is None:
-            batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
+            batch = self.tokenizer.pad(
+                examples,
+                return_tensors="pt",
+                pad_to_multiple_of=self.pad_to_multiple_of,
+            )
             if self.pad_to_multiple_of:
-                batch_size, label_seq_length = batch['labels'].size()
+                batch_size, label_seq_length = batch["labels"].size()
                 if label_seq_length % self.pad_to_multiple_of != 0:
-                    label_required_length = ((label_seq_length // self.pad_to_multiple_of) + 1) * self.pad_to_multiple_of
-                
+                    label_required_length = (
+                        (label_seq_length // self.pad_to_multiple_of) + 1
+                    ) * self.pad_to_multiple_of
+
                     difference = label_required_length - label_seq_length
-                    label_pads = torch.full((batch_size, difference), fill_value=self.pad_token_id, dtype=batch['labels'].dtype)
-                    batch['labels'] = torch.cat([batch['labels'], label_pads], axis=1)
+                    label_pads = torch.full(
+                        (batch_size, difference),
+                        fill_value=self.pad_token_id,
+                        dtype=batch["labels"].dtype,
+                    )
+                    batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
         else:
-            batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size)
-            
-            batch_size, label_seq_length = batch['labels'].size()
+            batch = self.tokenizer.pad(
+                examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size
+            )
+
+            batch_size, label_seq_length = batch["labels"].size()
             if label_seq_length % self.local_world_size != 0:
-                label_required_length = ((label_seq_length // self.local_world_size) + 1) * self.local_world_size
-            
+                label_required_length = (
+                    (label_seq_length // self.local_world_size) + 1
+                ) * self.local_world_size
+
                 difference = label_required_length - label_seq_length
-                label_pads = torch.full((batch_size, difference), fill_value=self.pad_token_id, dtype=batch['labels'].dtype)
-                batch['labels'] = torch.cat([batch['labels'], label_pads], axis=1)
+                label_pads = torch.full(
+                    (batch_size, difference),
+                    fill_value=self.pad_token_id,
+                    dtype=batch["labels"].dtype,
+                )
+                batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
 
             for key, value in batch.items():
                 value = value.chunk(
@@ -116,12 +137,14 @@ class DataCollatorForBartPretraining:
 
                 if not value.is_contiguous():
                     value = value.contiguous()
-                
+
                 batch[key] = value
 
         return batch
 
-    def _prepare_noise_text_from_examples(self, examples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _prepare_noise_text_from_examples(
+        self, examples: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         output_examples = []
         for example in examples:
             chunk_ids = example["input_ids"]
@@ -129,7 +152,7 @@ class DataCollatorForBartPretraining:
 
             chunk_ids = self.text_infilling(chunk_ids)
             chunk_ids = self.sentence_permutation(chunk_ids)
-            
+
             chunk_ids = self.tokenizer.build_inputs_with_special_tokens(chunk_ids)
             labels = self.tokenizer.build_inputs_with_special_tokens(labels)[1:]
 
@@ -139,7 +162,7 @@ class DataCollatorForBartPretraining:
                     "labels": labels,
                 }
             )
-            
+
         return output_examples
 
     def text_infilling(self, input_ids: list):
@@ -152,11 +175,11 @@ class DataCollatorForBartPretraining:
             while sum(segment_lengths) < num_noise_tokens:
                 span_length = np.random.poisson(lam=self.possion_lambda)
                 segment_lengths.append(span_length)
-            
+
             difference = sum(segment_lengths) - num_noise_tokens
             segment_lengths[-1] = segment_lengths[-1] - difference
             return segment_lengths
-        
+
         temp_ids = input_ids
         while len(temp_ids) >= length:
             temp_ids = input_ids[:]
@@ -165,33 +188,43 @@ class DataCollatorForBartPretraining:
             for noise_span_length in noise_span_lengths:
                 max_idx = len(temp_ids) - noise_span_length + 1
                 start_idx = np.random.choice(max_idx)
-                while self.mask_token_id in temp_ids[start_idx : start_idx+noise_span_length]:
+                while (
+                    self.mask_token_id
+                    in temp_ids[start_idx : start_idx + noise_span_length]
+                ):
                     start_idx = np.random.choice(max_idx)
-                temp_ids = temp_ids[ : start_idx] + [self.mask_token_id] + temp_ids[start_idx+noise_span_length : ]
+                temp_ids = (
+                    temp_ids[:start_idx]
+                    + [self.mask_token_id]
+                    + temp_ids[start_idx + noise_span_length :]
+                )
 
         input_ids = temp_ids
-        
+
         return input_ids
-    
+
     def sentence_permutation(self, input_ids):
         ref_tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
-            
+
         split_sentences = []
-        split_points = [idx for idx, token in enumerate(ref_tokens) if token in (".", "Ġ.")]
+        split_points = [
+            idx for idx, token in enumerate(ref_tokens) if token in (".", "Ġ.")
+        ]
         if split_points:
+            prev_point = None
             for split_point in split_points:
                 split_point += 1
                 if split_sentences:
-                    split_sentences.append(input_ids[prev_point : split_point])
+                    split_sentences.append(input_ids[prev_point:split_point])
                 else:
-                    split_sentences.append(input_ids[: split_point])
+                    split_sentences.append(input_ids[:split_point])
                 prev_point = split_point
-            split_sentences.append(input_ids[prev_point :])
+            split_sentences.append(input_ids[prev_point:])
 
             random.shuffle(split_sentences)
-            
+
             input_ids = []
             for split_sentence in split_sentences:
                 input_ids.extend(split_sentence)
-        
+
         return input_ids

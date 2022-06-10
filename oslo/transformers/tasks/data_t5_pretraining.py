@@ -5,6 +5,7 @@ import torch
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
+
 try:
     from transformers import (
         T5Tokenizer,
@@ -18,11 +19,11 @@ except ImportError:
 class ProcessorForT5Pretraining(BaseProcessor):
     def __init__(
         self,
-        model_name_or_path: str, 
-        max_length: int = 512, 
-        mlm_probability: float = 0.15, 
+        model_name_or_path: str,
+        max_length: int = 512,
+        mlm_probability: float = 0.15,
         mean_noise_span_length: float = 3.0,
-        ) -> None:
+    ) -> None:
         super().__init__(model_name_or_path, max_length)
 
         if not isinstance(self._tokenizer, (T5Tokenizer, T5TokenizerFast)):
@@ -30,7 +31,10 @@ class ProcessorForT5Pretraining(BaseProcessor):
                 "PorcessorForT5Pretraining is only suitable for T5Tokenizer-like tokenizers."
             )
 
-        self._chunk_size, self.target_chunk_size = self.compute_input_and_target_lengths(
+        (
+            self._chunk_size,
+            self.target_chunk_size,
+        ) = self.compute_input_and_target_lengths(
             max_length, mlm_probability, mean_noise_span_length
         )
         self._max_length = max_length
@@ -63,8 +67,10 @@ class ProcessorForT5Pretraining(BaseProcessor):
                 self._buffer = self._buffer[self._chunk_size :]
 
         return dict_of_training_examples
-    
-    def compute_input_and_target_lengths(self, inputs_length, noise_density, mean_noise_span_length):
+
+    def compute_input_and_target_lengths(
+        self, inputs_length, noise_density, mean_noise_span_length
+    ):
         """This function is copy of `random_spans_helper <https://github.com/google-research/text-to-text-transfer-transformer/blob/84f8bcc14b5f2c03de51bd3587609ba8f6bbd1cd/t5/data/preprocessors.py#L2466>`__ .
         Training parameters to avoid padding with random_spans_noise_mask.
         When training a model with random_spans_noise_mask, we would like to set the other
@@ -96,10 +102,15 @@ class ProcessorForT5Pretraining(BaseProcessor):
 
         tokens_length = inputs_length
 
-        while _tokens_length_to_inputs_length_targets_length(tokens_length + 1)[0] <= inputs_length:
+        while (
+            _tokens_length_to_inputs_length_targets_length(tokens_length + 1)[0]
+            <= inputs_length
+        ):
             tokens_length += 1
 
-        inputs_length, targets_length = _tokens_length_to_inputs_length_targets_length(tokens_length)
+        inputs_length, targets_length = _tokens_length_to_inputs_length_targets_length(
+            tokens_length
+        )
 
         # minor hack to get the targets length to be equal to inputs length
         # which is more likely to have been set to a nice round number.
@@ -127,20 +138,30 @@ class DataCollatorForT5Pretraining:
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
             self.pad_token_id = self.tokenizer.pad_token_id
-    
+
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
         # convert list to dict and tensorize input
         batch = BatchEncoding(
-            {k: np.array([examples[i][k] for i in range(len(examples))]) for k, v in examples[0].items()}
+            {
+                k: np.array([examples[i][k] for i in range(len(examples))])
+                for k, v in examples[0].items()
+            }
         )
 
         input_ids = batch["input_ids"]
         batch_size, expandend_input_length = input_ids.shape
 
-        mask_indices = np.asarray([self.random_spans_noise_mask(expandend_input_length) for i in range(batch_size)])
+        mask_indices = np.asarray(
+            [
+                self.random_spans_noise_mask(expandend_input_length)
+                for i in range(batch_size)
+            ]
+        )
         labels_mask = ~mask_indices
 
         input_ids_sentinel = self.create_sentinel_ids(mask_indices.astype(np.int8))
@@ -167,18 +188,26 @@ class DataCollatorForT5Pretraining:
             for key, value in batch.items():
                 value = torch.from_numpy(value)
                 batch_size, seq_length = value.size()
-                
+
                 if seq_length % self.local_world_size != 0:
-                    required_length = ((seq_length // self.local_world_size) + 1) * self.local_world_size
+                    required_length = (
+                        (seq_length // self.local_world_size) + 1
+                    ) * self.local_world_size
                     difference = required_length - seq_length
 
                     if key == "labels":
-                        pads = torch.full([batch_size, difference], fill_value=-100, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=-100, dtype=value.dtype
+                        )
                     else:
-                        pads = torch.full([batch_size, difference], fill_value=self.pad_token_id, dtype=value.dtype)
-                    
+                        pads = torch.full(
+                            [batch_size, difference],
+                            fill_value=self.pad_token_id,
+                            dtype=value.dtype,
+                        )
+
                     value = torch.cat([value, pads], axis=1)
-                
+
                 value = value.chunk(
                     self.local_world_size,
                     dim=1,
@@ -186,10 +215,15 @@ class DataCollatorForT5Pretraining:
 
                 if not value.is_contiguous():
                     value = value.contiguous()
-                
+
                 batch[key] = value
-        
-            batch["attention_mask"] = (batch["input_ids"] != self.pad_token_id).clone().detach().to(torch.int64)
+
+            batch["attention_mask"] = (
+                (batch["input_ids"] != self.pad_token_id)
+                .clone()
+                .detach()
+                .to(torch.int64)
+            )
 
         return batch
 
@@ -202,8 +236,12 @@ class DataCollatorForT5Pretraining:
         start_indices = mask_indices - np.roll(mask_indices, 1, axis=-1) * mask_indices
         start_indices[:, 0] = mask_indices[:, 0]
 
-        sentinel_ids = np.where(start_indices != 0, np.cumsum(start_indices, axis=-1), start_indices)
-        sentinel_ids = np.where(sentinel_ids != 0, (len(self.tokenizer) - sentinel_ids), 0)
+        sentinel_ids = np.where(
+            start_indices != 0, np.cumsum(start_indices, axis=-1), start_indices
+        )
+        sentinel_ids = np.where(
+            sentinel_ids != 0, (len(self.tokenizer) - sentinel_ids), 0
+        )
         sentinel_ids -= mask_indices - start_indices
 
         return sentinel_ids
@@ -220,7 +258,11 @@ class DataCollatorForT5Pretraining:
         # masked tokens coming after sentinel tokens and should be removed
         input_ids = input_ids_full[input_ids_full >= 0].reshape((batch_size, -1))
         input_ids = np.concatenate(
-            [input_ids, np.full((batch_size, 1), self.tokenizer.eos_token_id, dtype=np.int32)], axis=-1
+            [
+                input_ids,
+                np.full((batch_size, 1), self.tokenizer.eos_token_id, dtype=np.int32),
+            ],
+            axis=-1,
         )
         return input_ids
 
@@ -272,10 +314,13 @@ class DataCollatorForT5Pretraining:
             return segment_length
 
         noise_span_lengths = _random_segmentation(num_noise_tokens, num_noise_spans)
-        nonnoise_span_lengths = _random_segmentation(num_nonnoise_tokens, num_noise_spans)
+        nonnoise_span_lengths = _random_segmentation(
+            num_nonnoise_tokens, num_noise_spans
+        )
 
         interleaved_span_lengths = np.reshape(
-            np.stack([nonnoise_span_lengths, noise_span_lengths], axis=1), [num_noise_spans * 2]
+            np.stack([nonnoise_span_lengths, noise_span_lengths], axis=1),
+            [num_noise_spans * 2],
         )
         span_starts = np.cumsum(interleaved_span_lengths)[:-1]
         span_start_indicator = np.zeros((length,), dtype=np.int8)

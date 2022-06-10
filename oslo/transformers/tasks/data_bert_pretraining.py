@@ -5,6 +5,7 @@ from datasets.arrow_dataset import Batch
 
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
+
 try:
     from transformers import DataCollatorForWholeWordMask
 except ImportError:
@@ -64,22 +65,32 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_wwm_and_sop_from_examples(examples)
-        batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
+        batch = self.tokenizer.pad(
+            examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of
+        )
         batch_mask = batch.pop("mask_label")
 
         if self.pad_to_multiple_of:
             batch_size, mask_seq_length = batch_mask.size()
             if mask_seq_length % self.pad_to_multiple_of != 0:
-                required_length = ((mask_seq_length // self.pad_to_multiple_of) + 1) * self.pad_to_multiple_of
+                required_length = (
+                    (mask_seq_length // self.pad_to_multiple_of) + 1
+                ) * self.pad_to_multiple_of
                 difference = required_length - mask_seq_length
-                mask_pads = torch.full([batch_size, difference], fill_value=0, dtype=batch_mask.dtype)
+                mask_pads = torch.full(
+                    [batch_size, difference], fill_value=0, dtype=batch_mask.dtype
+                )
                 batch_mask = torch.cat([batch_mask, mask_pads], axis=1)
 
-        batch["input_ids"], batch["labels"] = self.torch_mask_tokens(batch["input_ids"], batch_mask)
+        batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
+            batch["input_ids"], batch_mask
+        )
 
         if self.parallel_context is None:
             return batch
@@ -91,20 +102,32 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
                 batch_size, seq_length = value.size()
 
                 if seq_length % self.local_world_size != 0:
-                    required_length = ((seq_length // self.local_world_size) + 1) * self.local_world_size
+                    required_length = (
+                        (seq_length // self.local_world_size) + 1
+                    ) * self.local_world_size
                     difference = required_length - seq_length
 
                     if key == "labels":
-                        pads = torch.full([batch_size, difference], fill_value=-100, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=-100, dtype=value.dtype
+                        )
                     elif key == "token_type_ids":
-                        pads = torch.full([batch_size, difference], fill_value=1, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=1, dtype=value.dtype
+                        )
                     elif key == "attention_mask":
-                        pads = torch.full([batch_size, difference], fill_value=0, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=0, dtype=value.dtype
+                        )
                     else:
-                        pads = torch.full([batch_size, difference], fill_value=self.pad_token_id, dtype=value.dtype)
-                    
+                        pads = torch.full(
+                            [batch_size, difference],
+                            fill_value=self.pad_token_id,
+                            dtype=value.dtype,
+                        )
+
                     value = torch.cat([value, pads], axis=1)
-                
+
                 value = value.chunk(
                     self.local_world_size,
                     dim=1,
@@ -112,12 +135,14 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
 
                 if not value.is_contiguous():
                     value = value.contiguous()
-                
+
                 batch[key] = value
 
             return batch
 
-    def _prepare_wwm_and_sop_from_examples(self, examples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _prepare_wwm_and_sop_from_examples(
+        self, examples: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
         output_examples = []
         for example in examples:
             chunk_ids = example["input_ids"]
@@ -133,8 +158,12 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
                 token_a = chunk_ids[:split_position]
                 token_b = chunk_ids[split_position:]
 
-            input_ids = self.tokenizer.build_inputs_with_special_tokens(token_a, token_b)
-            token_type_ids = self.tokenizer.create_token_type_ids_from_sequences(token_a, token_b)
+            input_ids = self.tokenizer.build_inputs_with_special_tokens(
+                token_a, token_b
+            )
+            token_type_ids = self.tokenizer.create_token_type_ids_from_sequences(
+                token_a, token_b
+            )
             sentence_order_label = 1 if reverse else 0
             ref_tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
             mask_label = self._whole_word_mask(ref_tokens)

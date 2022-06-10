@@ -6,6 +6,7 @@ from oslo.transformers.tasks.data_bart_pretraining import (
     DataCollatorForBartPretraining,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+
 try:
     from datasets import load_dataset
 except ImportError:
@@ -16,7 +17,7 @@ class TestDataBartPretraining(TestDataBinarization):
     def __init__(
         self,
         model_name,
-        parallel_context = None,
+        parallel_context=None,
     ):
         self.processor = ProcessorForBartPretraining(model_name)
         self.data_collator = DataCollatorForBartPretraining(self.processor)
@@ -33,10 +34,10 @@ class TestDataBartPretraining(TestDataBinarization):
         dataset,
         mlm_probability=0.15,
         possion_lambda=3,
-        batch_size = 1024,
-        pad_to_multiple_of = None,
-        batch_check_num_sample = 2,
-        batch_check_tokens = False,
+        batch_size=1024,
+        pad_to_multiple_of=None,
+        batch_check_num_sample=2,
+        batch_check_tokens=False,
     ):
         self.processor._chunk_size = max_length - 1
         self.processor._max_length = max_length
@@ -52,12 +53,10 @@ class TestDataBartPretraining(TestDataBinarization):
             f"MLM probability: {mlm_probability}",
             f"Possion Lambda: {possion_lambda}",
             f"Pad to multiple of: {pad_to_multiple_of}\n",
-            sep="\n"
+            sep="\n",
         )
         processed_dataset = dataset.map(
-            self.processor,
-            batched=True,
-            remove_columns = dataset['train'].column_names
+            self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
         processed_dataset.cleanup_cache_files()
 
@@ -67,55 +66,62 @@ class TestDataBartPretraining(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset["train"],
+            batch_size,
+            shuffle=True,
+            collate_fn=self.data_collator,
         )
-        
+
         batch = next(iter(dataloader))
         self._batch_check(
             batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
         )
 
         self._length_check(
-            dataloader, 
-            "input_ids", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=False
+            dataloader,
+            "input_ids",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=False,
         )
 
         self._length_check(
-            dataloader, 
-            "labels", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=True
+            dataloader,
+            "labels",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=True,
         )
 
         self.mask_ratio_check(dataloader)
 
         if self.parallel_context is not None:
             self._test_sp_collator(processed_dataset, batch_size)
-        
+
         print("---------- Test Pass ----------\n")
-    
+
     def mask_ratio_check(self, dataloader):
         mask_token_id = self.tokenizer.mask_token_id
         pad_token_id = self.tokenizer.pad_token_id
-        
+
         for batch in dataloader:
-            batch_size_label, seq_length_label = batch['labels'].size()
-            batch_size_input, seq_length_input = batch['input_ids'].size()
+            batch_size_label, seq_length_label = batch["labels"].size()
+            batch_size_input, seq_length_input = batch["input_ids"].size()
 
             # Verify that the mask token ratio is aligned to a predetermined percentage
-            num_pad_tokens = torch.sum(batch['input_ids'] == pad_token_id)
-            num_mask_tokens = torch.sum(batch['input_ids'] == mask_token_id)
+            num_pad_tokens = torch.sum(batch["input_ids"] == pad_token_id)
+            num_mask_tokens = torch.sum(batch["input_ids"] == mask_token_id)
             num_labels = batch_size_label * (seq_length_label - 1)
             num_input_ids = batch_size_input * (seq_length_input - 2)
-            mlm_probability = 1 - (num_input_ids - num_mask_tokens - num_pad_tokens) / (num_labels)
-            assert(
-                torch.isclose(mlm_probability, torch.tensor(self.data_collator.mlm_probability), atol=0.005)
+            mlm_probability = 1 - (num_input_ids - num_mask_tokens - num_pad_tokens) / (
+                num_labels
+            )
+            assert torch.isclose(
+                mlm_probability,
+                torch.tensor(self.data_collator.mlm_probability),
+                atol=0.005,
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.mlm_probability})"
-        
+
         print(f"MLM Probability: {mlm_probability:.6f}")
         print("---- mask ratio test pass ----\n")
 

@@ -28,15 +28,15 @@ class ProcessorForTokenClassification(BaseProcessor):
             raise ValueError(
                 "dataset argument must be set. (dataset: Union[Dataset, DatasetDict])"
             )
-        
+
         if ("gpt2" in model_name_or_path) or ("roberta" in model_name_or_path):
             self._tokenizer = AutoTokenizer.from_pretrained(
                 model_name_or_path, add_prefix_space=True
             )
-        '''
-        In the 'gpt2' and 'roberta' models, it should be set to 'add_prefix_space=True' 
+        """
+        In the 'gpt2' and 'roberta' models, it should be set to 'add_prefix_space=True'
         to convey information that the word in the sentence begins, not the sentence begins.
-        
+
         For more information, please refer to the following link
         : https://github.com/huggingface/transformers/issues/1880
 
@@ -58,8 +58,8 @@ class ProcessorForTokenClassification(BaseProcessor):
                 revision=model_args.model_revision,
                 use_auth_token=True if model_args.use_auth_token else None,
             )
-        '''
-        
+        """
+
         self.label_names = self.get_label_names(dataset)
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
@@ -174,7 +174,9 @@ class DataCollatorForTokenClassification:
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
 
     def __call__(self, features):
         label_name = "label" if "label" in features[0].keys() else "labels"
@@ -228,13 +230,10 @@ class DataCollatorForTokenClassification:
         else:
             for key, value in batch.items():
                 value = torch.tensor(value, dtype=torch.int64)
-                value = value.chunk(
-                    self.local_world_size,
-                    dim=1
-                )[self.local_rank]
+                value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
 
                 if not value.is_contiguous():
                     value = value.contiguous()
-                
+
                 batch[key] = value
             return batch

@@ -5,6 +5,7 @@ from oslo.transformers.tasks.data_token_classification import (
     DataCollatorForTokenClassification,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+
 try:
     from datasets import load_dataset
 except ImportError:
@@ -16,7 +17,7 @@ class TestDataTokenClassification(TestDataBinarization):
         self,
         model_name,
         dataset,
-        parallel_context = None,
+        parallel_context=None,
     ):
         self.processor = ProcessorForTokenClassification(model_name, dataset=dataset)
         self.data_collator = DataCollatorForTokenClassification(self.processor)
@@ -30,13 +31,13 @@ class TestDataTokenClassification(TestDataBinarization):
 
     def __call__(
         self,
-        max_length, 
-        batch_size = 64,
-        pad_to_multiple_of = None,
-        batch_check_num_sample = 2,
-        batch_check_tokens = False,
-        must_be_equal_to_max_length = False,
-        stop_idx = 10,
+        max_length,
+        batch_size=64,
+        pad_to_multiple_of=None,
+        batch_check_num_sample=2,
+        batch_check_tokens=False,
+        must_be_equal_to_max_length=False,
+        stop_idx=10,
     ):
         self.processor._chunk_size = max_length
         self.processor._max_length = max_length
@@ -49,12 +50,10 @@ class TestDataTokenClassification(TestDataBinarization):
             f"Max Length: {max_length}",
             f"Batch size: {batch_size}",
             f"Pad to multiple of: {pad_to_multiple_of}\n",
-            sep="\n"
+            sep="\n",
         )
         processed_dataset = dataset.map(
-            self.processor,
-            batched=True,
-            remove_columns = dataset['train'].column_names
+            self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
         processed_dataset.cleanup_cache_files()
 
@@ -64,51 +63,55 @@ class TestDataTokenClassification(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset["train"],
+            batch_size,
+            shuffle=True,
+            collate_fn=self.data_collator,
         )
-        
+
         batch = next(iter(dataloader))
         self._batch_check(
             batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
         )
 
         self._length_check(
-            dataloader, 
-            "input_ids", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=must_be_equal_to_max_length
+            dataloader,
+            "input_ids",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
         self._length_check(
-            dataloader, 
-            "labels", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=must_be_equal_to_max_length
+            dataloader,
+            "labels",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
         self.token_to_label_check(batch, batch_size, stop_idx)
 
         if self.parallel_context is not None:
             self._test_sp_collator(processed_dataset, batch_size)
-        
+
         print("---------- Test Pass ----------\n")
-    
+
     def token_to_label_check(self, batch, batch_size, stop_idx):
         label_map = self.processor.get_label_map(self.processor.label_names)
         for idx in range(batch_size):
             if idx == stop_idx:
                 break
             print("---- Verify Tokens and Labels are Correctly Corresponded ----")
-            tokens = self.tokenizer.convert_ids_to_tokens(batch['input_ids'][idx])
+            tokens = self.tokenizer.convert_ids_to_tokens(batch["input_ids"][idx])
             labels = [
-                label_map["id2label"][str(label)] if label != -100 else "[NONE]" 
-                for label in batch['labels'][idx].numpy()
+                label_map["id2label"][str(label)] if label != -100 else "[NONE]"
+                for label in batch["labels"][idx].numpy()
             ]
 
             token_to_label = [(token, label) for token, label in zip(tokens, labels)]
             print(token_to_label, end="\n")
+
 
 if "__main__" == __name__:
     dataset = load_dataset("klue", "ner")
@@ -135,9 +138,13 @@ if "__main__" == __name__:
     conll_ner_dataset = dataset.rename_column("ner_tags", "labels")
     conll_pos_dataset = dataset.rename_column("pos_tags", "labels")
 
-    bert_conll_ner_test = TestDataTokenClassification("bert-base-cased", conll_ner_dataset)
+    bert_conll_ner_test = TestDataTokenClassification(
+        "bert-base-cased", conll_ner_dataset
+    )
     bert_conll_ner_test(32, 64)
-    bert_conll_pos_test = TestDataTokenClassification("bert-base-cased", conll_pos_dataset)
+    bert_conll_pos_test = TestDataTokenClassification(
+        "bert-base-cased", conll_pos_dataset
+    )
     bert_conll_pos_test(32, 64)
 
     # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)

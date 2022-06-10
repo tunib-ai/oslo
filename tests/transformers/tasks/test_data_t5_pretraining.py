@@ -6,6 +6,7 @@ from oslo.transformers.tasks.data_t5_pretraining import (
     DataCollatorForT5Pretraining,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+
 try:
     from datasets import load_dataset
 except ImportError:
@@ -16,7 +17,7 @@ class TestDataT5Pretraining(TestDataBinarization):
     def __init__(
         self,
         model_name,
-        parallel_context = None,
+        parallel_context=None,
     ):
         self.processor = ProcessorForT5Pretraining(model_name)
         self.data_collator = DataCollatorForT5Pretraining(self.processor)
@@ -33,12 +34,15 @@ class TestDataT5Pretraining(TestDataBinarization):
         dataset,
         mlm_probability=0.15,
         mean_noise_span_length=3,
-        batch_size = 1024,
-        pad_to_multiple_of = None,
-        batch_check_num_sample = 2,
-        batch_check_tokens = False,
+        batch_size=1024,
+        pad_to_multiple_of=None,
+        batch_check_num_sample=2,
+        batch_check_tokens=False,
     ):
-        self.processor._chunk_size, self.processor.target_chunk_size = self.processor.compute_input_and_target_lengths(
+        (
+            self.processor._chunk_size,
+            self.processor.target_chunk_size,
+        ) = self.processor.compute_input_and_target_lengths(
             max_length, mlm_probability, mean_noise_span_length
         )
         self.data_collator.input_length = max_length
@@ -55,12 +59,10 @@ class TestDataT5Pretraining(TestDataBinarization):
             f"Batch size: {batch_size}",
             f"MLM probability: {mlm_probability}",
             f"Mean noise span length: {mean_noise_span_length}\n",
-            sep="\n"
+            sep="\n",
         )
         processed_dataset = dataset.map(
-            self.processor,
-            batched=True,
-            remove_columns = dataset['train'].column_names
+            self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
         processed_dataset.cleanup_cache_files()
 
@@ -70,44 +72,46 @@ class TestDataT5Pretraining(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset["train"],
+            batch_size,
+            shuffle=True,
+            collate_fn=self.data_collator,
         )
-        
+
         batch = next(iter(dataloader))
         self._batch_check(
-            batch, 
-            num_samples=batch_check_num_sample, 
-            check_token=batch_check_tokens, 
-            additional_special_ids=additional_special_ids
+            batch,
+            num_samples=batch_check_num_sample,
+            check_token=batch_check_tokens,
+            additional_special_ids=additional_special_ids,
         )
 
         self._length_check(
-            dataloader, 
-            "input_ids", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=True
+            dataloader,
+            "input_ids",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=True,
         )
 
         self._length_check(
-            dataloader, 
-            "labels", 
-            self.processor.target_chunk_size, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=True
+            dataloader,
+            "labels",
+            self.processor.target_chunk_size,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=True,
         )
 
-        self.mask_ratio_check(
-            dataloader, min_additional_special_id
-        )
+        self.mask_ratio_check(dataloader, min_additional_special_id)
 
         if self.parallel_context is not None:
             self._test_sp_collator(processed_dataset, batch_size)
-        
-        print("---------- Test Pass ----------\n")
-    
 
-    def _batch_check(self, batch, num_samples, check_token, additional_special_ids) -> None:
+        print("---------- Test Pass ----------\n")
+
+    def _batch_check(
+        self, batch, num_samples, check_token, additional_special_ids
+    ) -> None:
         print("--------- batch check ---------\n")
         print(f"batch keys: {', '.join([key for key in batch.keys()])}\n")
         for key, value in batch.items():
@@ -126,7 +130,7 @@ class TestDataT5Pretraining(TestDataBinarization):
                         continue
                     print(f"labels decode: \n{self.tokenizer.decode(value[idx])}\n")
                     labels = value[idx]
-        
+
             text = []
             for input_id in input_ids:
                 if input_id not in additional_special_ids:
@@ -140,25 +144,28 @@ class TestDataT5Pretraining(TestDataBinarization):
                         else:
                             labels = labels[label_idx:]
                             break
-            
+
             print(f"text: \n{self.tokenizer.decode(text)}\nlength: {len(text)}\n")
 
             if check_token:
-                print(f"tokens: \n{self.tokenizer.convert_ids_to_tokens(batch['input_ids'][idx])}\n")
-    
+                print(
+                    f"tokens: \n{self.tokenizer.convert_ids_to_tokens(batch['input_ids'][idx])}\n"
+                )
 
     def mask_ratio_check(self, dataloader, min_additional_special_id):
         for batch in dataloader:
-            batch_size, input_seq_length = batch['input_ids'].size()
-            label_seq_length = batch['labels'].size(1)
+            batch_size, input_seq_length = batch["input_ids"].size()
+            label_seq_length = batch["labels"].size(1)
 
-            num_mask_span = torch.sum(batch['labels'] >= min_additional_special_id)
+            num_mask_span = torch.sum(batch["labels"] >= min_additional_special_id)
             num_input_ids = batch_size * (input_seq_length - 1) - num_mask_span
             num_labels = batch_size * (label_seq_length - 1) - num_mask_span
             num_total = num_input_ids + num_labels
             mlm_probability = num_labels / num_total
-            assert(
-                torch.isclose(mlm_probability, torch.tensor(self.data_collator.noise_density), atol=0.005)
+            assert torch.isclose(
+                mlm_probability,
+                torch.tensor(self.data_collator.noise_density),
+                atol=0.005,
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.noise_density})"
 
         print(f"MLM Probability: {mlm_probability:.6f}")

@@ -6,6 +6,7 @@ from oslo.transformers.tasks.data_causal_lm import (
     DataCollatorForCausalLM,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+
 try:
     from datasets import load_dataset
 except ImportError:
@@ -16,7 +17,7 @@ class TestDataCausalLM(TestDataBinarization):
     def __init__(
         self,
         model_name,
-        parallel_context = None,
+        parallel_context=None,
     ):
         self.processor = ProcessorForCausalLM(model_name)
         self.data_collator = DataCollatorForCausalLM(self.processor)
@@ -29,15 +30,15 @@ class TestDataCausalLM(TestDataBinarization):
 
     def __call__(
         self,
-        max_length, 
+        max_length,
         dataset,
-        batch_size = 1024,
-        pad_to_multiple_of = None,
-        batch_check_num_sample = 2,
-        batch_check_tokens = False,
-        must_be_equal_to_max_length = True,
-        ):
-        
+        batch_size=1024,
+        pad_to_multiple_of=None,
+        batch_check_num_sample=2,
+        batch_check_tokens=False,
+        must_be_equal_to_max_length=True,
+    ):
+
         self.processor._chunk_size = max_length
         self.data_collator.pad_to_multiple_of = pad_to_multiple_of
 
@@ -47,12 +48,10 @@ class TestDataCausalLM(TestDataBinarization):
             f"Max Length: {max_length}",
             f"Batch size: {batch_size}",
             f"Pad to multiple of: {pad_to_multiple_of}\n",
-            sep="\n"
+            sep="\n",
         )
         processed_dataset = dataset.map(
-            self.processor,
-            batched=True,
-            remove_columns = dataset['train'].column_names
+            self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
         processed_dataset.cleanup_cache_files()
 
@@ -62,32 +61,35 @@ class TestDataCausalLM(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset["train"],
+            batch_size,
+            shuffle=True,
+            collate_fn=self.data_collator,
         )
-        
+
         batch = next(iter(dataloader))
         self._batch_check(
             batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
         )
 
         self._length_check(
-            dataloader, 
-            "input_ids", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=must_be_equal_to_max_length
+            dataloader,
+            "input_ids",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
         self._length_check(
-            dataloader, 
-            "labels", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=must_be_equal_to_max_length
+            dataloader,
+            "labels",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
         if self.parallel_context is not None:
             self._test_sp_collator(processed_dataset, batch_size)
-        
+
         print("---------- Test Pass ----------\n")
 
 
@@ -96,8 +98,8 @@ if "__main__" == __name__:
     dataset = dataset.rename_column("sentence", "text")
 
     gpt2_test = TestDataCausalLM("gpt2")
-    gpt2_test(256, dataset, 1024, 3)
     gpt2_test(512, dataset, 1024)
+    gpt2_test(256, dataset, 1024, 3)
 
     bart_test = TestDataCausalLM("facebook/bart-base")
     bart_test(64, dataset, 32)

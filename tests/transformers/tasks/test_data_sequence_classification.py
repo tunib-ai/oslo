@@ -5,6 +5,7 @@ from oslo.transformers.tasks.data_sequence_classification import (
     DataCollatorForSequenceClassification,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+
 try:
     from datasets import load_dataset
 except ImportError:
@@ -15,11 +16,12 @@ except ImportError:
 
 # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
 
+
 class TestDataSequenceClassification(TestDataBinarization):
     def __init__(
         self,
         model_name,
-        parallel_context = None,
+        parallel_context=None,
     ):
         self.processor = ProcessorForSequenceClassification(model_name)
         self.data_collator = DataCollatorForSequenceClassification(self.processor)
@@ -32,13 +34,13 @@ class TestDataSequenceClassification(TestDataBinarization):
 
     def __call__(
         self,
-        max_length, 
+        max_length,
         dataset,
-        batch_size = 1024,
-        pad_to_multiple_of = None,
-        batch_check_num_sample = 2,
-        batch_check_tokens = False,
-        must_be_equal_to_max_length = False,
+        batch_size=1024,
+        pad_to_multiple_of=None,
+        batch_check_num_sample=2,
+        batch_check_tokens=False,
+        must_be_equal_to_max_length=False,
     ):
         self.processor._chunk_size = max_length
         self.processor._max_length = max_length
@@ -50,12 +52,10 @@ class TestDataSequenceClassification(TestDataBinarization):
             f"Max Length: {max_length}",
             f"Batch size: {batch_size}",
             f"Pad to multiple of: {pad_to_multiple_of}\n",
-            sep="\n"
+            sep="\n",
         )
         processed_dataset = dataset.map(
-            self.processor,
-            batched=True,
-            remove_columns = dataset['train'].column_names
+            self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
         processed_dataset.cleanup_cache_files()
 
@@ -65,26 +65,30 @@ class TestDataSequenceClassification(TestDataBinarization):
             print("pad_token is set.")
 
         dataloader = DataLoader(
-            processed_dataset['train'], batch_size, shuffle=True, collate_fn=self.data_collator
+            processed_dataset["train"],
+            batch_size,
+            shuffle=True,
+            collate_fn=self.data_collator,
         )
-        
+
         batch = next(iter(dataloader))
         self._batch_check(
             batch, num_samples=batch_check_num_sample, check_token=batch_check_tokens
         )
 
         self._length_check(
-            dataloader, 
-            "input_ids", 
-            max_length, 
-            pad_to_multiple_of, 
-            must_be_equal_to_max_length=must_be_equal_to_max_length
+            dataloader,
+            "input_ids",
+            max_length,
+            pad_to_multiple_of,
+            must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
         if self.parallel_context is not None:
             self._test_sp_collator(processed_dataset, batch_size)
-        
+
         print("---------- Test Pass ----------\n")
+
 
 if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")

@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Union, Any
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
+
 try:
     from transformers import DataCollatorForLanguageModeling
     from transformers.tokenization_utils import BatchEncoding
@@ -49,7 +50,9 @@ class ProcessorForRobertaPretraining(BaseProcessor):
                     add_special_tokens=True,
                 )
 
-                training_example["special_tokens_mask"] = self._tokenizer.get_special_tokens_mask(
+                training_example[
+                    "special_tokens_mask"
+                ] = self._tokenizer.get_special_tokens_mask(
                     training_example["input_ids"], already_has_special_tokens=True
                 )
 
@@ -76,19 +79,32 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
         super().__init__(
-            tokenizer=processor._tokenizer, mlm=True, mlm_probability=mlm_probability, pad_to_multiple_of=pad_to_multiple_of
+            tokenizer=processor._tokenizer,
+            mlm=True,
+            mlm_probability=mlm_probability,
+            pad_to_multiple_of=pad_to_multiple_of,
         )
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
-    
-    def __call__(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
+
+    def __call__(
+        self, examples: List[Union[List[int], Any, Dict[str, Any]]]
+    ) -> Dict[str, Any]:
         if isinstance(examples[0], (dict, BatchEncoding)):
-            batch = self.tokenizer.pad(examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of)
+            batch = self.tokenizer.pad(
+                examples,
+                return_tensors="pt",
+                pad_to_multiple_of=self.pad_to_multiple_of,
+            )
         else:
             batch = {
-                "input_ids": _torch_collate_batch(examples, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of)
+                "input_ids": _torch_collate_batch(
+                    examples, self.tokenizer, pad_to_multiple_of=self.pad_to_multiple_of
+                )
             }
 
         # If special token mask has been preprocessed, pop it from the dict.
@@ -96,7 +112,7 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
-        
+
         if self.parallel_context is None:
             return batch
         else:
@@ -104,18 +120,28 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
                 batch_size, seq_length = value.size()
 
                 if seq_length % self.local_world_size != 0:
-                    required_length = ((seq_length // self.local_world_size) + 1) * self.local_world_size
+                    required_length = (
+                        (seq_length // self.local_world_size) + 1
+                    ) * self.local_world_size
                     difference = required_length - seq_length
 
                     if key == "labels":
-                        pads = torch.full([batch_size, difference], fill_value=-100, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=-100, dtype=value.dtype
+                        )
                     elif key == "attention_mask":
-                        pads = torch.full([batch_size, difference], fill_value=0, dtype=value.dtype)
+                        pads = torch.full(
+                            [batch_size, difference], fill_value=0, dtype=value.dtype
+                        )
                     else:
-                        pads = torch.full([batch_size, difference], fill_value=self.tokenizer.pad_token_id, dtype=value.dtype)
-                    
+                        pads = torch.full(
+                            [batch_size, difference],
+                            fill_value=self.tokenizer.pad_token_id,
+                            dtype=value.dtype,
+                        )
+
                     value = torch.cat([value, pads], axis=1)
-                
+
                 value = value.chunk(
                     self.local_world_size,
                     dim=1,
@@ -123,8 +149,7 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
 
                 if not value.is_contiguous():
                     value = value.contiguous()
-                
+
                 batch[key] = value
 
             return batch
-    
