@@ -168,13 +168,13 @@ class TensorParallel(ParallelWrapper):
                     )
                     module.weight.data = new_weight
                     module.out_features = new_out_features
-                setattr(
-                    unwrapped_model,
-                    f"orig_{param_name.split('.')[-1]}_num_classes",
-                    out_features,
-                )
-                if hasattr(unwrapped_model, "num_labels"):
-                    unwrapped_model.num_labels = new_out_features
+                    setattr(
+                        unwrapped_model,
+                        f"orig_{param_name.split('.')[-1]}_num_classes",
+                        out_features,
+                    )
+                    if hasattr(unwrapped_model, "num_labels"):
+                        unwrapped_model.num_labels = new_out_features
         return model
 
     def _remove_embeddings(self, model, parallel_context):
