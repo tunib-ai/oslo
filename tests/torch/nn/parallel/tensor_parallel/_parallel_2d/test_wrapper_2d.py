@@ -4,7 +4,14 @@ from datasets import load_dataset
 import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
+from transformers import (
+    AutoTokenizer,
+    GPT2Config,
+    GPT2LMHeadModel,
+    GPTJConfig,
+    GPTJForCausalLM,
+    GPT2ForSequenceClassification,
+)
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
@@ -19,11 +26,27 @@ parallel_context = ParallelContext.from_torch(
 )
 
 # 토크나이저 생성
+# tokenizer = AutoTokenizer.from_pretrained(
+#   'kakaobrain/kogpt', revision='KoGPT6B-ryan1.5b',  # or float32 version: revision=KoGPT6B-ryan1.5b
+#   bos_token='[BOS]', eos_token='[EOS]', unk_token='[UNK]', pad_token='[PAD]', mask_token='[MASK]'
+# )
+# model_no_tp = GPTJForCausalLM(
+#     GPTJConfig.from_pretrained(
+#   'kakaobrain/kogpt', revision='KoGPT6B-ryan1.5b',  # or float32 version: revision=KoGPT6B-ryan1.5b
+#   pad_token_id=tokenizer.eos_token_id,
+# )).cuda()
+# model_tp = GPTJForCausalLM(
+#     GPTJConfig.from_pretrained(
+#   'kakaobrain/kogpt', revision='KoGPT6B-ryan1.5b',  # or float32 version: revision=KoGPT6B-ryan1.5b
+#   pad_token_id=tokenizer.eos_token_id,
+# ))
 tokenizer = AutoTokenizer.from_pretrained("gpt2")
 tokenizer.pad_token = tokenizer.eos_token
-# 모델 생성 및 병렬화 수행
-model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")).cuda()
-model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
+# # 모델 생성 및 병렬화 수행
+model_no_tp = GPT2ForSequenceClassification(GPT2Config.from_pretrained("gpt2", num_labels=3)).cuda()
+model_no_tp.config.pad_token_id = tokenizer.pad_token_id
+model_tp = GPT2ForSequenceClassification(GPT2Config.from_pretrained("gpt2", num_labels=3))
+model_tp.config.pad_token_id = tokenizer.pad_token_id
 wrapper_tp = TensorParallel(model_tp, parallel_context)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정

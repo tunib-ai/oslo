@@ -125,8 +125,8 @@ class ColumnParallelLinear(Linear):
         gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.parallel_context = parallel_context
         self.gather_output = gather_output
+        self.parallel_context = parallel_context
         self.reversed = False
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -143,7 +143,6 @@ class ColumnParallelLinear(Linear):
         )
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-        # to avoid circular import
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             all_gather_1d,
             broadcast_1d,
@@ -193,7 +192,6 @@ class RowParallelLinear(Linear):
         )
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-        # to avoid circular import
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             all_reduce_1d,
             scatter_1d,
@@ -235,8 +233,8 @@ class Linear2D(Linear):
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
         assert (
-            out_features % (self.summa_dim**2) == 0
-        ), "out_features must be divisible by summa dim^2."
+            out_features % self.summa_dim == 0
+        ), "out_features must be divisible by summa dim."
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)

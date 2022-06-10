@@ -1,5 +1,4 @@
 import copy
-from re import L
 
 import torch
 import torch.nn as nn
@@ -92,6 +91,7 @@ class _TensorParallel2D(ParallelWrapper):
         self._parallelize_embedding()
         self._parallelize_linear()
         self._parallelize_layernorm()
+        self._parallelize_head()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
     def _update_mp_arguments(self):
@@ -101,6 +101,9 @@ class _TensorParallel2D(ParallelWrapper):
                     summa_dim = self.parallel_context.get_world_size(
                         ParallelMode.TENSOR_2D_COL
                     )
+                    assert (
+                        getattr(module, elem.name) % summa_dim == 0
+                    ), f"{elem.name} must be divisible by summa_dim."
                     reduced_arg = getattr(module, elem.name) // summa_dim
                     setattr(module, elem.name, reduced_arg)
 
@@ -126,7 +129,6 @@ class _TensorParallel2D(ParallelWrapper):
                     ),
                     slice_bias=True,
                 )
-                module.__class__ = Linear2D
 
     def _parallelize_layernorm(self):
         for module in self.module.modules():
@@ -134,7 +136,16 @@ class _TensorParallel2D(ParallelWrapper):
                 self._slice_layernorm(
                     module=module,
                 )
-                module.__class__ = LayerNorm2D
+
+    def _parallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(self.module, param_name):
+                self._slice_head(
+                    module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                        self.module, param_name
+                    ),
+                )
 
     @staticmethod
     def _deconstruct_combined_qkv(tensor, summa_dim, fusion_degree):
@@ -159,17 +170,6 @@ class _TensorParallel2D(ParallelWrapper):
         summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 
         if module is self.module.get_input_embeddings():
-            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-            pipeline_parallel_rank = self.parallel_context.get_local_rank(
-                ParallelMode.PIPELINE
-            )
-            tensor_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.TENSOR
-            )
-            pipeline_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.PIPELINE
-            )
-
             (
                 vocab_start_index,
                 vocab_end_index,
@@ -205,44 +205,6 @@ class _TensorParallel2D(ParallelWrapper):
 
             if isinstance(module, Embedding):
                 module.__class__ = VocabParallelEmbedding2D
-
-            for name, _module in self.module.named_modules():
-                if self.tensor_parallel_mapping.is_lm_head(self.module, name):
-                    if _module.weight is not module.weight:
-                        self._slice_linear(
-                            module=_module,
-                            reversed=self.tensor_parallel_mapping.is_reversed_param(
-                                self.module, name
-                            ),
-                            fusion_degree=1,
-                            slice_bias=False,
-                        )
-                    _update_module_arguments(
-                        module=_module,
-                        parallel_context=self.parallel_context,
-                        row_rank=row_rank,
-                        col_rank=col_rank,
-                        summa_dim=summa_dim,
-                        data_parallel_rank=data_parallel_rank,
-                        pipeline_parallel_rank=pipeline_parallel_rank,
-                        tensor_parallel_size=tensor_parallel_size,
-                        pipeline_parallel_size=pipeline_parallel_size,
-                        reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
-                        ),
-                        fusion_degree=1,
-                        orig_module=copy.deepcopy(_module.__class__),
-                        gather_output=not is_oslo_model(self.module),
-                        in_features=module.weight.size()[1],
-                        out_features=module.weight.size()[0],
-                        bias=None,
-                    )
-                    if isinstance(_module, nn.Linear):
-                        _module.__class__ = Linear2D
-                    else:
-                        raise RuntimeError("Classifier layer must be `nn.Linear` class")
-                    break
-
         else:
             weight_list = module.weight.data.chunk(summa_dim, dim=1)
             weight_list = [weight.chunk(summa_dim, dim=1) for weight in weight_list]
@@ -281,25 +243,6 @@ class _TensorParallel2D(ParallelWrapper):
             ParallelMode.PIPELINE
         )
 
-        _update_module_arguments(
-            module=module,
-            parallel_context=self.parallel_context,
-            row_rank=row_rank,
-            col_rank=col_rank,
-            summa_dim=summa_dim,
-            data_parallel_rank=data_parallel_rank,
-            pipeline_parallel_rank=pipeline_parallel_rank,
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
-            reversed=reversed,
-            fusion_degree=fusion_degree,
-            orig_module=copy.deepcopy(module.__class__),
-            skip_bias_add=module.skip_bias_add
-            if hasattr(module, "skip_bias_add")
-            else False,
-            gather_output=False,
-        )
-
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
                 if reversed:
@@ -329,12 +272,6 @@ class _TensorParallel2D(ParallelWrapper):
                         ParallelMode.TENSOR_2D_COL: col_rank,
                     }
 
-            _update_module_arguments(
-                module=module,
-                in_features=module.weight.size()[1],
-                out_features=module.weight.size()[0],
-            )
-
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
                 bias_list = module.bias.chunk(summa_dim, dim=0)
@@ -360,6 +297,28 @@ class _TensorParallel2D(ParallelWrapper):
                         ParallelMode.TENSOR_2D_COL: col_rank,
                     }
 
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            row_rank=row_rank,
+            col_rank=col_rank,
+            summa_dim=summa_dim,
+            data_parallel_rank=data_parallel_rank,
+            pipeline_parallel_rank=pipeline_parallel_rank,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+            gather_output=False,
+            orig_module=copy.deepcopy(module.__class__),
+        )
+
+        module.__class__ = Linear2D
         return module
 
     def _slice_layernorm(self, module):
@@ -374,19 +333,6 @@ class _TensorParallel2D(ParallelWrapper):
         tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
         pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
-        )
-
-        _update_module_arguments(
-            module=module,
-            parallel_context=self.parallel_context,
-            row_rank=row_rank,
-            col_rank=col_rank,
-            summa_dim=summa_dim,
-            data_parallel_rank=data_parallel_rank,
-            pipeline_parallel_rank=pipeline_parallel_rank,
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
-            orig_module=copy.deepcopy(module.__class__),
         )
 
         if hasattr(module, "weight") and module.weight is not None:
@@ -423,6 +369,63 @@ class _TensorParallel2D(ParallelWrapper):
             module=module,
             normalized_shape=module.weight.size()[0] * (summa_dim**2),
             partitioned_dim=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            row_rank=row_rank,
+            col_rank=col_rank,
+            summa_dim=summa_dim,
+            data_parallel_rank=data_parallel_rank,
+            pipeline_parallel_rank=pipeline_parallel_rank,
+            tensor_parallel_size=tensor_parallel_size,
+            pipeline_parallel_size=pipeline_parallel_size,
+            orig_module=copy.deepcopy(module.__class__),
         )
-
+        module.__class__ = LayerNorm2D
         return module
+
+    def _slice_head(self, module, reversed):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            self._slice_linear(
+                module=module,
+                reversed=reversed,
+                fusion_degree=1,
+                slice_bias=True,
+            )
+        else:
+            row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
+            col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
+            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+            pipeline_parallel_rank = self.parallel_context.get_local_rank(
+                ParallelMode.PIPELINE
+            )
+            tensor_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR
+            )
+            pipeline_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.PIPELINE
+            )
+            _update_module_arguments(
+                module=module,
+                in_features=module.weight.size()[1],
+                out_features=module.weight.size()[0],
+                parallel_context=self.parallel_context,
+                row_rank=row_rank,
+                col_rank=col_rank,
+                summa_dim=summa_dim,
+                data_parallel_rank=data_parallel_rank,
+                pipeline_parallel_rank=pipeline_parallel_rank,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                reversed=reversed,
+                fusion_degree=1,
+                skip_bias_add=module.skip_bias_add
+                if hasattr(module, "skip_bias_add")
+                else False,
+                gather_output=not is_oslo_model(self.module),
+                orig_module=copy.deepcopy(module.__class__),
+            )
+        if isinstance(module, nn.Linear):
+            module.__class__ = Linear2D
+        else:
+            raise RuntimeError("Classifier layer must be `nn.Linear` class")

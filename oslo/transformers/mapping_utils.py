@@ -73,7 +73,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
-            Head("cls"),
+            Head("decoder", "seq_relationship", "classifier", "qa_outputs"),
         ],
         "Blenderbot": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
@@ -98,7 +98,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("c_fc", "q_attn", reverse=True),
             Row("c_proj", reverse=True),
             Update("embed_dim", "split_size", "num_heads"),
-            Head("lm_head"),
+            Head("lm_head", "score", "classifier", "summary"),
         ],
         "GPTNeo": [
             Column("q_proj", "k_proj", "v_proj", "c_fc"),
@@ -122,7 +122,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
-            Head("lm_head"),
+            Head("lm_head.decoder", "out_proj"),
         ],
     }
 

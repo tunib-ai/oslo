@@ -61,6 +61,7 @@ class _AllGather1D(torch.autograd.Function):
                 grad,
                 dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
             None,
@@ -77,6 +78,7 @@ class _Scatter1D(torch.autograd.Function):
                 inputs,
                 dim=dim,
                 parallel_context=parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
         )
@@ -87,6 +89,7 @@ class _Scatter1D(torch.autograd.Function):
                 grad,
                 dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
             None,

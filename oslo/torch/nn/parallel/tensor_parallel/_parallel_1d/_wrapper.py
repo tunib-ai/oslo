@@ -110,6 +110,13 @@ class _TensorParallel1D(ParallelWrapper):
                 )
                 module.__class__ = RowParallelLinear
 
+    def _parallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(self.module, param_name):
+                self._slice_embedding(
+                    module=module,
+                )
+
     @staticmethod
     def _deconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
         tensor = [
@@ -152,7 +159,7 @@ class _TensorParallel1D(ParallelWrapper):
                 module.__class__ = VocabParallelEmbedding1D
 
             for name, _module in self.module.named_modules():
-                if self.tensor_parallel_mapping.is_lm_head(self.module, name):
+                if self.tensor_parallel_mapping.is_head(self.module, name):
                     if _module.weight is not module.weight:
                         self._slice_linear(
                             module=_module,
@@ -181,7 +188,14 @@ class _TensorParallel1D(ParallelWrapper):
                     else:
                         raise RuntimeError("Classifier layer must be `nn.Linear` class")
 
-    def _slice_linear(self, module, reversed, fusion_degree, slice_bias, dim):
+    def _slice_linear(
+        self,
+        module: nn.Module,
+        reversed: bool,
+        fusion_degree: int,
+        slice_bias: bool,
+        dim: int,
+    ):
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
 
