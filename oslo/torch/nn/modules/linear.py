@@ -120,8 +120,8 @@ class ColumnParallelLinear(Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        skip_bias_add: bool = False,
         dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
         gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
@@ -171,8 +171,8 @@ class RowParallelLinear(Linear):
         out_features: int,
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
-        parallel_input: bool = True,
         skip_bias_add: bool = False,
+        parallel_input: bool = True,
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_input = parallel_input

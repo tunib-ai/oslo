@@ -27,7 +27,7 @@ class TensorParallelInfo(object):
 Column = type("Column", (TensorParallelInfo,), {})
 Row = type("Row", (TensorParallelInfo,), {})
 Update = type("Update", (TensorParallelInfo,), {})
-LMHead = type("LMHead", (TensorParallelInfo,), {})
+Head = type("Head", (TensorParallelInfo,), {})
 
 
 class TensorParallelMapping(object):
@@ -230,7 +230,7 @@ class TensorParallelMapping(object):
         if elem is not None:
             return isinstance(elem, Row)
 
-    def is_lm_head(self, model, param_name):
+    def is_head(self, model, param_name):
         """
         Check whether the parameter is lm head or not
 
@@ -243,4 +243,4 @@ class TensorParallelMapping(object):
         """
         elem = self.search(model, param_name)
         if elem is not None:
-            return isinstance(elem, LMHead)
+            return isinstance(elem, Head)

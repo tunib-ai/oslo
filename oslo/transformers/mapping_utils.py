@@ -6,7 +6,7 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 import oslo
-from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update, LMHead
+from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update, Head
 from oslo.torch.nn.parallel.expert_parallel.mapping import Front, Behind
 
 
@@ -61,68 +61,68 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("query", "key", "value", "ffn"),
             Row("attention.dense", "ffn_output"),
             Update("num_attention_heads", "all_head_size"),
-            LMHead("predictions"),
+            Head("predictions"),
         ],
         "Bart": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "Bert": [
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
-            LMHead("cls"),
+            Head("cls"),
         ],
         "Blenderbot": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "BlenderbotSmall": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "T5": [
             Column("q", "k", "v", "DenseReluDense.wi"),
             Row("o", "DenseReluDense.wo", "relative_attention_bias"),
             Update("d_model", "n_heads", "inner_dim"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "GPT2": [
             Column("c_attn", reverse=True, combined_qkv=True),
             Column("c_fc", "q_attn", reverse=True),
             Row("c_proj", reverse=True),
             Update("embed_dim", "split_size", "num_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "GPTNeo": [
             Column("q_proj", "k_proj", "v_proj", "c_fc"),
             Row("out_proj", "c_proj"),
             Update("embed_dim", "num_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "GPTJ": [
             Column("q_proj", "k_proj", "v_proj", "fc_in"),
             Row("out_proj", "fc_out"),
             Update("embed_dim", "num_attention_heads"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
         "Electra": [
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
-            LMHead("generator_lm_head"),
+            Head("generator_lm_head"),
         ],
         "Roberta": [
             Column("query", "key", "value", "intermediate.dense"),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
-            LMHead("lm_head"),
+            Head("lm_head"),
         ],
     }
 
