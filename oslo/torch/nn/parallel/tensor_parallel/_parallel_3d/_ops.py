@@ -1,18 +1,34 @@
-from lib2to3.pgen2.token import OP
 from typing import Any, Tuple, Optional
 
 import torch
 from torch import Tensor
+import torch.distributed as dist
 from torch.cuda.amp import custom_bwd, custom_fwd
 
-from oslo.torch.distributed import ParallelContext, ParallelMode, parallel_context
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.distributed.nn.functional import (
     all_gather,
     all_reduce,
-    reduce_scatter,
     broadcast,
     reduce,
+    reduce_scatter,
 )
+
+
+def transpose_3d(tensor, parallel_context: ParallelContext):
+    cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+    i = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
+    j = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+    l = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+    group = parallel_context.get_group(ParallelMode.TENSOR_3D)
+    rank = parallel_context.get_ranks_in_group(ParallelMode.TENSOR_3D)[
+        i + l * cubic_dim + j * (cubic_dim**2)
+    ]
+    if j != l:
+        dist.send(tensor, dst=rank, group=group)
+        dist.recv(tensor, src=rank, group=group)
+    return tensor
+
 
 class Matmul_AB_3D(torch.autograd.Function):
     @staticmethod
@@ -173,6 +189,8 @@ class Matmul_ABT_3D(torch.autograd.Function):
         if bias is not None:
             output += bias
 
+        output = transpose_3d(output, parallel_context=parallel_context)
+
         if ctx:
             ctx.save_for_backward(inputs, weight)
             ctx.use_bias = bias is not None
@@ -191,6 +209,10 @@ class Matmul_ABT_3D(torch.autograd.Function):
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
         inputs, weight = ctx.saved_tensors
         with torch.no_grad():
+            output_grad = transpose_3d(
+                output_grad, parallel_context=ctx.parallel_context
+            )
+
             output_grad = all_gather(
                 output_grad,
                 ctx.output_dim,
@@ -731,7 +753,7 @@ def split_batch_3d(
 
     assert (
         dim_size % (input_world_size * weight_world_size) == 0
-    ), f"The batch size ({dim_size}) is not a multiple of square of 3D depth ({input_world_size*weight_world_size})."
+    ), f"The batch size ({dim_size}) is not a multiple of square of 3D cubic dim ({input_world_size*weight_world_size})."
 
     if inputs.size(dim) <= 1:
         return inputs
@@ -877,7 +899,7 @@ def reduce_scatter_tensor_3d(
     world_size = parallel_context.get_world_size(parallel_mode)
     assert (
         dim_size % world_size == 0
-    ), f"The batch size ({dim_size}) is not a multiple of square of 3D depth ({world_size})."
+    ), f"The batch size ({dim_size}) is not a multiple of square of 3D cubic dim ({world_size})."
 
     return _ReduceScatterTensor3D.apply(tensor, dim, parallel_context, parallel_mode)
 
@@ -991,9 +1013,9 @@ class _BroadcastWeight3D_FromDiagonal(torch.autograd.Function):
             parallel_context=ctx.parallel_context,
             parallel_mode=ctx.input_parallel_mode,
         )
-        if parallel_context.get_local_rank(
+        if ctx.parallel_context.get_local_rank(
             ctx.input_parallel_mode
-        ) == parallel_context.get_local_rank(ctx.output_parallel_mode):
+        ) == ctx.parallel_context.get_local_rank(ctx.output_parallel_mode):
             input_grad = all_reduce(
                 input_grad,
                 parallel_context=ctx.parallel_context,
