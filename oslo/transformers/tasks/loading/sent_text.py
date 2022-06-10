@@ -5,7 +5,7 @@ from typing import Optional
 import datasets
 import pyarrow as pa
 
-logger = datasets.util.logging.get_logger(__name__)
+logger = datasets.utils.logging.get_logger(__name__)
 
 
 @dataclass
