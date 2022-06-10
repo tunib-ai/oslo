@@ -147,7 +147,7 @@ class TensorParallel(ParallelWrapper):
             ) and isinstance(module, nn.Linear):
                 if module.weight is unwrapped_model.get_input_embeddings().weight:
                     module.out_features = (
-                        unwrapped_model.get_input_embeddings().num_ebeddings
+                        unwrapped_model.get_input_embeddings().num_embeddings
                     )
                 else:
                     out_features, in_features = module.weight.size()
@@ -173,9 +173,6 @@ class TensorParallel(ParallelWrapper):
                     f"orig_{param_name.split('.')[-1]}_num_classes",
                     out_features,
                 )
-                # if torch.distributed.get_rank() == 0:
-                #     import ipdb; ipdb.set_trace()
-                # torch.distributed.barrier()
                 if hasattr(unwrapped_model, "num_labels"):
                     unwrapped_model.num_labels = new_out_features
         return model
