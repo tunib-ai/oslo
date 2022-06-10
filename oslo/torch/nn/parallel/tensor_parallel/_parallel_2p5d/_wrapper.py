@@ -217,7 +217,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 module.__class__ = VocabParallelEmbedding2p5D
 
             for name, _module in self.module.named_modules():
-                if self.tensor_parallel_mapping.is_lm_head(self.module, name):
+                if self.tensor_parallel_mapping.is_head(self.module, name):
                     if _module.weight is not module.weight:
                         self._slice_linear(
                             module=_module,
