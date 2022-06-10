@@ -210,14 +210,12 @@ class DataCollatorForBartPretraining:
         split_points = [
             idx for idx, token in enumerate(ref_tokens) if token in (".", "Ġ.")
         ]
+
         if split_points:
-            prev_point = None
+            prev_point = 0
             for split_point in split_points:
                 split_point += 1
-                if split_sentences:
-                    split_sentences.append(input_ids[prev_point:split_point])
-                else:
-                    split_sentences.append(input_ids[:split_point])
+                split_sentences.append(input_ids[prev_point:split_point])
                 prev_point = split_point
             split_sentences.append(input_ids[prev_point:])
 
