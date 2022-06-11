@@ -12,7 +12,11 @@ from oslo.torch.nn.modules.embedding import (
 )
 from oslo.torch.nn.modules.linear import Linear2p5D
 from oslo.torch.nn.modules.layer_norm import LayerNorm2p5D
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import split_batch_2p5d
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+    split_batch_2p5d,
+    gather_2d,
+    gather_1d
+)
 
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -452,13 +456,120 @@ class _TensorParallel2p5D(ParallelWrapper):
         self._rollback_mp_arguments()
 
     def _rollback_mp_arguments(self):
-        pass
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    tesseract_dim = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_2P5D_COL
+                    )
+                    reduced_arg = getattr(module, elem.name) * tesseract_dim
+                    setattr(module, elem.name, reduced_arg)
 
     def _deparallelize_embedding(self):
         pass
 
     def _deparallelize_linear(self):
+        # for param_name, module in self.module.named_modules():
+        #     if self.tensor_parallel_mapping.is_column_parallel(
+        #             self.module, param_name
+        #     ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+        #         self._slice_linear(
+        #             module=module,
+        #             reversed=self.tensor_parallel_mapping.is_reversed_param(
+        #                 self.module, param_name
+        #             ),
+        #             fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
+        #                 self.module, param_name, module
+        #             ),
+        #             slice_bias=True,
+        #         )
+        #         module.__class__ = Linear2p5D
+        # TODO: gather this logics
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == Linear2p5D:
+                self._gather_linear(module)
+                module.__class__ = nn.Linear
+
+    def _deparallelize_layernorm(self, module):
         pass
 
-    def _deparallelize_layernorm(self):
+    def _gather_embedding(self, module):
         pass
+
+    def _gather_linear(self, module: Linear2p5D):
+        # , reversed, fusion_degree, slice_bias
+        is_reversed = module.reversed
+        fusion_degree = module.fusion_degree
+        slice_bias = module.slice_bias
+
+        tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+
+        if fusion_degree > 1:
+            w = self._reconstruct_combined_qkv(self.weight.data, tesseract_dim, fusion_degree, False)
+        else:
+            w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
+
+        if is_reversed:
+            w = w.t()
+        module.weight.data = w
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if slice_bias is True and module.bias.dim() >= 1:
+                if fusion_degree > 1:
+                    b = self._reconstruct_combined_qkv(self.bias.data, tesseract_dim, fusion_degree, True)
+                else:
+                    b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+                module.bias.data = b
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            row_rank=None,
+            col_rank=None,
+            dep_rank=None,
+            tesseract_dim=None,
+            data_parallel_rank=None,
+            pipeline_parallel_rank=None,
+            tensor_parallel_size=None,
+            pipeline_parallel_size=None,
+            reversed=None,
+            fusion_degree=None,
+            orig_module=None,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+            gather_output=None,
+        )
+        module.__class__ = nn.Linear
+
+    def _gather_layernorm(self, module):
+        pass
+
+    @staticmethod
+    def _reconstruct_combined_qkv(tensor, tessearct_dim, fusion_degree, is_bias=False):
+        tensor = [
+            [
+                tensor[i][j * tessearct_dim + k]
+                for i in range(tessearct_dim)
+                for k in range(tessearct_dim)
+            ]
+            for j in range(fusion_degree)
+        ]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = [
+            [tensor[i * tessearct_dim + j] for j in range(tessearct_dim)]
+            for i in range(tessearct_dim)
+        ]
+        return tensor
+
+    @staticmethod
+    def _reconstrunct_combined_qkv_bias(tensor, tessearct_dim, fusion_degree):
+        tensor = [
+            [tensor[j * tessearct_dim + k] for k in range(tessearct_dim)]
+            for j in range(fusion_degree)
+        ]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = [tensor[j] for j in range(tessearct_dim)]
+        return tensor
