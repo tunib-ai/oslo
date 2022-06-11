@@ -46,17 +46,17 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/gimmaru>
+            <img src=https://avatars.githubusercontent.com/u/87857169?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=gimmaru/>
+            <br />
+            <sub style="font-size:14px"><b>gimmaru</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/loopinf>
             <img src=https://avatars.githubusercontent.com/u/2896446?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=loopinf/>
             <br />
             <sub style="font-size:14px"><b>loopinf</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jason9693>
-            <img src=https://avatars.githubusercontent.com/u/11185336?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Kevin-Yang/>
-            <br />
-            <sub style="font-size:14px"><b>Kevin-Yang</b></sub>
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
@@ -67,26 +67,26 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/jason9693>
+            <img src=https://avatars.githubusercontent.com/u/11185336?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Kevin-Yang/>
+            <br />
+            <sub style="font-size:14px"><b>Kevin-Yang</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/jinok2im>
             <img src=https://avatars.githubusercontent.com/u/42664793?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jinok Kim/>
             <br />
             <sub style="font-size:14px"><b>Jinok Kim</b></sub>
         </a>
     </td>
+</tr>
+<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/cozytk>
             <img src=https://avatars.githubusercontent.com/u/59143479?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Taekyun Kim/>
             <br />
             <sub style="font-size:14px"><b>Taekyun Kim</b></sub>
-        </a>
-    </td>
-</tr>
-<tr>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/gimmaru>
-            <img src=https://avatars.githubusercontent.com/u/87857169?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=gimmaru/>
-            <br />
-            <sub style="font-size:14px"><b>gimmaru</b></sub>
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
