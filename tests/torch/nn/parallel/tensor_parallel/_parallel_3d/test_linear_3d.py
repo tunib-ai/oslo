@@ -15,10 +15,10 @@ parallel_context = ParallelContext.from_torch(
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 
-batch_size = 8
+batch_size = 4
 seq_len = 2
 input_dim = 4
-hidden_dim = 12
+hidden_dim = 8
 cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 input_ = torch.randn((batch_size, seq_len, input_dim)).cuda()
 target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
@@ -55,21 +55,21 @@ input_ = torch.chunk(input_, cubic_dim, dim=-1)[
 target = torch.chunk(target, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
 ]
-target = torch.chunk(target, cubic_dim, dim=-1)[
+target = torch.chunk(target, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
 ]
-target = torch.chunk(target, cubic_dim, dim=0)[
+target = torch.chunk(target, cubic_dim, dim=-1)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
 ]
 
+w = torch.chunk(w, cubic_dim, dim=-1)[
+    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
+]
 w = torch.chunk(w, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
 ]
 w = torch.chunk(w, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-w = torch.chunk(w, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
 ]
 b = torch.chunk(b, cubic_dim, dim=0)[
     parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
@@ -93,14 +93,14 @@ dist.all_gather(
     pout.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
 )
-pout = torch.cat(pout_list, dim=0)
+pout = torch.cat(pout_list, dim=-1)
 pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
 dist.all_gather(
     pout_list,
     pout.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
 )
-pout = torch.cat(pout_list, dim=-1)
+pout = torch.cat(pout_list, dim=0)
 pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
 dist.all_gather(
     pout_list,
@@ -115,14 +115,14 @@ dist.all_gather(
     pout_update.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
 )
-pout_update = torch.cat(pout_update_list, dim=0)
+pout_update = torch.cat(pout_update_list, dim=-1)
 pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
 dist.all_gather(
     pout_update_list,
     pout_update.contiguous(),
     parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
 )
-pout_update = torch.cat(pout_update_list, dim=-1)
+pout_update = torch.cat(pout_update_list, dim=0)
 pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
 dist.all_gather(
     pout_update_list,

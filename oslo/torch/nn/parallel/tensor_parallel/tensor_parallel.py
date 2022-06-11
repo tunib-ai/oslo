@@ -13,10 +13,17 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._wrapper import (
 from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._wrapper import (
     _TensorParallel2p5D,
 )
+from oslo.torch.nn.parallel.tensor_parallel.mapping import (
+    TensorParallelMapping,
+)
+from oslo.transformers.mapping_utils import (
+    _TensorParallelMappingForHuggingFace,
+)
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
     unwrap_parallel,
     get_parallel_context,
+    is_huggingface_model,
 )
 
 
@@ -64,31 +71,38 @@ class TensorParallel(ParallelWrapper):
         self,
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
+        mapping: dict = None,
     ):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
-        orig_vocab_size, module = self._add_embeddings(module, self.parallel_context)
+        module = self._resize_vocab_size(module, self.parallel_context)
+        module = self._resize_num_classes(module, self.parallel_context, mapping)
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context)
+            self.module = _TensorParallel1D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context)
+            self.module = _TensorParallel2D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context)
+            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
         else:
-            raise ValueError("currently, only 1d tensor parallelism is supported.")
+            raise ValueError(
+                "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
+            )
 
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
 
     @staticmethod
-    def _add_embeddings(model, parallel_context):
-        unwrap = unwrap_parallel(model)
+    def _resize_vocab_size(model, parallel_context):
+        unwrapped_model = unwrap_parallel(model)
 
         assert hasattr(
-            unwrap, "get_input_embeddings"
+            unwrapped_model, "get_input_embeddings"
         ), "model object must have `get_input_embeddings` method."
 
-        input_embeddings = unwrap.get_input_embeddings()
+        module = unwrapped_model.get_input_embeddings()
+
+        vocab_size, embedding_dim = module.weight.size()
+        new_vocab_size = vocab_size
 
         divisible_by = get_divisible_by(parallel_context)
         while new_vocab_size % divisible_by != 0:
@@ -138,7 +152,11 @@ class TensorParallel(ParallelWrapper):
                     out_features, in_features = module.weight.size()
                     new_out_features = out_features
 
+<<<<<<< HEAD
                     while new_out_features % divisible_by != 0:
+=======
+                    while new_out_features % world_size != 0:
+>>>>>>> bb22b9124900fa3163332151d6444a0e4d013fc0
                         new_out_features += 1
 
                     if new_out_features != out_features:

@@ -192,10 +192,13 @@ def reduce(
 
 
 def scatter(
-    tensor: Tensor, dim: int, parallel_context: Optional[ParallelContext] = None
+    tensor: Tensor,
+    dim: int,
+    parallel_context: Optional[ParallelContext] = None,
+    parallel_mode: Optional[ParallelMode] = None,
 ):
-    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-    rank = parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
+    world_size = parallel_context.get_world_size(parallel_mode)
+    rank = parallel_context.get_local_rank(parallel_mode)
 
     if world_size == 1:
         return tensor

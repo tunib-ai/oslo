@@ -2,7 +2,7 @@ import torch
 import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn import ColumnParallelLinear
+from oslo.torch.nn import ColLinear1D
 from _utils import split_1d, gather_1d
 
 
@@ -43,7 +43,7 @@ w = split_1d(parallel_context, w, world_size, dim=0)
 # split bias into 0:[0], 1:[1], 2:[2], 3:[3]
 b = split_1d(parallel_context, b, world_size, dim=0)
 
-col_linear = ColumnParallelLinear(8, 4, parallel_context=parallel_context)
+col_linear = ColLinear1D(8, 4, parallel_context=parallel_context)
 col_linear.weight.data.copy_(w)
 col_linear.bias.data.copy_(b)
 

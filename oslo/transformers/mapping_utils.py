@@ -6,7 +6,7 @@ except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 import oslo
-from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update
+from oslo.torch.nn.parallel.tensor_parallel import Column, Row, Update, Head
 from oslo.torch.nn.parallel.expert_parallel.mapping import Front, Behind
 
 
@@ -59,59 +59,103 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
     __MAPPING__ = {
         "Albert": [
             Column("query", "key", "value", "ffn"),
+            Column(
+                "predictions.dense",
+                "albert.pooler",
+                "embedding_hidden_mapping_in",
+                gather_output=True,
+            ),
             Row("attention.dense", "ffn_output"),
             Update("num_attention_heads", "all_head_size"),
+            Head(
+                "predictions.decoder",
+                "sop_classifier.classifier",
+                "classifier",
+                "qa_outputs",
+            ),
         ],
         "Bart": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
+            Column("classification_head.dense", gather_output=True),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
+            Head("lm_head", "classification_head.out_proj", "qa_outputs"),
         ],
         "Bert": [
             Column("query", "key", "value", "intermediate.dense"),
+            Column("pooler.dense", gather_output=True),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
+            Head("decoder", "seq_relationship", "classifier", "qa_outputs"),
         ],
         "Blenderbot": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
+            Head("lm_head"),
         ],
         "BlenderbotSmall": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
+            Head("lm_head"),
         ],
         "T5": [
             Column("q", "k", "v", "DenseReluDense.wi"),
             Row("o", "DenseReluDense.wo", "relative_attention_bias"),
             Update("d_model", "n_heads", "inner_dim"),
+            Head("lm_head"),
         ],
         "GPT2": [
-            Column("c_attn", reverse=True, combined_qkv=True),
-            Column("c_fc", "q_attn", reverse=True),
-            Row("c_proj", reverse=True),
+            Column("c_attn", reversed=True, combined_qkv=True),
+            Column("c_fc", "q_attn", reversed=True),
+            Row("c_proj", reversed=True),
             Update("embed_dim", "split_size", "num_heads"),
+            Head("lm_head", "score", "classifier", "summary"),
         ],
         "GPTNeo": [
             Column("q_proj", "k_proj", "v_proj", "c_fc"),
             Row("out_proj", "c_proj"),
             Update("embed_dim", "num_heads"),
+            Head("lm_head", "score", "qa_outputs"),
         ],
         "GPTJ": [
             Column("q_proj", "k_proj", "v_proj", "fc_in"),
             Row("out_proj", "fc_out"),
             Update("embed_dim", "num_attention_heads"),
+            Head("lm_head", "score"),
         ],
         "Electra": [
             Column("query", "key", "value", "intermediate.dense"),
+            Column(
+                "electra.embeddings_project",
+                "classifier.dense",
+                "discriminator_predictions.dense",
+                "generator_predictions.dense",
+                gather_output=True,
+            ),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
+            Head(
+                "generator_lm_head",
+                "classifier.out_proj",
+                "discriminator_predictions.dense_prediction",
+                "classifier",
+                "qa_outputs",
+                "summary",
+            ),
         ],
         "Roberta": [
             Column("query", "key", "value", "intermediate.dense"),
+            Column(
+                "lm_head.dense",
+                "classifier.dense",
+                "roberta.pooler",
+                gather_output=True,
+            ),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
+            Head("lm_head.decoder", "classifier.out_proj", "classifier", "qa_outputs"),
         ],
     }
 

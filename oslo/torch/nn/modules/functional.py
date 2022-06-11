@@ -24,6 +24,9 @@ Autograd Functions
 global fused_layer_norm_cuda
 fused_layer_norm_cuda = None
 
+global ngram_repeat_block_cuda
+ngram_repeat_block_cuda = None
+
 
 # Utils from apex
 def _cast_if_autocast_enabled(*args):
@@ -319,6 +322,22 @@ class _FusedScaleMaskSoftmaxFunction(torch.autograd.Function):
         return input_grads, None, None
 
 
+class _NGramRepeatBlockFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size):
+        global ngram_repeat_block_cuda
+        if ngram_repeat_block_cuda is None:
+            from oslo.torch._C import NgramRepeatBlockBinder
+
+            ngram_repeat_block_cuda = NgramRepeatBlockBinder().bind()
+        return ngram_repeat_block_cuda.forward(
+            tokens, lprobs, bsz, step, beam_size, no_repeat_ngram_size
+        )
+
+    def backward(*args):
+        raise NotImplementedError
+
+
 """
 User Functions
 """
@@ -374,19 +393,6 @@ def fused_bias_gelu(x, bias):
 def fused_bias_dropout(x, bias, p, training, inplace):
     # type: (Tensor, Tensor, float, bool, bool) -> Tensor
     return F.dropout(x + bias, p=p, training=training, inplace=inplace)
-
-
-@torch.jit.script
-def fused_bias_dropout_residual(x, bias, residual, p, training, inplace):
-    # type: (Tensor, Tensor, Tensor, float, bool, bool) -> Tensor
-    return F.dropout(x + bias, p=p, training=training, inplace=inplace) + residual
-
-
-@torch.jit.script
-def fused_attention_input_bias(q_out, k_out, v_out, q_bias, k_bias, v_bias):
-    # type: (Tensor, Tensor, Tensor, Tensor, Tensor, Tensor) -> Tuple[Tensor, Tensor, Tensor]
-    # References: `AIB` in https://arxiv.org/abs/2007.00072
-    return q_out + q_bias, k_out + k_bias, v_out + v_bias
 
 
 def _fused_scale_mask_softmax_sanity_check(input, scale, softmax_in_fp32):

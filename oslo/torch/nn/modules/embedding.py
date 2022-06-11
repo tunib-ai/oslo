@@ -193,7 +193,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_1d,
+            all_reduce_tensor_1d,
         )
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
@@ -221,7 +221,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
             output_parallel[input_mask, :] = 0.0
 
         # Reduce across all the model parallel GPUs.
-        output = all_reduce_1d(output_parallel, self.parallel_context)
+        output = all_reduce_tensor_1d(output_parallel, self.parallel_context)
         return output
 
 
