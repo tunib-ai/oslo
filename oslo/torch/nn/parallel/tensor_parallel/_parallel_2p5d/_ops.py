@@ -90,6 +90,15 @@ def layernorm_2p5d(
     )
 
 
+def all_gather_tensor_2p5d(
+    inputs: Tensor,
+    dim: int,
+    parallel_context: ParallelContext,
+    col_parallel_mode: ParallelMode,
+) -> Tensor:
+    return _AllGatherTensor2p5D.apply(inputs, dim, parallel_context, col_parallel_mode)
+
+
 def gather_batch_2p5d(
     inputs: Tensor,
     dim: int = 0,
@@ -108,13 +117,29 @@ def gather_batch_2p5d(
     )
 
 
-def all_gather_tensor_2p5d(
-    inputs: Tensor,
-    dim: int,
-    parallel_context: ParallelContext,
-    col_parallel_mode: ParallelMode,
+def split_batch_2p5d(
+    inputs: Tensor, 
+    dim: int = 0,
+    parallel_context: Optional[ParallelContext] = None,
 ) -> Tensor:
-    return _AllGatherTensor2p5D.apply(inputs, dim, parallel_context, col_parallel_mode)
+    dim_size = inputs.size(dim)
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+
+    if world_size <= 1:
+        return inputs
+
+    assert (
+        dim_size % world_size == 0
+    ), f"The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size})."
+
+    col_chunked = torch.chunk(
+        inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
+    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
+    return torch.chunk(
+        col_chunked,
+        parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_DEP),
+        dim=dim,
+    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)].contiguous()
 
 
 def reduce_by_batch_2p5d(
@@ -142,29 +167,6 @@ def reduce_scatter_tensor_2p5d(
     ), f"The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size})."
 
     return _ReduceScatterTensor2p5D.apply(inputs, dim, parallel_context, parallel_mode)
-
-
-def split_batch_2p5d(
-    inputs: Tensor, dim: int, parallel_context: ParallelContext
-) -> Tensor:
-    dim_size = inputs.size(dim)
-    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-
-    if world_size <= 1:
-        return inputs
-
-    assert (
-        dim_size % world_size == 0
-    ), f"The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size})."
-
-    col_chunked = torch.chunk(
-        inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
-    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
-    return torch.chunk(
-        col_chunked,
-        parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_DEP),
-        dim=dim,
-    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)].contiguous()
 
 
 def get_current_device():

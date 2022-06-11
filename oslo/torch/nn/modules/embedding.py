@@ -118,6 +118,50 @@ class LazyEmbedding(LazyModuleMixin, nn.Embedding):
             self.__class__ = self.cls_to_become
 
 
+class Embedding1D(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        dtype: Optional[torch.dtype] = None,
+        parallel_context: Optional[ParallelContext] = None,
+    ):
+        self.parallel_context = parallel_context
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        assert (
+            embedding_dim % world_size == 0
+        ), "embedding_dim must be divisible by world_size for Embedding1D."
+
+        super().__init__(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim // world_size,
+            device=torch.device(torch.cuda.current_device()),
+            dtype=dtype,
+        )
+
+    def forward(self, input: Tensor) -> Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
+            all_gather_tensor_1d,
+        )
+
+        output = F.embedding(
+            input,
+            self.weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+
+        output = all_gather_tensor_1d(
+            output,
+            -1,
+            self.parallel_context,
+        )
+        return output
+
+
 class VocabParallelEmbedding1D(nn.Embedding):
     def __init__(
         self,
@@ -129,6 +173,9 @@ class VocabParallelEmbedding1D(nn.Embedding):
         self.parallel_context = parallel_context
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        assert (
+            num_embeddings % world_size == 0
+        ), "num_embeddings must be divisible by world_size for VocabParallelEmbedding1D."
 
         (
             self.vocab_start_index,
@@ -190,6 +237,9 @@ class Embedding2D(nn.Embedding):
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
+        assert (
+            embedding_dim % (self.summa_dim**2) == 0
+        ), "embedding_dim must be divisible by summa_dim^2 for Embedding2D."
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // (self.summa_dim**2),
@@ -232,6 +282,12 @@ class VocabParallelEmbedding2D(nn.Embedding):
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
+        assert (
+            num_embeddings % self.summa_dim == 0
+        ), "num_embeddings must be divisible by summa_dim for VocabParallelEmbedding2D."
+        assert (
+            embedding_dim % self.summa_dim == 0
+        ), "embedding_dim must be divisible by summa_dim for VocabParallelEmbedding2D."
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
         (
             self.vocab_start_index,
@@ -300,6 +356,9 @@ class Embedding2p5D(nn.Embedding):
         self.tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
+        assert (
+            embedding_dim % (self.tesseract_dim**2) == 0
+        ), "embedding_dim must be divisible by tesseract_dim^2 for Embedding2p5D."
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // (self.tesseract_dim**2),
@@ -353,6 +412,12 @@ class VocabParallelEmbedding2p5D(nn.Embedding):
             rank,
             self.tesseract_dim,
         )
+        assert (
+            num_embeddings % self.tesseract_dim == 0
+        ), "num_embeddings must be divisible by tesseract_dim for VocabParallelEmbedding2p5D."
+        assert (
+            embedding_dim % self.tesseract_dim == 0
+        ), "embedding_dim must be divisible by tesseract_dim for VocabParallelEmbedding2p5D."
         super().__init__(
             num_embeddings=num_embeddings // self.tesseract_dim,
             embedding_dim=embedding_dim // self.tesseract_dim,
@@ -412,17 +477,19 @@ class Embedding3D(nn.Embedding):
         self.cubic_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_3D_INPUT,
         )
-
-        self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
-        self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
-        self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
-
+        assert (
+            embedding_dim % self.cubic_dim == 0
+        ), "embedding_dim must be divisible by cubic_dim for Embedding3D."
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // self.cubic_dim,
             device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
         )
+
+        self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
+        self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
+        self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
@@ -472,16 +539,20 @@ class VocabParallelEmbedding3D(nn.Embedding):
         self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
         self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
         self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
-
-        vocab_parallel_rank = self.parallel_context.get_local_rank(
-            self.input_parallel_mode
-        )
-
+        assert (
+            num_embeddings % (self.cubic_dim**2) == 0
+        ), "num_embeddings must be divisible by cubic_dim^2 for VocabParallelEmbedding3D."
+        assert (
+            embedding_dim % self.cubic_dim == 0
+        ), "embedding_dim must be divisible by cubic_dim for VocabParallelEmbedding3D."
         super().__init__(
             num_embeddings=num_embeddings // (self.cubic_dim**2),
             embedding_dim=embedding_dim // self.cubic_dim,
             device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
+        )
+        vocab_parallel_rank = self.parallel_context.get_local_rank(
+            self.input_parallel_mode
         )
         self.vocab_start_index = (
             vocab_parallel_rank * self.num_embeddings // self.cubic_dim

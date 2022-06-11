@@ -132,7 +132,7 @@ class ColumnParallelLinear(Linear):
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
             out_features % world_size == 0
-        ), "out_features must be divisible by world_size for tensor parallelism."
+        ), "out_features must be divisible by world_size for ColLinear1D."
 
         super().__init__(
             in_features=in_features,
@@ -182,7 +182,7 @@ class RowParallelLinear(Linear):
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
             in_features % world_size == 0
-        ), "in_features must be divisible by world_size for tensor parallelism."
+        ), "in_features must be divisible by world_size for RowLinear1D."
 
         super().__init__(
             in_features=in_features // world_size,
@@ -233,10 +233,27 @@ class Linear2D(Linear):
         )
         assert (
             in_features % self.summa_dim == 0
-        ), "in_features must be divisible by summa dim."
+        ), "in_features must be divisible by summa_dim for Linear2D."
         assert (
             out_features % (self.summa_dim**2) == 0
-        ), "out_features must be divisible by summa dim^2."
+        ), "out_features must be divisible by summa_dim^2 for Linear2D."
+
+        super().__init__(
+            in_features=in_features // self.summa_dim,
+            out_features=out_features // self.summa_dim,
+            bias=False,
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
+        if bias:
+            self.bias = Parameter(
+                torch.empty(
+                    out_features // (self.summa_dim**2),
+                    device=self.weight.device,
+                    dtype=dtype,
+                )
+            )
+            self.reset_parameters()
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -364,13 +381,12 @@ class Linear2p5D(Linear):
         self.tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
-        assert self.tesseract_dim > 0, "TESSERACT_DIM must be larger than zero"
         assert (
             in_features % self.tesseract_dim == 0
-        ), "in_features must be divisible by tesseract dim."
+        ), "in_features must be divisible by tesseract_dim for Linear2p5D."
         assert (
             out_features % self.tesseract_dim == 0
-        ), "out_features must be divisible by tesseract dim."
+        ), "out_features must be divisible by tesseract_dim for Linear2p5D."
 
         self.row_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_2P5D_ROW
@@ -503,13 +519,12 @@ class Linear3D(Linear):
         self.input_reversed = False
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
-        assert self.cubic_dim > 0, "CUBIC_DIM must be greater than zero"
         assert (
             in_features % self.cubic_dim == 0
-        ), "in_features must be divisible by cubic dim."
+        ), "in_features must be divisible by cubic_dim for Linear3D."
         assert (
             out_features % (self.cubic_dim**2) == 0
-        ), "out_features must be divisible by (cubic dim)^2."
+        ), "out_features must be divisible by cubic_dim^2 for Linear3D."
 
         self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
         self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT

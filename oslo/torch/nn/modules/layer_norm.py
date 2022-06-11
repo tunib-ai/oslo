@@ -24,11 +24,16 @@ class LayerNorm2D(nn.Module):
             ParallelMode.TENSOR_2D_COL
         )
         assert (
-            normalized_shape % self.summa_dim == 0
-        ), "normalized_shape must be divisible by summa dim."
+            normalized_shape % (self.summa_dim**2) == 0
+        ), "normalized_shape must be divisible by summa_dim^2 for LayerNorm2D."
 
-        self.normalized_shape = normalized_shape
-        self.eps = eps
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape // (self.summa_dim**2),
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -148,7 +153,7 @@ class LayerNorm2p5D(nn.Module):
         )
         assert (
             normalized_shape % self.tesseract_dim == 0
-        ), "normalized_shape must be divisible by tessract dim."
+        ), "normalized_shape must be divisible by tesseract_dim for LayerNorm2p5D."
 
         self.normalized_shape = normalized_shape
         self.eps = eps
@@ -272,8 +277,17 @@ class LayerNorm3D(nn.Module):
         super().__init__()
         self.parallel_context = parallel_context
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
-        self.normalized_shape = normalized_shape
-        self.partitioned_dim = normalized_shape // self.cubic_dim
+        assert (
+            normalized_shape % self.cubic_dim == 0
+        ), "normalized_shape must be divisible by cubic_dim for LayerNorm3D."
+
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape // self.cubic_dim,
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
 
         self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
         self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
