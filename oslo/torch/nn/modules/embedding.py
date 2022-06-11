@@ -362,12 +362,13 @@ class Embedding2p5D(nn.Embedding):
         super().__init__(
             num_embeddings=num_embeddings,
             embedding_dim=embedding_dim // (self.tesseract_dim**2),
+            device=torch.device(torch.cuda.current_device()),
+            dtype=dtype,
         )
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             all_gather_tensor_2p5d,
-            gather_batch_2p5d,
         )
 
         weight = all_gather_tensor_2p5d(

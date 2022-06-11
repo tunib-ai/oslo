@@ -122,6 +122,7 @@ class TensorParallel(ParallelWrapper):
 
             module.weight.data = new_embeddings
             module.num_embeddings = new_vocab_size
+            setattr(module, "orig_num_classes", vocab_size)
             setattr(unwrapped_model, "orig_vocab_size", vocab_size)
         return model
 
@@ -181,15 +182,16 @@ class TensorParallel(ParallelWrapper):
 
                         module.weight.data = new_weight
                         module.out_features = new_out_features
-
+                        setattr(module, "orig_num_classes", out_features)
                         setattr(
                             unwrapped_model,
                             f"orig_{param_name.split('.')[-1]}_num_classes",
                             out_features,
                         )
-                        if hasattr(unwrapped_model, "num_labels"):
-                            unwrapped_model.num_labels = new_out_features
         return model
 
-    def _remove_embeddings(self, model, parallel_context):
+    def _restore_vocab_size(self, model, parallel_context):
+        pass
+
+    def _restore_num_classes(self, model, parallel_context):
         pass

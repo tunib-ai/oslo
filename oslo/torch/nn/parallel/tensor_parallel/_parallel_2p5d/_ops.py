@@ -9,40 +9,6 @@ from oslo.torch.distributed import ParallelMode, ParallelContext
 from oslo.torch.distributed.nn.functional import all_reduce, reduce_scatter, all_gather
 
 
-def classifier_2p5d(
-    A: Tensor,
-    B: Tensor,
-    bias,
-    tesseract_dim: int,
-    out_shape: Tuple[int, ...],
-    row_rank: int,
-    col_rank: int,
-    data_parallel_rank: int,
-    pipeline_parallel_rank: int,
-    pipeline_parallel_size: int,
-    tensor_parallel_size: int,
-    parallel_context: ParallelContext,
-    row_parallel_mode: ParallelMode,
-    col_parallel_mode: ParallelMode,
-) -> Tensor:
-    return _Classifier2p5D.apply(
-        A,
-        B,
-        bias,
-        tesseract_dim,
-        out_shape,
-        col_rank,
-        row_rank,
-        data_parallel_rank,
-        pipeline_parallel_rank,
-        pipeline_parallel_size,
-        tensor_parallel_size,
-        parallel_context,
-        row_parallel_mode,
-        col_parallel_mode,
-    )
-
-
 def add_bias_2p5d(
     input: Tensor,
     bias: Tensor,
@@ -115,7 +81,7 @@ def gather_batch_2p5d(
         parallel_context=parallel_context,
         col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
     )
-
+    
 
 def split_batch_2p5d(
     inputs: Tensor, 
@@ -132,14 +98,9 @@ def split_batch_2p5d(
         dim_size % world_size == 0
     ), f"The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size})."
 
-    col_chunked = torch.chunk(
+    return torch.chunk(
         inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
     )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
-    return torch.chunk(
-        col_chunked,
-        parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_DEP),
-        dim=dim,
-    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)].contiguous()
 
 
 def reduce_by_batch_2p5d(
@@ -176,116 +137,6 @@ def get_current_device():
     return torch.cuda.current_device()
 
 
-# TODO: 만약 2D와 비슷할 경우 병합(?)
-class _Classifier2p5D(torch.autograd.Function):
-    @staticmethod
-    @custom_fwd(cast_inputs=torch.float16)
-    def forward(
-        ctx: Any,
-        A: Tensor,
-        B: Tensor,
-        bias,
-        tesseract_dim: int,
-        out_shape: Tuple[int, ...],
-        row_rank: int,
-        col_rank: int,
-        data_parallel_rank: int,
-        pipeline_parallel_rank: int,
-        pipeline_parallel_size: int,
-        tensor_parallel_size: int,
-        parallel_context: ParallelContext,
-        row_parallel_mode: ParallelMode,
-        col_parallel_mode: ParallelMode,
-    ) -> Tensor:
-        A = A.clone().detach()
-        A_shape = A.shape
-        A = A.reshape((-1, A_shape[-1]))
-        B_shape = B.shape
-        B = B.reshape((-1, B_shape[-1]))
-        B_temp = all_gather(
-            B, -1, parallel_context=parallel_context, parallel_mode=col_parallel_mode
-        )
-        if ctx:
-            ctx.save_for_backward(A, B_temp)
-
-        C = torch.matmul(A, B_temp.transpose(0, 1))
-
-        C = all_reduce(
-            C,
-            parallel_context=parallel_context,
-            parallel_mode=row_parallel_mode,
-        )
-
-        ctx.use_bias = bias is not None
-        if bias is not None:
-            C = C + bias
-
-        out = C.reshape(out_shape)
-
-        if ctx:
-            ctx.tesseract_dim = tesseract_dim
-            ctx.col_rank = col_rank
-            ctx.row_rank = row_rank
-            ctx.A_shape = A_shape
-            ctx.B_shape = B_shape
-            ctx.data_parallel_rank = data_parallel_rank
-            ctx.pipeline_parallel_rank = pipeline_parallel_rank
-            ctx.pipeline_parallel_size = pipeline_parallel_size
-            ctx.tensor_parallel_size = tensor_parallel_size
-            ctx.parallel_context = parallel_context
-            ctx.row_parallel_mode = row_parallel_mode
-            ctx.col_parallel_mode = col_parallel_mode
-
-        return out
-
-    @staticmethod
-    @custom_bwd
-    def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
-        A, B = ctx.saved_tensors
-
-        with torch.no_grad():
-            A_grad = torch.matmul(output_grad, B)
-            A_grad = A_grad.reshape(ctx.A_shape)
-            B_grad = torch.matmul(
-                output_grad.reshape(-1, output_grad.shape[-1]).transpose(0, 1), A
-            )
-            B_grad = reduce_scatter(
-                B_grad,
-                -1,
-                parallel_context=ctx.parallel_context,
-                parallel_mode=ctx.col_parallel_mode,
-            )
-            B_grad = B_grad.reshape(ctx.B_shape)
-
-            if ctx.use_bias:
-                bias_grad = torch.sum(
-                    output_grad, dim=tuple(range(output_grad.ndim - 1))
-                )
-                bias_grad = all_reduce(
-                    bias_grad,
-                    parallel_context=ctx.parallel_context,
-                    parallel_mode=ctx.col_parallel_mode,
-                )
-            else:
-                bias_grad = None
-
-        return (
-            A_grad,
-            B_grad,
-            bias_grad,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-
-
 class Matmul_AB_2p5D(torch.autograd.Function):
     @staticmethod
     @custom_fwd(cast_inputs=torch.float16)
@@ -306,9 +157,6 @@ class Matmul_AB_2p5D(torch.autograd.Function):
         row_parallel_mode: ParallelMode,
         col_parallel_mode: ParallelMode,
     ) -> Tensor:
-        # A: [b / dq, s, h / q] -> [(b * s) / dq, h / q]
-        # B: [h / dq, s / q]
-        # C: [b / dq, s, s / q] -> [(b * s) / dq, s / q]
 
         assert A.shape[-1] == B.shape[-2], "Invalid shapes: A={}, B={} for AB.".format(
             A.shape, B.shape
@@ -381,11 +229,11 @@ class Matmul_AB_2p5D(torch.autograd.Function):
 
         if ctx:
             ctx.tesseract_dim = tesseract_dim
-            ctx.col_rank = col_rank
-            ctx.row_rank = row_rank
-            ctx.dep_rank = dep_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
+            ctx.dep_rank = dep_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size
@@ -551,13 +399,12 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
         out = C.reshape(out_shape)
 
         if ctx:
-            ctx.parallel_context = parallel_context
             ctx.tesseract_dim = tesseract_dim
-            ctx.col_rank = col_rank
-            ctx.row_rank = row_rank
-            ctx.dep_rank = dep_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
+            ctx.dep_rank = dep_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size
@@ -608,7 +455,6 @@ class Matmul_ABT_2p5D(torch.autograd.Function):
         return (
             A_grad,
             B_grad,
-            None,
             None,
             None,
             None,
@@ -721,11 +567,11 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
 
         if ctx:
             ctx.tesseract_dim = tesseract_dim
-            ctx.col_rank = col_rank
-            ctx.row_rank = row_rank
-            ctx.dep_rank = dep_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
+            ctx.dep_rank = dep_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size
@@ -788,7 +634,6 @@ class Matmul_ATB_2p5D(torch.autograd.Function):
             None,
             None,
             None,
-            None,
         )
 
 
@@ -829,10 +674,10 @@ class _Add_Bias_2p5D(torch.autograd.Function):
         )
 
         if ctx:
-            ctx.col_rank = col_rank
-            ctx.row_rank = row_rank
-            ctx.dep_rank = dep_rank
             ctx.tesseract_dim = tesseract_dim
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
+            ctx.dep_rank = dep_rank
             ctx.bias = skip_bias_add
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
@@ -850,10 +695,10 @@ class _Add_Bias_2p5D(torch.autograd.Function):
     @staticmethod
     @custom_bwd
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
-        col_rank = ctx.col_rank
-        row_rank = ctx.row_rank
-        dep_rank = ctx.dep_rank
         tesseract_dim = ctx.tesseract_dim
+        row_rank = ctx.row_rank
+        col_rank = ctx.col_rank
+        dep_rank = ctx.dep_rank
         data_parallel_rank = ctx.data_parallel_rank
         pipeline_parallel_rank = ctx.pipeline_parallel_rank
         pipeline_parallel_size = ctx.pipeline_parallel_size
@@ -889,16 +734,12 @@ class _Add_Bias_2p5D(torch.autograd.Function):
                     None,
                     None,
                     None,
-                    None,
-                    None,
                 )
             else:
                 grad_tmp = torch.zeros_like(output_grad)
                 return (
                     None,
                     grad_tmp,
-                    None,
-                    None,
                     None,
                     None,
                     None,
@@ -942,18 +783,12 @@ class _Add_Bias_2p5D(torch.autograd.Function):
                     None,
                     None,
                     None,
-                    None,
-                    None,
-                    None,
                 )
             else:
                 reduce_tmp = torch.zeros_like(reduce)
                 return (
                     output_grad,
                     reduce_tmp,
-                    None,
-                    None,
-                    None,
                     None,
                     None,
                     None,
@@ -1016,7 +851,7 @@ class _Layernorm2p5D(torch.autograd.Function):
             input_grad -= output_grad_sum
             input_grad *= Var_x
 
-        return input_grad, None, None, None, None, None, None
+        return input_grad, None, None, None, None, None
 
 
 class _AllGatherTensor2p5D(torch.autograd.Function):
@@ -1091,7 +926,7 @@ class SplitFirst(torch.autograd.Function):
             output_grad.contiguous(),
             group=ctx.parallel_context.get_group(ctx.col_parallel_mode),
         )
-        return grad, None, None
+        return grad, None, None, None
 
 
 class _ReduceTensor2p5D(torch.autograd.Function):
@@ -1111,18 +946,6 @@ class _ReduceTensor2p5D(torch.autograd.Function):
     @staticmethod
     def backward(ctx: Any, output_grad: Tensor):
         return output_grad, None, None
-
-
-# def reduce_tensor_2p5d(input_: Tensor, parallel_mode: ParallelMode) -> Tensor:
-#     r"""All-reduce the input.
-#     Args:
-#         input_ (:class:`torch.tensor`): Input tensor.
-#         parallel_mode (:class:`colossalai.context.ParallelMode`): The parallel mode tensor used.
-#     Note:
-#         The parallel_mode should be concluded in ``ParallelMode``. More details about ``ParallelMode`` could be found
-#         in `parallel_mode <https://github.com/hpcaitech/ColossalAI/blob/main/colossalai/context/parallel_mode.py>`_
-#     """
-#     return _ReduceTensor2p5D.apply(input_, parallel_mode)
 
 
 class _ReduceScatterTensor2p5D(torch.autograd.Function):
@@ -1206,16 +1029,6 @@ class _ReduceByBatch2p5D(torch.autograd.Function):
     @custom_bwd
     def backward(ctx: Any, output_grad: Tensor):
         if ctx.reduce_mean:
-            return output_grad / ctx.reduce_size, None
+            return output_grad / ctx.reduce_size, None, None
         else:
-            return output_grad, None
-
-
-# def reduce_by_batch_2p5d(input_, reduce_mean: bool = False) -> Tensor:
-#     r"""All-reduce the input from the model parallel region.
-#     Args:
-#         input_ (:class:`torch.tensor`): input matrix.
-#         reduce_mean (bool, optional):
-#             If set to ``True``, it will divide the output by column parallel size, default to False.
-#     """
-#     return _ReduceByBatch2p5D.apply(input_, reduce_mean)
+            return output_grad, None, None

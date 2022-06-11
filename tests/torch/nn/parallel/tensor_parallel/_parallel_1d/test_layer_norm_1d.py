@@ -2,15 +2,14 @@ import torch
 import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn import LayerNorm2D
-from _utils import split_2d, split_layernorm_2d, split_bias_2d, gather_2d
+from oslo.torch.nn import LayerNorm1D
 
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=4,
-    tensor_parallel_mode=ParallelMode.TENSOR_2D,
+    tensor_parallel_mode=ParallelMode.TENSOR_1D,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -19,7 +18,6 @@ torch.manual_seed(0)
 batch_size = 2
 seq_len = 2
 hidden_dim = 8
-summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 input_ = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 
@@ -44,25 +42,17 @@ if parallel_context.get_global_rank() == 0:
 
 dist.barrier()
 
-input_ = split_2d(input_, summa_dim, parallel_context=parallel_context)
-target = split_2d(target, summa_dim, parallel_context=parallel_context)
-w = split_layernorm_2d(w, summa_dim, parallel_context=parallel_context)
-b = split_bias_2d(b, summa_dim, parallel_context=parallel_context)
+layernorm_1d = LayerNorm1D(hidden_dim, parallel_context=parallel_context)
+layernorm_1d.weight.data = w
+layernorm_1d.bias.data = b
 
-layernorm_2d = LayerNorm2D(hidden_dim, parallel_context=parallel_context)
-layernorm_2d.weight.data = w
-layernorm_2d.bias.data = b
-
-pout = layernorm_2d(input_)
-optimizer = torch.optim.Adam(layernorm_2d.parameters(), lr=1e-3)
+pout = layernorm_1d(input_)
+optimizer = torch.optim.Adam(layernorm_1d.parameters(), lr=1e-3)
 logits = torch.nn.MSELoss()(pout, target)
 logits.backward()
 optimizer.step()
 
-pout_update = layernorm_2d(input_)
-
-pout = gather_2d(pout, summa_dim, parallel_context=parallel_context)
-pout_update = gather_2d(pout_update, summa_dim, parallel_context=parallel_context)
+pout_update = layernorm_1d(input_)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

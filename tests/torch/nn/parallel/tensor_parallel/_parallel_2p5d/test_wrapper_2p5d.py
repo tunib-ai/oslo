@@ -9,9 +9,6 @@ from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.distributed import ParallelContext, ParallelMode
 import time
-from copy import deepcopy
-from oslo.torch.nn import Linear2D
-from _utils import split_2d, gather_2d
 
 tp_size = 8
 tp_depth = 2

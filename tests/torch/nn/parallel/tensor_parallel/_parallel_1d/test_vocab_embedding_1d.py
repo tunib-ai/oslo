@@ -16,12 +16,12 @@ parallel_context = ParallelContext.from_torch(
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-input_ = torch.LongTensor([[1, 2], [5, 6]]).cuda()
-target = torch.randn((2, 2, 10)).cuda()
+input_ = torch.LongTensor([[0, 1, 6, 3, 8], [5, 2, 7, 4, 9]]).cuda()
+target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-vocab_embedding = torch.nn.Embedding(8, 10).cuda()
+vocab_embedding = torch.nn.Embedding(16, 8).cuda()
 w = deepcopy(vocab_embedding.weight.data)
 
 out = vocab_embedding(input_)
@@ -36,10 +36,9 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original next output: \n{out_update}\n")
 
-# split weight into 0:[0], 1:[1], 2:[2], 3:[3]
-w = split_1d(parallel_context, w, world_size, dim=0)
+w = split_1d(w, world_size, dim=0, parallel_context=parallel_context)
 
-vocab_embedding_1d = VocabParallelEmbedding1D(8, 10, parallel_context=parallel_context)
+vocab_embedding_1d = VocabParallelEmbedding1D(16, 8, parallel_context=parallel_context)
 vocab_embedding_1d.weight.data = w
 
 pout = vocab_embedding_1d(input_)

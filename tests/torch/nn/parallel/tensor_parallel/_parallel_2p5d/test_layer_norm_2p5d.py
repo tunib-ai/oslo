@@ -4,7 +4,7 @@ import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import LayerNorm2p5D
 
-from _utils import split_2d, gather_2d
+from _utils import split_2p5d, split_layernorm_2p5d, split_bias_2p5d, gather_2p5d
 from copy import deepcopy
 
 tp_size = 8
@@ -49,19 +49,11 @@ if parallel_context.get_global_rank() == 0:
 
 dist.barrier()
 
-# split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-input_ = split_2d(parallel_context, input_, tesseract_dim, col_first=True)
-target = split_2d(parallel_context, target, tesseract_dim, col_first=True)
+input_ = split_2p5d(input_, tesseract_dim, parallel_context=parallel_context)
+target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
 
-# split weight into 0:[0], 1:[2], 2:[1], 3:[3]
-w = w.chunk(tesseract_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-]
-
-# split bias into 0:[0], 1:[2], 2:[1], 3:[3]
-b = b.chunk(tesseract_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-]
+w = split_layernorm_2p5d(w, tesseract_dim, parallel_context=parallel_context)
+b = split_bias_2p5d(b, tesseract_dim, parallel_context=parallel_context)
 
 layernorm_2p5d = LayerNorm2p5D(hidden_dim, parallel_context=parallel_context)
 layernorm_2p5d.weight.data = w
@@ -75,8 +67,8 @@ optimizer.step()
 
 pout_update = layernorm_2p5d(input_)
 
-pout = gather_2d(parallel_context, pout, tesseract_dim, col_first=False)
-pout_update = gather_2d(parallel_context, pout_update, tesseract_dim, col_first=False)
+pout = gather_2p5d(pout, tesseract_dim, parallel_context=parallel_context)
+pout_update = gather_2p5d(pout_update, tesseract_dim, parallel_context=parallel_context)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

@@ -3,6 +3,7 @@ import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear3D
+from _utils import split_input_3d, split_weight_3d, split_bias_3d
 
 
 parallel_context = ParallelContext.from_torch(
@@ -43,37 +44,11 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
 
-input_ = torch.chunk(input_, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-input_ = torch.chunk(input_, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-input_ = torch.chunk(input_, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
-target = torch.chunk(target, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-target = torch.chunk(target, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-target = torch.chunk(target, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
+input_ = split_input_3d(parallel_context, input_, cubic_dim)
+target = split_input_3d(parallel_context, target, cubic_dim)
 
-w = torch.chunk(w, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-b = torch.chunk(b, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
+w = split_weight_3d(parallel_context, w, cubic_dim)
+b = split_bias_3d(parallel_context, b, cubic_dim)
 
 linear_3d = Linear3D(input_dim, hidden_dim, parallel_context=parallel_context)
 linear_3d.weight.data.copy_(w)

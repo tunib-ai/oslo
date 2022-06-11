@@ -5,7 +5,7 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2p5D
 
 from copy import deepcopy
-from _utils import split_batch_2d, split_2d, gather_2d
+from _utils import split_batch_2p5d, split_2p5d, gather_2p5d
 
 tp_size = 8
 tp_depth = 2
@@ -21,12 +21,12 @@ parallel_context = ParallelContext.from_torch(
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 tesseract_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-input_ = torch.LongTensor([[1, 2, 3, 4], [5, 6, 7, 8]]).cuda()
-target = torch.randn((2, 4, 16)).cuda()
+input_ = torch.LongTensor([[0, 1, 6, 3, 8], [5, 2, 7, 4, 9]]).cuda()
+target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-vocab_embedding = torch.nn.Embedding(10, 16).cuda()
+vocab_embedding = torch.nn.Embedding(10, 8).cuda()
 w = deepcopy(vocab_embedding.weight.data)
 
 out = vocab_embedding(input_)
@@ -41,14 +41,12 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
 
-input_ = split_batch_2d(parallel_context, input_, tesseract_dim)
-# split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-target = split_2d(parallel_context, target, tesseract_dim, col_first=True)
-# split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
-w = split_2d(parallel_context, w, tesseract_dim, col_first=False)
+input_ = split_batch_2p5d(input_, tesseract_dim, parallel_context=parallel_context)
+target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
+w = split_2p5d(w, tesseract_dim, parallel_context=parallel_context)
 
 vocab_embedding_2p5d = VocabParallelEmbedding2p5D(
-    10, 16, parallel_context=parallel_context
+    10, 8, parallel_context=parallel_context
 )
 vocab_embedding_2p5d.weight.data.copy_(w)
 
@@ -60,8 +58,8 @@ optimizer.step()
 
 pout_update = vocab_embedding_2p5d(input_)
 
-pout = gather_2d(parallel_context, pout, tesseract_dim, col_first=False)
-pout_update = gather_2d(parallel_context, pout_update, tesseract_dim, col_first=False)
+pout = gather_2p5d(pout, tesseract_dim, parallel_context=parallel_context)
+pout_update = gather_2p5d(pout_update, tesseract_dim, parallel_context=parallel_context)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

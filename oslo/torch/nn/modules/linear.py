@@ -165,7 +165,8 @@ class ColLinear1D(Linear):
 
         if self.gather_output:
             outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
-
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., :self.orig_num_classes]
         return outputs
 
 
@@ -360,6 +361,8 @@ class Linear2D(Linear):
                 parallel_mode=ParallelMode.TENSOR_2D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., :self.orig_num_classes]
         return outputs
 
 
@@ -425,8 +428,6 @@ class Linear2p5D(Linear):
         )
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-        # input: [m/dq, n/q, k/q]
-        # output: [m/dq, n/q, h/q]
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
             Matmul_ABT_2p5D,
             add_bias_2p5d,
@@ -491,8 +492,8 @@ class Linear2p5D(Linear):
         if self.gather_output:
             output = all_gather_tensor_2p5d(
                 output,
-                dim=0,
-                col_parallel_mode=ParallelMode.TENSOR_2P5D_DEP,
+                dim=-1,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
             output = all_gather_tensor_2p5d(
@@ -501,12 +502,8 @@ class Linear2p5D(Linear):
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
                 parallel_context=self.parallel_context,
             ).clone()
-            output = all_gather_tensor_2p5d(
-                output,
-                dim=-1,
-                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
-                parallel_context=self.parallel_context,
-            ).clone()
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., :self.orig_num_classes]
         return output
 
 

@@ -3,7 +3,7 @@ import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Embedding2D
-from _utils import split_2d, split_1d_twice, split_batch_2d, gather_2d
+from _utils import split_2d, split_embedding_2d, split_batch_2d, gather_2d
 
 
 parallel_context = ParallelContext.from_torch(
@@ -36,11 +36,9 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
 
-input_ = split_batch_2d(parallel_context, input_, summa_dim)
-# split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-target = split_2d(parallel_context, target, summa_dim, col_first=True)
-# split weight into 0:[0], 1:[2], 2:[1], 3:[3]
-w = split_1d_twice(parallel_context, w, summa_dim, dim=1)
+input_ = split_batch_2d(input_, summa_dim, parallel_context=parallel_context)
+target = split_2d(target, summa_dim, parallel_context=parallel_context)
+w = split_embedding_2d(w, summa_dim, parallel_context=parallel_context)
 
 embedding_2d = Embedding2D(10, 8, parallel_context=parallel_context)
 embedding_2d.weight.data = w
@@ -53,8 +51,8 @@ optimizer.step()
 
 pout_update = embedding_2d(input_)
 
-pout = gather_2d(parallel_context, pout, summa_dim, col_first=False)
-pout_update = gather_2d(parallel_context, pout_update, summa_dim, col_first=False)
+pout = gather_2d(pout, summa_dim, parallel_context=parallel_context)
+pout_update = gather_2d(pout_update, summa_dim, parallel_context=parallel_context)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{out}\n")
