@@ -200,9 +200,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
-
-            if isinstance(module, nn.Embedding):
-                module.__class__ = VocabParallelEmbedding2p5D
+            module.__class__ = VocabParallelEmbedding2p5D
         else:
             weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
             weight_list = [weight.chunk(tesseract_dim, dim=1) for weight in weight_list]
@@ -214,9 +212,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
-
-            if isinstance(module, nn.Embedding):
-                module.__class__ = Embedding2p5D
+            module.__class__ = Embedding2p5D
 
         if hasattr(module.weight, "oslo_parallel"):
             module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
