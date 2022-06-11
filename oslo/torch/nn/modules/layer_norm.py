@@ -80,6 +80,12 @@ class LayerNorm2D(nn.Module):
         else:
             self.bias = None
 
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
+
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             add_bias_2d,
@@ -147,12 +153,6 @@ class LayerNorm2D(nn.Module):
             output = torch.mul(scale, output)
         return output
 
-    def extra_repr(self) -> str:
-        return (
-            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
-            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
-        )
-
 
 class LayerNorm2p5D(nn.Module):
     def __init__(
@@ -208,6 +208,12 @@ class LayerNorm2p5D(nn.Module):
         self.weight = Parameter(torch.ones(self.normalized_shape, **factory_kwargs))
         if bias:
             self.bias = Parameter(torch.zeros(self.normalized_shape, **factory_kwargs))
+
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
 
     def forward(self, input: Tensor) -> torch.Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
@@ -317,6 +323,12 @@ class LayerNorm3D(nn.Module):
             self.bias = None
         self.eps = eps
 
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
+
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             layernorm_3d,
@@ -335,7 +347,7 @@ class LayerNorm3D(nn.Module):
         )
 
 
-class FusedLayerNorm(torch.nn.Module):
+class FusedLayerNorm(nn.Module):
     r"""Applies Layer Normalization over a mini-batch of inputs as described in
     the paper `Layer Normalization`_ .
 
@@ -416,6 +428,12 @@ class FusedLayerNorm(torch.nn.Module):
             init.ones_(self.weight)
             init.zeros_(self.bias)
 
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, eps={self.eps}, "
+            f"elementwise_affine={self.elementwise_affine}"
+        )
+
     def forward(self, input):
         if not input.is_cuda:
             return F.layer_norm(
@@ -428,14 +446,8 @@ class FusedLayerNorm(torch.nn.Module):
         else:
             return onn.fused_layer_norm(input, self.normalized_shape, self.eps)
 
-    def extra_repr(self):
-        return (
-            "{normalized_shape}, eps={eps}, "
-            "elementwise_affine={elementwise_affine}".format(**self.__dict__)
-        )
 
-
-class FusedRMSNorm(torch.nn.Module):
+class FusedRMSNorm(nn.Module):
     r"""Applies RMS Normalization over a mini-batch of inputs
 
     Currently only runs on cuda() tensors.
@@ -509,6 +521,12 @@ class FusedRMSNorm(torch.nn.Module):
             self.register_parameter("weight", None)
         self.reset_parameters()
 
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, eps={self.eps}, "
+            f"elementwise_affine={self.elementwise_affine}"
+        )
+
     def reset_parameters(self):
         if self.elementwise_affine:
             init.ones_(self.weight)
@@ -523,12 +541,6 @@ class FusedRMSNorm(torch.nn.Module):
             )
         else:
             return onn.fused_rms_norm(input, self.normalized_shape, self.eps)
-
-    def extra_repr(self):
-        return (
-            "{normalized_shape}, eps={eps}, "
-            "elementwise_affine={elementwise_affine}".format(**self.__dict__)
-        )
 
 
 # NOTE (mkozuki): Why "mixed"?

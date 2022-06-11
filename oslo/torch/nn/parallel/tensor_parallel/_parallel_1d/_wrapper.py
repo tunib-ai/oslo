@@ -2,11 +2,11 @@ import copy
 
 import torch
 import torch.nn as nn
-from torch.nn import Embedding
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.embedding import (
     VocabParallelEmbedding1D,
+    Embedding1D,
     VocabUtility,
 )
 from oslo.torch.nn.modules.linear import (
@@ -67,6 +67,7 @@ class _TensorParallel1D(ParallelWrapper):
         self._update_mp_arguments()
         self._parallelize_embedding()
         self._parallelize_linear()
+        self._parallelize_head()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
     def _update_mp_arguments(self):
@@ -91,30 +92,36 @@ class _TensorParallel1D(ParallelWrapper):
             if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
                 self._column_slice_linear(
                     module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                    reversed=self.tensor_parallel_mapping.is_reversed(
                         self.module, param_name
                     ),
                     fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
                         self.module, param_name, module
                     ),
+                    gather_output=self.tensor_parallel_mapping.is_gather_output(
+                        self.module, param_name
+                    ),
                 )
-                module.__class__ = ColumnParallelLinear
 
             elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._row_slice_linear(
                     module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                    reversed=self.tensor_parallel_mapping.is_reversed(
                         self.module, param_name
                     ),
                     fusion_degree=1,
                 )
-                module.__class__ = RowParallelLinear
 
     def _parallelize_head(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_head(self.module, param_name):
-                self._slice_embedding(
+            if self.tensor_parallel_mapping.is_head(
+                self.module, param_name
+            ) and isinstance(module, nn.Linear):
+                self._slice_head(
                     module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed(
+                        self.module, param_name
+                    ),
                 )
 
     @staticmethod
@@ -141,11 +148,6 @@ class _TensorParallel1D(ParallelWrapper):
 
             module.weight.data = weight_list[rank].contiguous()
 
-            if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
-            else:
-                module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
-
             _update_module_arguments(
                 module=module,
                 vocab_start_index=vocab_start_index,
@@ -154,39 +156,23 @@ class _TensorParallel1D(ParallelWrapper):
                 num_embeddings=module.weight.size()[0],
                 orig_module=copy.deepcopy(module.__class__),
             )
+            module.__class__ = VocabParallelEmbedding1D
+        else:
+            weight_list = module.weight.data.chunk(world_size, dim=1)
+            module.weight.data = weight_list[rank].contiguous()
 
-            if isinstance(module, Embedding):
-                module.__class__ = VocabParallelEmbedding1D
+            _update_module_arguments(
+                module=module,
+                parallel_context=self.parallel_context,
+                embedding_dim=module.weight.size()[1],
+                orig_module=copy.deepcopy(module.__class__),
+            )
+            module.__class__ = Embedding1D
 
-            for name, _module in self.module.named_modules():
-                if self.tensor_parallel_mapping.is_head(self.module, name):
-                    if _module.weight is not module.weight:
-                        self._slice_linear(
-                            module=_module,
-                            reversed=self.tensor_parallel_mapping.is_reversed_param(
-                                self.module, name
-                            ),
-                            fusion_degree=1,
-                            slice_bias=False,
-                            dim=0,
-                        )
-                    _update_module_arguments(
-                        module=_module,
-                        parallel_context=self.parallel_context,
-                        reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
-                        ),
-                        fusion_degree=1,
-                        orig_module=copy.deepcopy(_module.__class__),
-                        gather_output=not is_oslo_model(self.module),
-                        out_features=module.weight.size()[0],
-                        bias=None,
-                    )
-
-                    if isinstance(_module, nn.Linear):
-                        _module.__class__ = ColumnParallelLinear
-                    else:
-                        raise RuntimeError("Classifier layer must be `nn.Linear` class")
+        if hasattr(module.weight, "oslo_parallel"):
+            module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+        else:
+            module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
 
     def _slice_linear(
         self,
@@ -199,36 +185,25 @@ class _TensorParallel1D(ParallelWrapper):
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
 
-        if hasattr(module, "weight") and module.weight is not None:
-            if module.weight.dim() >= 1:
+        if reversed:
+            module.weight.data = module.weight.data.t()
 
-                if reversed:
-                    module.weight.data = module.weight.data.t()
+        weight_list = module.weight.data.chunk(fusion_degree * world_size, dim=dim)
 
-                weight_list = module.weight.data.chunk(
-                    fusion_degree * world_size, dim=dim
-                )
-
-                if fusion_degree > 1:
-                    weight_list = self._deconstruct_combined_qkv(
-                        weight_list,
-                        world_size,
-                        fusion_degree,
-                        dim=dim,
-                    )
-
-                module.weight.data = weight_list[rank].contiguous()
-
-                if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
-                else:
-                    module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
-
-            _update_module_arguments(
-                module=module,
-                in_features=module.weight.size()[1],
-                out_features=module.weight.size()[0],
+        if fusion_degree > 1:
+            weight_list = self._deconstruct_combined_qkv(
+                weight_list,
+                world_size,
+                fusion_degree,
+                dim=dim,
             )
+
+        module.weight.data = weight_list[rank].contiguous()
+
+        if hasattr(module.weight, "oslo_parallel"):
+            module.weight.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+        else:
+            module.weight.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
@@ -249,24 +224,14 @@ class _TensorParallel1D(ParallelWrapper):
                 else:
                     module.bias.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
 
-        return module
-
     def _column_slice_linear(
-        self, module: nn.Module, reversed: bool, fusion_degree: int
+        self,
+        module: nn.Module,
+        reversed: bool,
+        fusion_degree: int,
+        gather_output: bool,
     ):
-        _update_module_arguments(
-            module=module,
-            parallel_context=self.parallel_context,
-            reversed=reversed,
-            fusion_degree=fusion_degree,
-            orig_module=copy.deepcopy(module.__class__),
-            gather_output=False,
-            skip_bias_add=module.skip_bias_add
-            if hasattr(module, "skip_bias_add")
-            else False,
-        )
-
-        return self._slice_linear(
+        self._slice_linear(
             module=module,
             reversed=reversed,
             fusion_degree=fusion_degree,
@@ -274,9 +239,33 @@ class _TensorParallel1D(ParallelWrapper):
             dim=0,
         )
 
-    def _row_slice_linear(self, module: nn.Module, reversed: bool, fusion_degree: int):
         _update_module_arguments(
             module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            orig_module=copy.deepcopy(module.__class__),
+            gather_output=gather_output,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        module.__class__ = ColumnParallelLinear
+
+    def _row_slice_linear(self, module: nn.Module, reversed: bool, fusion_degree: int):
+        self._slice_linear(
+            module=module,
+            reversed=reversed,
+            fusion_degree=fusion_degree,
+            slice_bias=False,
+            dim=1,
+        )
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
             reversed=reversed,
             fusion_degree=fusion_degree,
@@ -286,11 +275,26 @@ class _TensorParallel1D(ParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
+        module.__class__ = RowParallelLinear
 
-        return self._slice_linear(
-            module=module,
-            reversed=reversed,
-            fusion_degree=fusion_degree,
-            slice_bias=False,
-            dim=1,
-        )
+    def _slice_head(self, module, reversed):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            self._column_slice_linear(
+                module=module,
+                reversed=reversed,
+                fusion_degree=1,
+                gather_output=not is_oslo_model(self.module),
+            )
+        else:
+            _update_module_arguments(
+                module=module,
+                parallel_context=self.parallel_context,
+                reversed=reversed,
+                fusion_degree=1,
+                orig_module=copy.deepcopy(module.__class__),
+                gather_output=not is_oslo_model(self.module),
+                skip_bias_add=module.skip_bias_add
+                if hasattr(module, "skip_bias_add")
+                else False,
+            )
+        module.__class__ = ColumnParallelLinear

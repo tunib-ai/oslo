@@ -1,28 +1,22 @@
-from typing import Dict
+import copy
 
 import torch
 import torch.nn as nn
 
-import copy
-
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.tensor_parallel.mapping import (
-    TensorParallelMapping,
-)
+
 from oslo.torch.nn.modules.embedding import (
     VocabParallelEmbedding2p5D,
     VocabUtility,
     Embedding2p5D,
 )
-from oslo.torch.nn.modules.lazy import LazyModuleMixin
 from oslo.torch.nn.modules.linear import Linear2p5D
 from oslo.torch.nn.modules.layer_norm import LayerNorm2p5D
 from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import split_batch_2p5d
-from oslo.transformers.mapping_utils import (
-    _TensorParallelMappingForHuggingFace,
-)
 
-from oslo.transformers.constants import BATCH_DIMENSIONS
+from oslo.torch.nn.parallel.tensor_parallel.mapping import (
+    TensorParallelMapping,
+)
 
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
@@ -30,6 +24,11 @@ from oslo.torch.nn.parallel.utils import (
     is_huggingface_model,
     is_oslo_model,
 )
+from oslo.transformers.mapping_utils import (
+    _TensorParallelMappingForHuggingFace,
+)
+
+from oslo.transformers.constants import BATCH_DIMENSIONS
 
 
 class _TensorParallel2p5D(ParallelWrapper):
@@ -88,9 +87,9 @@ class _TensorParallel2p5D(ParallelWrapper):
         self._parallelize_embedding()
         self._parallalize_linear()
         self._parallelize_layernorm()
+        self._parallelize_head()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
-    # TODO: erase?
     def _update_mp_arguments(self):
         for module in self.module.modules():
             for elem in self.tensor_parallel_mapping.update_attrs(self.module):
@@ -98,6 +97,9 @@ class _TensorParallel2p5D(ParallelWrapper):
                     tesseract_dim = self.parallel_context.get_world_size(
                         ParallelMode.TENSOR_2P5D_COL
                     )
+                    assert (
+                        getattr(module, elem.name) % tesseract_dim == 0
+                    ), f"{elem.name} must be divisible by tesseract_dim."
                     reduced_arg = getattr(module, elem.name) // tesseract_dim
                     setattr(module, elem.name, reduced_arg)
 
@@ -115,7 +117,7 @@ class _TensorParallel2p5D(ParallelWrapper):
             ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._slice_linear(
                     module=module,
-                    reversed=self.tensor_parallel_mapping.is_reversed_param(
+                    reversed=self.tensor_parallel_mapping.is_reversed(
                         self.module, param_name
                     ),
                     fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
@@ -123,7 +125,6 @@ class _TensorParallel2p5D(ParallelWrapper):
                     ),
                     slice_bias=True,
                 )
-                module.__class__ = Linear2p5D
 
     def _parallelize_layernorm(self):
         for module in self.module.modules():
@@ -131,7 +132,18 @@ class _TensorParallel2p5D(ParallelWrapper):
                 self._slice_layernorm(
                     module=module,
                 )
-                module.__class__ = LayerNorm2p5D
+
+    def _parallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                self.module, param_name
+            ) and isinstance(module, nn.Linear):
+                self._slice_head(
+                    module=module,
+                    reversed=self.tensor_parallel_mapping.is_reversed(
+                        self.module, param_name
+                    ),
+                )
 
     @staticmethod
     def _deconstruct_combined_qkv(tensor, tessearct_dim, fusion_degree, is_bias=False):
@@ -167,17 +179,6 @@ class _TensorParallel2p5D(ParallelWrapper):
         dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
 
         if module is self.module.get_input_embeddings():
-            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-            pipeline_parallel_rank = self.parallel_context.get_local_rank(
-                ParallelMode.PIPELINE
-            )
-            tensor_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.TENSOR
-            )
-            pipeline_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.PIPELINE
-            )
-
             (
                 vocab_start_index,
                 vocab_end_index,
@@ -185,23 +186,10 @@ class _TensorParallel2p5D(ParallelWrapper):
                 module.num_embeddings, col_rank, tesseract_dim
             )
 
-            if isinstance(module, LazyModuleMixin):
-                assert hasattr(module, "weight"), "embedding must has `weight`."
-                module.initialize_parameters()
-
             weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
             weight_list = [weight.chunk(tesseract_dim, dim=0) for weight in weight_list]
 
             module.weight.data = weight_list[row_rank][col_rank].contiguous()
-
-            if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-            else:
-                module.weight.oslo_parallel = {
-                    ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                    ParallelMode.TENSOR_2P5D_COL: col_rank,
-                }
 
             _update_module_arguments(
                 module=module,
@@ -215,56 +203,10 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             if isinstance(module, nn.Embedding):
                 module.__class__ = VocabParallelEmbedding2p5D
-
-            for name, _module in self.module.named_modules():
-                if self.tensor_parallel_mapping.is_lm_head(self.module, name):
-                    if _module.weight is not module.weight:
-                        self._slice_linear(
-                            module=_module,
-                            reversed=self.tensor_parallel_mapping.is_reversed_param(
-                                self.module, name
-                            ),
-                            fusion_degree=1,
-                            slice_bias=False,
-                        )
-                    _update_module_arguments(
-                        module=_module,
-                        parallel_context=self.parallel_context,
-                        row_rank=row_rank,
-                        col_rank=col_rank,
-                        dep_rank=dep_rank,
-                        tesseract_dim=tesseract_dim,
-                        data_parallel_rank=data_parallel_rank,
-                        pipeline_parallel_rank=pipeline_parallel_rank,
-                        tensor_parallel_size=tensor_parallel_size,
-                        pipeline_parallel_size=pipeline_parallel_size,
-                        reversed=self.tensor_parallel_mapping.is_reversed_param(
-                            self.module, name
-                        ),
-                        fusion_degree=1,
-                        orig_module=copy.deepcopy(_module.__class__),
-                        gather_output=not is_oslo_model(self.module),
-                        in_features=module.weight.size()[1],
-                        out_features=module.weight.size()[0],
-                        bias=None,
-                    )
-                    if isinstance(_module, nn.Linear):
-                        _module.__class__ = Linear2p5D
-                    else:
-                        raise RuntimeError("Classifier layer must be `nn.Linear` class")
         else:
             weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
             weight_list = [weight.chunk(tesseract_dim, dim=1) for weight in weight_list]
             module.weight.data = weight_list[row_rank][col_rank].contiguous()
-
-            if hasattr(module.weight, "oslo_parallel"):
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-            else:
-                module.weight.oslo_parallel = {
-                    ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                    ParallelMode.TENSOR_2P5D_COL: col_rank,
-                }
 
             _update_module_arguments(
                 module=module,
@@ -275,6 +217,17 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             if isinstance(module, nn.Embedding):
                 module.__class__ = Embedding2p5D
+
+        if hasattr(module.weight, "oslo_parallel"):
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+        else:
+            module.weight.oslo_parallel = {
+                ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                ParallelMode.TENSOR_2P5D_COL: col_rank,
+                ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+            }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
@@ -293,8 +246,64 @@ class _TensorParallel2p5D(ParallelWrapper):
             ParallelMode.PIPELINE
         )
 
+        if reversed:
+            module.weight.data = module.weight.data.t()
+
+        weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
+        weight_list = [
+            weight.chunk(tesseract_dim * fusion_degree, dim=0) for weight in weight_list
+        ]
+
+        if fusion_degree > 1:
+            weight_list = self._deconstruct_combined_qkv(
+                weight_list,
+                tesseract_dim,
+                fusion_degree,
+                is_bias=False,
+            )
+
+        module.weight.data = weight_list[row_rank][col_rank].contiguous()
+
+        if hasattr(module.weight, "oslo_parallel"):
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+        else:
+            module.weight.oslo_parallel = {
+                ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                ParallelMode.TENSOR_2P5D_COL: col_rank,
+                ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+            }
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if slice_bias is True and module.bias.dim() >= 1:
+                bias_list = module.bias.chunk(tesseract_dim * fusion_degree, dim=0)
+
+                if fusion_degree > 1:
+                    bias_list = self._deconstruct_combined_qkv(
+                        bias_list,
+                        tesseract_dim,
+                        fusion_degree,
+                        is_bias=True,
+                    )
+
+                module.bias.data = bias_list[row_rank].contiguous()
+
+                if hasattr(module.bias, "oslo_parallel"):
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+                else:
+                    module.bias.oslo_parallel = {
+                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
+                        ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+                    }
+
         _update_module_arguments(
             module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
             row_rank=row_rank,
             col_rank=col_rank,
@@ -312,80 +321,7 @@ class _TensorParallel2p5D(ParallelWrapper):
             else False,
             gather_output=False,
         )
-
-        if hasattr(module, "weight") and module.weight is not None:
-            if module.weight.dim() >= 1:
-                if isinstance(module, LazyModuleMixin):
-                    module.initialize_parameters()
-
-                if reversed:
-                    module.weight.data = module.weight.data.t()
-
-                weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
-                weight_list = [
-                    weight.chunk(tesseract_dim * fusion_degree, dim=0)
-                    for weight in weight_list
-                ]
-
-                if fusion_degree > 1:
-                    weight_list = self._deconstruct_combined_qkv(
-                        weight_list,
-                        tesseract_dim,
-                        fusion_degree,
-                        is_bias=False,
-                    )
-
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = weight_list[row_rank][col_rank].clone()
-                    del weight_list, module.weight
-                    module.weight = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.weight.data = weight_list[row_rank][col_rank].contiguous()
-
-                if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-                else:
-                    module.weight.oslo_parallel = {
-                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank,
-                    }
-
-            _update_module_arguments(
-                module=module,
-                in_features=module.weight.size()[1],
-                out_features=module.weight.size()[0],
-            )
-
-        if hasattr(module, "bias") and module.bias is not None:
-            if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(tesseract_dim * fusion_degree, dim=0)
-                # bias_list = [bias.chunk(1 * fusion_degree, dim=0) for bias in bias_list]
-
-                if fusion_degree > 1:
-                    bias_list = self._deconstruct_combined_qkv(
-                        bias_list,
-                        tesseract_dim,
-                        fusion_degree,
-                        is_bias=True,
-                    )
-
-                if isinstance(module, LazyModuleMixin):
-                    new_tensor = bias_list[row_rank].clone()
-                    del bias_list, module.bias
-                    module.bias = nn.Parameter(new_tensor.contiguous())
-                else:
-                    module.bias.data = bias_list[row_rank].contiguous()
-
-                if hasattr(module.bias, "oslo_parallel"):
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-                else:
-                    module.bias.oslo_parallel = {
-                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank,
-                    }
-
+        module.__class__ = Linear2p5D
         return module
 
     def _slice_layernorm(self, module):
@@ -405,8 +341,42 @@ class _TensorParallel2p5D(ParallelWrapper):
             ParallelMode.PIPELINE
         )
 
+        if hasattr(module, "weight") and module.weight is not None:
+            if module.weight.dim() >= 1:
+                weight_list = module.weight.data.chunk(tesseract_dim, dim=0)
+                module.weight.data = weight_list[row_rank].contiguous()
+
+                if hasattr(module.weight, "oslo_parallel"):
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+                else:
+                    module.weight.oslo_parallel = {
+                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
+                        ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+                    }
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if module.bias.dim() >= 1:
+                bias_list = module.bias.chunk(tesseract_dim, dim=0)
+                module.bias.data = bias_list[row_rank].contiguous()
+
+                if hasattr(module.bias, "oslo_parallel"):
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+                else:
+                    module.bias.oslo_parallel = {
+                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                        ParallelMode.TENSOR_2P5D_COL: col_rank,
+                        ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+                    }
+
         _update_module_arguments(
             module=module,
+            normalized_shape=module.weight.size()[0] * tesseract_dim,
+            partitioned_dim=module.weight.size()[0],
             parallel_context=self.parallel_context,
             row_rank=row_rank,
             col_rank=col_rank,
@@ -418,39 +388,62 @@ class _TensorParallel2p5D(ParallelWrapper):
             pipeline_parallel_size=pipeline_parallel_size,
             orig_module=copy.deepcopy(module.__class__),
         )
-
-        if hasattr(module, "weight") and module.weight is not None:
-            if module.weight.dim() >= 1:
-                weight_list = module.weight.data.chunk(tesseract_dim, dim=0)
-                module.weight.data = weight_list[row_rank].contiguous()
-
-                if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-                else:
-                    module.weight.oslo_parallel = {
-                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank,
-                    }
-
-        if hasattr(module, "bias") and module.bias is not None:
-            if module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(tesseract_dim, dim=0)
-                module.bias.data = bias_list[row_rank].contiguous()
-
-                if hasattr(module.bias, "oslo_parallel"):
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-                else:
-                    module.bias.oslo_parallel = {
-                        ParallelMode.TENSOR_2P5D_ROW: row_rank,
-                        ParallelMode.TENSOR_2P5D_COL: col_rank,
-                    }
-
-        _update_module_arguments(
-            module=module,
-            normalized_shape=module.weight.size()[0] * tesseract_dim,
-            partitioned_dim=module.weight.size()[0],
-        )
-
+        module.__class__ = LayerNorm2p5D
         return module
+
+    def _slice_head(self, module, reversed):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            self._slice_linear(
+                module=module,
+                reversed=reversed,
+                fusion_degree=1,
+                slice_bias=True,
+            )
+            _update_module_arguments(
+                module=module,
+                gather_output=not is_oslo_model(self.module),
+            )
+        else:
+            row_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_2P5D_ROW
+            )
+            col_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_2P5D_COL
+            )
+            dep_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_2P5D_DEP
+            )
+            tesseract_dim = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR_2P5D_COL
+            )
+
+            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
+            pipeline_parallel_rank = self.parallel_context.get_local_rank(
+                ParallelMode.PIPELINE
+            )
+            tensor_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR
+            )
+            pipeline_parallel_size = self.parallel_context.get_world_size(
+                ParallelMode.PIPELINE
+            )
+            _update_module_arguments(
+                module=module,
+                in_features=module.weight.size()[1],
+                out_features=module.weight.size()[0],
+                parallel_context=self.parallel_context,
+                row_rank=row_rank,
+                col_rank=col_rank,
+                dep_rank=dep_rank,
+                tesseract_dim=tesseract_dim,
+                data_parallel_rank=data_parallel_rank,
+                pipeline_parallel_rank=pipeline_parallel_rank,
+                tensor_parallel_size=tensor_parallel_size,
+                pipeline_parallel_size=pipeline_parallel_size,
+                reversed=reversed,
+                fusion_degree=1,
+                skip_bias_add=False,
+                gather_output=not is_oslo_model(self.module),
+                orig_module=copy.deepcopy(module.__class__),
+            )
+        module.__class__ = Linear2p5D

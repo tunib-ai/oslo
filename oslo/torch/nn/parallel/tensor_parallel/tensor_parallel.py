@@ -27,24 +27,6 @@ from oslo.torch.nn.parallel.utils import (
 )
 
 
-def get_divisible_by(parallel_context: ParallelContext):
-    if parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-        divisible_by = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-    elif parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-        divisible_by = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-    elif parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-        divisible_by = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-    elif parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
-        divisible_by = (
-            parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT) ** 2
-        )
-    else:
-        raise ValueError(
-            "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
-        )
-    return divisible_by
-
-
 class TensorParallel(ParallelWrapper):
     """
     Tensor parallel module
@@ -106,24 +88,25 @@ class TensorParallel(ParallelWrapper):
         vocab_size, embedding_dim = module.weight.size()
         new_vocab_size = vocab_size
 
-        divisible_by = get_divisible_by(parallel_context)
-        while new_vocab_size % divisible_by != 0:
+        world_size = parallel_context.get_world_size(ParallelMode.TENSOR)
+        while new_vocab_size % world_size != 0:
             new_vocab_size += 1
 
-        padding = torch.zeros(
-            new_vocab_size - vocab_size,
-            embedding_dim,
-            dtype=module.weight.dtype,
-            device=module.weight.device,
-        )
-        new_embeddings = torch.cat(
-            tensors=[module.weight.data, padding],
-            dim=0,
-        )
+        if new_vocab_size != vocab_size:
+            padding = torch.zeros(
+                new_vocab_size - vocab_size,
+                embedding_dim,
+                dtype=module.weight.dtype,
+                device=module.weight.device,
+            )
+            new_embeddings = torch.cat(
+                tensors=[module.weight.data, padding],
+                dim=0,
+            )
 
-        module.weight.data = new_embeddings
-        module.num_embeddings = new_vocab_size
-        setattr(unwrapped_model, "orig_vocab_size", vocab_size)
+            module.weight.data = new_embeddings
+            module.num_embeddings = new_vocab_size
+            setattr(unwrapped_model, "orig_vocab_size", vocab_size)
         return model
 
     @staticmethod
@@ -139,7 +122,7 @@ class TensorParallel(ParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
         tensor_parallel_mapping = TensorParallelMapping(mapping)
-        divisible_by = get_divisible_by(parallel_context)
+        world_size = parallel_context.get_world_size(ParallelMode.TENSOR)
 
         for param_name, module in unwrapped_model.named_modules():
             if tensor_parallel_mapping.is_head(
@@ -153,28 +136,43 @@ class TensorParallel(ParallelWrapper):
                     out_features, in_features = module.weight.size()
                     new_out_features = out_features
 
-                    while new_out_features % divisible_by != 0:
+                    while new_out_features % world_size != 0:
                         new_out_features += 1
 
-                    padding = torch.zeros(
-                        new_out_features - out_features,
-                        in_features,
-                        dtype=module.weight.dtype,
-                        device=module.weight.device,
-                    )
-                    new_weight = torch.cat(
-                        tensors=[module.weight.data, padding],
-                        dim=0,
-                    )
-                    module.weight.data = new_weight
-                    module.out_features = new_out_features
-                    setattr(
-                        unwrapped_model,
-                        f"orig_{param_name.split('.')[-1]}_num_classes",
-                        out_features,
-                    )
-                    if hasattr(unwrapped_model, "num_labels"):
-                        unwrapped_model.num_labels = new_out_features
+                    if new_out_features != out_features:
+                        padding = torch.zeros(
+                            new_out_features - out_features,
+                            in_features,
+                            dtype=module.weight.dtype,
+                            device=module.weight.device,
+                        )
+                        new_weight = torch.cat(
+                            tensors=[module.weight.data, padding],
+                            dim=0,
+                        )
+
+                        if hasattr(module, "bias") and module.bias is not None:
+                            padding = torch.zeros(
+                                new_out_features - out_features,
+                                dtype=module.weight.dtype,
+                                device=module.weight.device,
+                            )
+                            new_bias = torch.cat(
+                                tensors=[module.bias.data, padding],
+                                dim=0,
+                            )
+                            module.bias.data = new_bias
+
+                        module.weight.data = new_weight
+                        module.out_features = new_out_features
+
+                        setattr(
+                            unwrapped_model,
+                            f"orig_{param_name.split('.')[-1]}_num_classes",
+                            out_features,
+                        )
+                        if hasattr(unwrapped_model, "num_labels"):
+                            unwrapped_model.num_labels = new_out_features
         return model
 
     def _remove_embeddings(self, model, parallel_context):
