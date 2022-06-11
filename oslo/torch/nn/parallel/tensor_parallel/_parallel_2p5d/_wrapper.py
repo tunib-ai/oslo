@@ -1,5 +1,3 @@
-from typing import Dict
-
 import torch
 import torch.nn as nn
 
@@ -447,3 +445,22 @@ class _TensorParallel2p5D(ParallelWrapper):
 
             if isinstance(module, nn.Embedding):
                 module.__class__ = Embedding2p5D
+
+    @torch.no_grad()
+    def _deparallelize(self):
+        self._deparallelize_layernorm()
+        self._deparallelize_linear()
+        self._deparallelize_embedding()
+        self._rollback_mp_arguments()
+
+    def _rollback_mp_arguments(self):
+        pass
+
+    def _deparallelize_embedding(self):
+        pass
+
+    def _deparallelize_linear(self):
+        pass
+
+    def _deparallelize_layernorm(self):
+        pass
