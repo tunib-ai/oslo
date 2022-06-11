@@ -166,7 +166,7 @@ class ColLinear1D(Linear):
         if self.gather_output:
             outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
             if hasattr(self, "orig_num_classes"):
-                outputs = outputs[..., :self.orig_num_classes]
+                outputs = outputs[..., : self.orig_num_classes]
         return outputs
 
 
@@ -362,7 +362,7 @@ class Linear2D(Linear):
                 parallel_context=self.parallel_context,
             ).clone()
             if hasattr(self, "orig_num_classes"):
-                outputs = outputs[..., :self.orig_num_classes]
+                outputs = outputs[..., : self.orig_num_classes]
         return outputs
 
 
@@ -436,7 +436,7 @@ class Linear2p5D(Linear):
 
         out_shape = input.shape[:-1] + (self.out_features,)
 
-        output = Matmul_ABT_2p5D.apply(
+        outputs = Matmul_ABT_2p5D.apply(
             input,
             self.weight,
             self.tesseract_dim,
@@ -471,10 +471,10 @@ class Linear2p5D(Linear):
                     self.parallel_context,
                     ParallelMode.TENSOR_2P5D_COL,
                 )
-                return output, bias
+                return outputs, bias
             else:
-                output = add_bias_2p5d(
-                    output,
+                outputs = add_bias_2p5d(
+                    outputs,
                     self.bias,
                     self.out_features,
                     self.tesseract_dim,
@@ -490,21 +490,21 @@ class Linear2p5D(Linear):
                     ParallelMode.TENSOR_2P5D_COL,
                 )
         if self.gather_output:
-            output = all_gather_tensor_2p5d(
-                output,
+            outputs = all_gather_tensor_2p5d(
+                outputs,
                 dim=-1,
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
-            output = all_gather_tensor_2p5d(
-                output,
+            outputs = all_gather_tensor_2p5d(
+                outputs,
                 dim=0,
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
                 parallel_context=self.parallel_context,
             ).clone()
             if hasattr(self, "orig_num_classes"):
-                outputs = outputs[..., :self.orig_num_classes]
-        return output
+                outputs = outputs[..., : self.orig_num_classes]
+        return outputs
 
 
 class Linear3D(Linear):

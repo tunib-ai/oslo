@@ -35,7 +35,9 @@ def get_divisible_by(parallel_context: ParallelContext):
     elif parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
         divisible_by = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
     elif parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
-        divisible_by = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT) ** 2
+        divisible_by = (
+            parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT) ** 2
+        )
     else:
         raise ValueError(
             "currently, only 1D, 2D, 2.5D tensor parallelism is supported."

@@ -81,10 +81,10 @@ def gather_batch_2p5d(
         parallel_context=parallel_context,
         col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
     )
-    
+
 
 def split_batch_2p5d(
-    inputs: Tensor, 
+    inputs: Tensor,
     dim: int = 0,
     parallel_context: Optional[ParallelContext] = None,
 ) -> Tensor:

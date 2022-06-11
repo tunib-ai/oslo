@@ -9,6 +9,7 @@ def split_batch_2d(tensor, summa_dim, parallel_context):
     ]
     return tensor
 
+
 def split_2d(tensor, summa_dim, parallel_context):
     tensor = tensor.chunk(summa_dim, dim=-1)[
         parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
@@ -17,6 +18,7 @@ def split_2d(tensor, summa_dim, parallel_context):
         parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
     ]
     return tensor
+
 
 def split_embedding_2d(tensor, summa_dim, parallel_context):
     tensor = tensor.chunk(summa_dim, dim=-1)[
@@ -27,6 +29,7 @@ def split_embedding_2d(tensor, summa_dim, parallel_context):
     ]
     return tensor
 
+
 def split_layernorm_2d(tensor, summa_dim, parallel_context):
     tensor = tensor.chunk(summa_dim, dim=0)[
         parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
@@ -35,6 +38,7 @@ def split_layernorm_2d(tensor, summa_dim, parallel_context):
         parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
     ]
     return tensor
+
 
 def split_bias_2d(tensor, summa_dim, parallel_context):
     tensor = tensor.chunk(summa_dim, dim=0)[
