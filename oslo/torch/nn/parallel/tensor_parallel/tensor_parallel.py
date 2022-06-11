@@ -152,11 +152,7 @@ class TensorParallel(ParallelWrapper):
                     out_features, in_features = module.weight.size()
                     new_out_features = out_features
 
-<<<<<<< HEAD
                     while new_out_features % divisible_by != 0:
-=======
-                    while new_out_features % world_size != 0:
->>>>>>> bb22b9124900fa3163332151d6444a0e4d013fc0
                         new_out_features += 1
 
                     if new_out_features != out_features:
