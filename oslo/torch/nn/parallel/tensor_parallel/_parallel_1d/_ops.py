@@ -7,7 +7,7 @@ from oslo.torch.distributed import ParallelMode, ParallelContext
 from oslo.torch.distributed.nn.functional import all_gather, all_reduce, scatter
 
 
-class _Broadcast1D(torch.autograd.Function):
+class _BroadcastTensor1D(torch.autograd.Function):
     def forward(ctx: Any, inputs: Tensor, parallel_context: ParallelContext):
         if ctx:
             ctx.parallel_context = parallel_context
@@ -27,7 +27,7 @@ class _Broadcast1D(torch.autograd.Function):
         )
 
 
-class _AllReduce1D(torch.autograd.Function):
+class _AllReduceTensor1D(torch.autograd.Function):
     def forward(ctx: Any, inputs: Tensor, parallel_context: ParallelContext):
         return all_reduce(
             inputs,
@@ -41,7 +41,7 @@ class _AllReduce1D(torch.autograd.Function):
         return grad, None
 
 
-class _AllGather1D(torch.autograd.Function):
+class _AllGatherTensor1D(torch.autograd.Function):
     def forward(ctx: Any, inputs: Tensor, dim: int, parallel_context: ParallelContext):
         if ctx:
             ctx.dim = dim
@@ -61,13 +61,14 @@ class _AllGather1D(torch.autograd.Function):
                 grad,
                 dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
             None,
         )
 
 
-class _Scatter1D(torch.autograd.Function):
+class _ScatterTensor1D(torch.autograd.Function):
     def forward(ctx: Any, inputs: Tensor, dim: int, parallel_context: ParallelContext):
         if ctx:
             ctx.dim = dim
@@ -77,6 +78,7 @@ class _Scatter1D(torch.autograd.Function):
                 inputs,
                 dim=dim,
                 parallel_context=parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
         )
@@ -87,23 +89,24 @@ class _Scatter1D(torch.autograd.Function):
                 grad,
                 dim=ctx.dim,
                 parallel_context=ctx.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             ),
             None,
             None,
         )
 
 
-def broadcast_1d(inputs: Tensor, parallel_context: ParallelContext):
-    return _Broadcast1D.apply(inputs, parallel_context)
+def broadcast_tensor_1d(inputs: Tensor, parallel_context: ParallelContext):
+    return _BroadcastTensor1D.apply(inputs, parallel_context)
 
 
-def all_reduce_1d(inputs: Tensor, parallel_context: ParallelContext):
-    return _AllReduce1D.apply(inputs, parallel_context)
+def all_reduce_tensor_1d(inputs: Tensor, parallel_context: ParallelContext):
+    return _AllReduceTensor1D.apply(inputs, parallel_context)
 
 
-def all_gather_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
-    return _AllGather1D.apply(inputs, dim, parallel_context)
+def all_gather_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
+    return _AllGatherTensor1D.apply(inputs, dim, parallel_context)
 
 
-def scatter_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
-    return _Scatter1D.apply(inputs, dim, parallel_context)
+def scatter_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
+    return _ScatterTensor1D.apply(inputs, dim, parallel_context)
