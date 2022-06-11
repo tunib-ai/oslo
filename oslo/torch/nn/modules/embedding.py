@@ -118,6 +118,47 @@ class LazyEmbedding(LazyModuleMixin, nn.Embedding):
             self.__class__ = self.cls_to_become
 
 
+class Embedding1D(nn.Embedding):
+    def __init__(
+        self,
+        num_embeddings: int,
+        embedding_dim: int,
+        dtype: Optional[torch.dtype] = None,
+        parallel_context: Optional[ParallelContext] = None,
+    ):
+        self.parallel_context = parallel_context
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+
+        super().__init__(
+            num_embeddings=num_embeddings,
+            embedding_dim=embedding_dim // world_size,
+            device=torch.device(torch.cuda.current_device()),
+            dtype=dtype,
+        )
+
+    def forward(self, input: Tensor) -> Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
+            all_gather_tensor_1d,
+        )
+
+        output = F.embedding(
+            input,
+            self.weight,
+            self.padding_idx,
+            self.max_norm,
+            self.norm_type,
+            self.scale_grad_by_freq,
+            self.sparse,
+        )
+
+        output = all_gather_tensor_1d(
+            output,
+            -1,
+            self.parallel_context,
+        )
+        return output
+
+
 class VocabParallelEmbedding1D(nn.Embedding):
     def __init__(
         self,
@@ -146,7 +187,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_1d,
+            all_reduce_tensor_1d,
         )
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
@@ -174,7 +215,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
             output_parallel[input_mask, :] = 0.0
 
         # Reduce across all the model parallel GPUs.
-        output = all_reduce_1d(output_parallel, self.parallel_context)
+        output = all_reduce_tensor_1d(output_parallel, self.parallel_context)
         return output
 
 

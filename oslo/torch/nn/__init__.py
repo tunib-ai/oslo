@@ -1,7 +1,6 @@
 from oslo.torch.nn.modules.conv import Conv1D, LazyConv1D
 from oslo.torch.nn.modules.dropout import (
     FusedBiasDropout,
-    FusedBiasDropoutResidual,
 )
 from oslo.torch.nn.modules.embedding import (
     Embedding2D,
@@ -15,7 +14,6 @@ from oslo.torch.nn.modules.embedding import (
 )
 from oslo.torch.nn.modules.functional import (
     fused_bias_dropout,
-    fused_bias_dropout_residual,
     fused_bias_gelu,
     fused_gelu,
     multi_head_attention_forward,
@@ -27,7 +25,14 @@ from oslo.torch.nn.modules.functional import (
     mixed_dtype_fused_rms_norm_affine,
     fused_rms_norm,
 )
-from oslo.torch.nn.modules.layer_norm import LayerNorm2D, LayerNorm2p5D
+from oslo.torch.nn.modules.layer_norm import (
+    LayerNorm2D,
+    LayerNorm2p5D,
+    FusedLayerNorm,
+    MixedFusedLayerNorm,
+    MixedFusedRMSNorm,
+    FusedRMSNorm,
+)
 from oslo.torch.nn.modules.linear import (
     ColumnParallelLinear,
     LazyLinear,
@@ -38,11 +43,9 @@ from oslo.torch.nn.modules.linear import (
     RowParallelLinear,
 )
 
-from oslo.torch.nn.modules.fused_layer_norm import (
-    FusedLayerNorm,
-    MixedFusedLayerNorm,
-    MixedFusedRMSNorm,
-    FusedRMSNorm,
-)
 
 from oslo.torch.nn.modules.softmax import FusedScaleMaskSoftmax
+
+from oslo.torch.nn.modules.ngram_repeat_block import NGramRepeatBlock
+
+from oslo.torch.nn.modules.functional import _NGramRepeatBlockFunction

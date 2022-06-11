@@ -64,7 +64,7 @@ class GPT2Attention(LazyModuleMixin, nn.Module):
         self.c_proj = onn.LazyConv1D(self.embed_dim, self.embed_dim, skip_bias_add=True)
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
-        self.resid_dropout = onn.FusedBiasDropoutResidual(config.resid_pdrop)
+        self.resid_dropout = onn.FusedBiasDropout(config.resid_pdrop)
 
         self.pruned_heads = set()
 
@@ -290,7 +290,7 @@ class GPT2MLP(LazyModuleMixin, nn.Module):
         self.c_fc = onn.LazyConv1D(intermediate_size, embed_dim, skip_bias_add=True)
         self.c_proj = onn.LazyConv1D(embed_dim, intermediate_size, skip_bias_add=True)
         self.act = onn.fused_bias_gelu
-        self.dropout = onn.FusedBiasDropoutResidual(config.resid_pdrop)
+        self.dropout = onn.FusedBiasDropout(config.resid_pdrop)
 
     def forward(self, hidden_states):
         hidden_states, bias = self.c_fc(hidden_states)

@@ -120,13 +120,13 @@ class ColumnParallelLinear(Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        skip_bias_add: bool = False,
         dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
         gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.parallel_context = parallel_context
         self.gather_output = gather_output
+        self.parallel_context = parallel_context
         self.reversed = False
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -142,24 +142,29 @@ class ColumnParallelLinear(Linear):
             dtype=dtype,
         )
 
-    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-        # to avoid circular import
-        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_gather_1d,
-            broadcast_1d,
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
         )
 
-        input = broadcast_1d(input, self.parallel_context)
-        outputs = F.linear(input, self.weight)
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
+            all_gather_tensor_1d,
+            broadcast_tensor_1d,
+        )
 
-        if self.gather_output:
-            outputs = all_gather_1d(outputs, -1, self.parallel_context).clone()
+        input = broadcast_tensor_1d(input, self.parallel_context)
+        outputs = F.linear(input, self.weight)
 
         if self.bias is not None:
             if self.skip_bias_add:
                 return outputs, self.bias
             else:
-                return outputs + self.bias
+                outputs = outputs + self.bias
+
+        if self.gather_output:
+            outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
 
         return outputs
 
@@ -171,8 +176,8 @@ class RowParallelLinear(Linear):
         out_features: int,
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
-        parallel_input: bool = True,
         skip_bias_add: bool = False,
+        parallel_input: bool = True,
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_input = parallel_input
@@ -192,18 +197,23 @@ class RowParallelLinear(Linear):
             skip_bias_add=skip_bias_add,
         )
 
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, parallel_input={self.parallel_input}"
+        )
+
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-        # to avoid circular import
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_1d,
-            scatter_1d,
+            all_reduce_tensor_1d,
+            scatter_tensor_1d,
         )
 
         if not self.parallel_input:
-            input = scatter_1d(input, -1, self.parallel_context)
+            input = scatter_tensor_1d(input, -1, self.parallel_context)
 
         outputs = F.linear(input, self.weight)
-        outputs = all_reduce_1d(outputs, self.parallel_context)
+        outputs = all_reduce_tensor_1d(outputs, self.parallel_context)
 
         if self.bias is not None:
             if self.skip_bias_add:
@@ -235,8 +245,8 @@ class Linear2D(Linear):
             in_features % self.summa_dim == 0
         ), "in_features must be divisible by summa dim."
         assert (
-            out_features % (self.summa_dim**2) == 0
-        ), "out_features must be divisible by summa dim^2."
+            out_features % self.summa_dim == 0
+        ), "out_features must be divisible by summa dim."
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -270,6 +280,12 @@ class Linear2D(Linear):
                 )
             )
             self.reset_parameters()
+
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
+        )
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
@@ -403,6 +419,12 @@ class Linear2p5D(Linear):
             skip_bias_add=skip_bias_add,
         )
 
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
+        )
+
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         # input: [m/dq, n/q, k/q]
         # output: [m/dq, n/q, h/q]
@@ -497,8 +519,10 @@ class Linear3D(Linear):
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
+        gather_output: bool = False,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        self.gather_output = gather_output
         self.parallel_context = parallel_context
         self.reversed = False
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
@@ -533,14 +557,19 @@ class Linear3D(Linear):
             self.reset_parameters()
 
     def forward(self, input: Tensor) -> Tensor:
-        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import linear_3d
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+            Matmul_ABT_3D,
+        )
 
-        return linear_3d(
+        return Matmul_ABT_3D.apply(
             input,
             self.weight,
             self.bias,
-            parallel_context=self.parallel_context,
-            input_parallel_mode=self.input_parallel_mode,
-            weight_parallel_mode=self.weight_parallel_mode,
-            output_parallel_mode=self.output_parallel_mode,
+            0,
+            0,
+            0,
+            self.parallel_context,
+            self.input_parallel_mode,
+            self.weight_parallel_mode,
+            self.output_parallel_mode,
         )

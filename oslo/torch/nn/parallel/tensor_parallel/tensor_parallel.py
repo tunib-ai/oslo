@@ -13,10 +13,17 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._wrapper import (
 from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._wrapper import (
     _TensorParallel2p5D,
 )
+from oslo.torch.nn.parallel.tensor_parallel.mapping import (
+    TensorParallelMapping,
+)
+from oslo.transformers.mapping_utils import (
+    _TensorParallelMappingForHuggingFace,
+)
 from oslo.torch.nn.parallel.utils import (
     ParallelWrapper,
     unwrap_parallel,
     get_parallel_context,
+    is_huggingface_model,
 )
 
 
@@ -48,69 +55,125 @@ class TensorParallel(ParallelWrapper):
         self,
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
+        mapping: dict = None,
     ):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
-        orig_vocab_size, module = self._add_embeddings(module, self.parallel_context)
+        module = self._resize_vocab_size(module, self.parallel_context)
+        module = self._resize_num_classes(module, self.parallel_context, mapping)
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context)
+            self.module = _TensorParallel1D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context)
+            self.module = _TensorParallel2D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context)
+            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
         else:
-            raise ValueError("currently, only 1d tensor parallelism is supported.")
+            raise ValueError(
+                "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
+            )
 
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
 
     @staticmethod
-    def _add_embeddings(model, parallel_context):
-        unwrap = unwrap_parallel(model)
+    def _resize_vocab_size(model, parallel_context):
+        unwrapped_model = unwrap_parallel(model)
 
         assert hasattr(
-            unwrap, "get_input_embeddings"
+            unwrapped_model, "get_input_embeddings"
         ), "model object must have `get_input_embeddings` method."
 
-        input_embeddings = unwrap.get_input_embeddings()
+        module = unwrapped_model.get_input_embeddings()
 
-        emb_size, dimension = input_embeddings.weight.size()
-        new_emb_size = emb_size
+        vocab_size, embedding_dim = module.weight.size()
+        new_vocab_size = vocab_size
+
+        world_size = parallel_context.get_world_size(ParallelMode.TENSOR)
+        while new_vocab_size % world_size != 0:
+            new_vocab_size += 1
+
+        if new_vocab_size != vocab_size:
+            padding = torch.zeros(
+                new_vocab_size - vocab_size,
+                embedding_dim,
+                dtype=module.weight.dtype,
+                device=module.weight.device,
+            )
+            new_embeddings = torch.cat(
+                tensors=[module.weight.data, padding],
+                dim=0,
+            )
+
+            module.weight.data = new_embeddings
+            module.num_embeddings = new_vocab_size
+            setattr(unwrapped_model, "orig_vocab_size", vocab_size)
+        return model
+
+    @staticmethod
+    def _resize_num_classes(model, parallel_context, mapping):
+        unwrapped_model = unwrap_parallel(model)
+        if mapping is None:
+            if is_huggingface_model(unwrapped_model):
+                mapping = _TensorParallelMappingForHuggingFace().get_mapping(
+                    unwrapped_model
+                )
+            else:
+                raise ValueError(
+                    "`mapping` must be input if the model is not huggingface model."
+                )
+        tensor_parallel_mapping = TensorParallelMapping(mapping)
         world_size = parallel_context.get_world_size(ParallelMode.TENSOR)
 
-        while new_emb_size % world_size != 0:
-            new_emb_size += 1
+        for param_name, module in unwrapped_model.named_modules():
+            if tensor_parallel_mapping.is_head(
+                unwrapped_model, param_name
+            ) and isinstance(module, nn.Linear):
+                if module.weight is unwrapped_model.get_input_embeddings().weight:
+                    module.out_features = (
+                        unwrapped_model.get_input_embeddings().num_embeddings
+                    )
+                else:
+                    out_features, in_features = module.weight.size()
+                    new_out_features = out_features
 
-        padding = torch.zeros(
-            new_emb_size - emb_size,
-            dimension,
-            dtype=input_embeddings.weight.dtype,
-            device=input_embeddings.weight.device,
-        )
-        new_embeddings = torch.cat(
-            tensors=[input_embeddings.weight, padding],
-            dim=0,
-        )
+                    while new_out_features % world_size != 0:
+                        new_out_features += 1
 
-        new_num_embeddings = new_embeddings.size(0)
+                    if new_out_features != out_features:
+                        padding = torch.zeros(
+                            new_out_features - out_features,
+                            in_features,
+                            dtype=module.weight.dtype,
+                            device=module.weight.device,
+                        )
+                        new_weight = torch.cat(
+                            tensors=[module.weight.data, padding],
+                            dim=0,
+                        )
 
-        for name, _module in unwrap.named_modules():
-            # process tied weights
-            if (
-                hasattr(_module, "weight")
-                and _module.weight is input_embeddings.weight
-                and not isinstance(_module, nn.Embedding)
-            ):
-                _module.weight.data = new_embeddings
-                if hasattr(_module, "out_features"):
-                    _module.out_features = new_num_embeddings
-                elif hasattr(_module, "nf"):
-                    _module.nf = new_num_embeddings
+                        if hasattr(module, "bias") and module.bias is not None:
+                            padding = torch.zeros(
+                                new_out_features - out_features,
+                                dtype=module.weight.dtype,
+                                device=module.weight.device,
+                            )
+                            new_bias = torch.cat(
+                                tensors=[module.bias.data, padding],
+                                dim=0,
+                            )
+                            module.bias.data = new_bias
 
-        input_embeddings.weight.data = new_embeddings
-        input_embeddings.num_embeddings = new_num_embeddings
+                        module.weight.data = new_weight
+                        module.out_features = new_out_features
 
-        return emb_size, model
+                        setattr(
+                            unwrapped_model,
+                            f"orig_{param_name.split('.')[-1]}_num_classes",
+                            out_features,
+                        )
+                        if hasattr(unwrapped_model, "num_labels"):
+                            unwrapped_model.num_labels = new_out_features
+        return model
 
     def _remove_embeddings(self, model, parallel_context):
         pass
