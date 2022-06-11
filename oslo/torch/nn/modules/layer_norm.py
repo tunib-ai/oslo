@@ -31,7 +31,47 @@ def manual_rms_norm(input, normalized_shape, weight, eps):
     return weight * input
 
 
-class LayerNorm2D(nn.Module):
+class LayerNorm(nn.Module):
+    def __init__(
+        self,
+        normalized_shape: int,
+        partitioned_dim: int,
+        eps: float = 1e-05,
+        bias: bool = True,
+        dtype: Optional[torch.dtype] = None,
+    ):
+        super().__init__()
+        self.normalized_shape = normalized_shape
+        self.partitioned_dim = partitioned_dim
+        self.eps = eps
+        self.elementwise_affine = True
+
+        factory_kwargs = {
+            "device": torch.device(torch.cuda.current_device()),
+            "dtype": dtype,
+        }
+        self.weight = Parameter(torch.ones(self.partitioned_dim, **factory_kwargs))
+        if bias:
+            self.bias = Parameter(torch.zeros(self.partitioned_dim, **factory_kwargs))
+        else:
+            self.register_parameter("bias", None)
+
+    def extra_repr(self) -> str:
+        return (
+            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
+            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
+        )
+
+    def forward(self, input: Tensor) -> Tensor:
+        normalized_shape = (
+            (self.normalized_shape,)
+            if isinstance(self.normalized_shape, int)
+            else self.normalized_shape
+        )
+        return F.layer_norm(input, normalized_shape, self.weight, self.bias, self.eps)
+
+
+class LayerNorm1D(LayerNorm):
     def __init__(
         self,
         normalized_shape: int,
@@ -40,17 +80,40 @@ class LayerNorm2D(nn.Module):
         dtype: Optional[torch.dtype] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        super().__init__()
+        self.parallel_context = parallel_context
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape,
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
+
+
+class LayerNorm2D(LayerNorm):
+    def __init__(
+        self,
+        normalized_shape: int,
+        eps: float = 1e-05,
+        bias: bool = True,
+        dtype: Optional[torch.dtype] = None,
+        parallel_context: Optional[ParallelContext] = None,
+    ):
         self.parallel_context = parallel_context
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
         assert (
-            normalized_shape % self.summa_dim == 0
-        ), "normalized_shape must be divisible by summa dim."
+            normalized_shape % (self.summa_dim**2) == 0
+        ), "normalized_shape must be divisible by summa dim^2."
 
-        self.normalized_shape = normalized_shape
-        self.eps = eps
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape // (self.summa_dim**2),
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -66,24 +129,6 @@ class LayerNorm2D(nn.Module):
         )
         self.pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
-        )
-
-        self.partitioned_dim = normalized_shape // (self.summa_dim**2)
-
-        factory_kwargs = {
-            "device": torch.device(torch.cuda.current_device()),
-            "dtype": dtype,
-        }
-        self.weight = Parameter(torch.ones(self.partitioned_dim, **factory_kwargs))
-        if bias:
-            self.bias = Parameter(torch.zeros(self.partitioned_dim, **factory_kwargs))
-        else:
-            self.bias = None
-
-    def extra_repr(self) -> str:
-        return (
-            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
-            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
         )
 
     def forward(self, input: Tensor) -> Tensor:
@@ -154,7 +199,7 @@ class LayerNorm2D(nn.Module):
         return output
 
 
-class LayerNorm2p5D(nn.Module):
+class LayerNorm2p5D(LayerNorm):
     def __init__(
         self,
         normalized_shape: int,
@@ -163,7 +208,6 @@ class LayerNorm2p5D(nn.Module):
         dtype: Optional[torch.dtype] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        super().__init__()
         self.parallel_context = parallel_context
         self.tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
@@ -172,8 +216,13 @@ class LayerNorm2p5D(nn.Module):
             normalized_shape % self.tesseract_dim == 0
         ), "normalized_shape must be divisible by tessract dim."
 
-        self.normalized_shape = normalized_shape
-        self.eps = eps
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape // self.tesseract_dim,
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
 
         self.row_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_2P5D_ROW
@@ -196,23 +245,6 @@ class LayerNorm2p5D(nn.Module):
         )
         self.pipeline_parallel_size = self.parallel_context.get_world_size(
             ParallelMode.PIPELINE
-        )
-
-        self.partitioned_dim = normalized_shape // self.tesseract_dim
-
-        factory_kwargs = {
-            "device": torch.device(torch.cuda.current_device()),
-            "dtype": dtype,
-        }
-
-        self.weight = Parameter(torch.ones(self.normalized_shape, **factory_kwargs))
-        if bias:
-            self.bias = Parameter(torch.zeros(self.normalized_shape, **factory_kwargs))
-
-    def extra_repr(self) -> str:
-        return (
-            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
-            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
         )
 
     def forward(self, input: Tensor) -> torch.Tensor:
@@ -287,7 +319,7 @@ class LayerNorm2p5D(nn.Module):
         return output
 
 
-class LayerNorm3D(nn.Module):
+class LayerNorm3D(LayerNorm):
     def __init__(
         self,
         normalized_shape: int,
@@ -300,34 +332,21 @@ class LayerNorm3D(nn.Module):
         super().__init__()
         self.parallel_context = parallel_context
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
-        self.normalized_shape = normalized_shape
-        self.partitioned_dim = normalized_shape // self.cubic_dim
+        assert (
+            normalized_shape % self.cubic_dim == 0
+        ), "normalized_shape must be divisible by cubic dim."
+
+        super().__init__(
+            normalized_shape=normalized_shape,
+            partitioned_dim=normalized_shape // self.cubic_dim,
+            eps=eps,
+            bias=bias,
+            dtype=dtype,
+        )
 
         self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
         self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
         self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
-
-        factory_kwargs = {
-            "device": torch.device(torch.cuda.current_device()),
-            "dtype": dtype,
-        }
-
-        self.weight = Parameter(
-            torch.ones(self.normalized_shape_per_partition, **factory_kwargs)
-        )
-        if bias:
-            self.bias = Parameter(
-                torch.zeros(self.normalized_shape_per_partition, **factory_kwargs)
-            )
-        else:
-            self.bias = None
-        self.eps = eps
-
-    def extra_repr(self) -> str:
-        return (
-            f"{self.normalized_shape}, partitioned_dim={self.partitioned_dim}, "
-            f"eps={self.eps}, elementwise_affine={self.elementwise_affine}"
-        )
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (

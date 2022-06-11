@@ -2,7 +2,7 @@ import torch
 import torch.distributed as dist
 from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn import RowParallelLinear
+from oslo.torch.nn import RowLinear1D
 from _utils import split_1d
 
 
@@ -42,7 +42,7 @@ input_ = split_1d(parallel_context, input_, world_size, dim=-1)
 # split weight into 0:[0], 1:[1], 2:[2], 3:[3]
 w = split_1d(parallel_context, w, world_size, dim=1)
 
-row_linear = RowParallelLinear(8, 4, parallel_context=parallel_context)
+row_linear = RowLinear1D(8, 4, parallel_context=parallel_context)
 row_linear.weight.data.copy_(w)
 row_linear.bias.data.copy_(b)
 

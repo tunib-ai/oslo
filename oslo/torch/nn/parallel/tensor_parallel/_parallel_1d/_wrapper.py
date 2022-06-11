@@ -10,8 +10,11 @@ from oslo.torch.nn.modules.embedding import (
     VocabUtility,
 )
 from oslo.torch.nn.modules.linear import (
-    ColumnParallelLinear,
-    RowParallelLinear,
+    ColLinear1D,
+    RowLinear1D,
+)
+from oslo.torch.nn.modules.layer_norm import (
+    LayerNorm1D,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -67,6 +70,7 @@ class _TensorParallel1D(ParallelWrapper):
         self._update_mp_arguments()
         self._parallelize_embedding()
         self._parallelize_linear()
+        self._parallelize_layernorm()
         self._parallelize_head()
         _update_module_arguments(self.module, parallel_context=self.parallel_context)
 
@@ -84,6 +88,13 @@ class _TensorParallel1D(ParallelWrapper):
         for module in self.module.modules():
             if isinstance(module, nn.Embedding):
                 self._slice_embedding(
+                    module=module,
+                )
+
+    def _parallelize_layernorm(self):
+        for module in self.module.modules():
+            if isinstance(module, nn.LayerNorm):
+                self._slice_layernorm(
                     module=module,
                 )
 
@@ -252,7 +263,7 @@ class _TensorParallel1D(ParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
-        module.__class__ = ColumnParallelLinear
+        module.__class__ = ColLinear1D
 
     def _row_slice_linear(self, module: nn.Module, reversed: bool, fusion_degree: int):
         self._slice_linear(
@@ -275,7 +286,17 @@ class _TensorParallel1D(ParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
-        module.__class__ = RowParallelLinear
+        module.__class__ = RowLinear1D
+
+    def _slice_layernorm(self, module):
+        _update_module_arguments(
+            module=module,
+            normalized_shape=module.weight.size()[0],
+            partitioned_dim=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            orig_module=copy.deepcopy(module.__class__),
+        )
+        module.__class__ = LayerNorm1D
 
     def _slice_head(self, module, reversed):
         if module.weight is not self.module.get_input_embeddings().weight:
@@ -297,4 +318,4 @@ class _TensorParallel1D(ParallelWrapper):
                 if hasattr(module, "skip_bias_add")
                 else False,
             )
-        module.__class__ = ColumnParallelLinear
+        module.__class__ = ColLinear1D
