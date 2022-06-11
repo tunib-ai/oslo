@@ -548,21 +548,17 @@ class _TensorParallel2p5D(ParallelWrapper):
         pass
 
     @staticmethod
-    def _reconstruct_combined_qkv(tensor, tessearct_dim, fusion_degree, is_bias=False):
-        tensor = [
-            [
-                tensor[i][j * tessearct_dim + k]
-                for i in range(tessearct_dim)
-                for k in range(tessearct_dim)
-            ]
-            for j in range(fusion_degree)
-        ]
-        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
-        tensor = [
-            [tensor[i * tessearct_dim + j] for j in range(tessearct_dim)]
-            for i in range(tessearct_dim)
-        ]
-        return tensor
+    def _reconstruct_combined_qkv(tensor, tesseract_dim, fusion_degree, is_bias=False):
+        last_dim = tensor.size()[-1]
+        if is_bias is False:
+            reshaped_w = tensor.view(-1, tesseract_dim, last_dim)
+            recon_w = torch.cat([
+                reshaped_w[:fusion_degree], reshaped_w[fusion_degree:]], 1).view(-1, last_dim).contiguous()
+        else:
+            reshaped_w = tensor.view(-1, tesseract_dim)
+            recon_w = torch.cat([
+                reshaped_w[:fusion_degree], reshaped_w[fusion_degree:]], 1).view(-1, last_dim).contiguous()
+        return recon_w
 
     @staticmethod
     def _reconstrunct_combined_qkv_bias(tensor, tessearct_dim, fusion_degree):
