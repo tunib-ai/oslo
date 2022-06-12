@@ -21,7 +21,7 @@ target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-embedding = torch.nn.Embedding(10, 8).cuda()
+embedding = torch.nn.Embedding(16, 8).cuda()
 w = deepcopy(embedding.weight.data)
 
 out = embedding(input_)
@@ -38,7 +38,7 @@ if parallel_context.get_global_rank() == 0:
 
 w = split_1d(w, world_size, dim=-1, parallel_context=parallel_context)
 
-embedding_1d = Embedding1D(10, 8, parallel_context=parallel_context)
+embedding_1d = Embedding1D(16, 8, parallel_context=parallel_context)
 embedding_1d.weight.data = w
 
 pout = embedding_1d(input_)

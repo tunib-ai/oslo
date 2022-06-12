@@ -26,7 +26,7 @@ target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-vocab_embedding = torch.nn.Embedding(10, 8).cuda()
+vocab_embedding = torch.nn.Embedding(16, 8).cuda()
 w = deepcopy(vocab_embedding.weight.data)
 
 out = vocab_embedding(input_)
@@ -46,7 +46,7 @@ target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
 w = split_2p5d(w, tesseract_dim, parallel_context=parallel_context)
 
 vocab_embedding_2p5d = VocabParallelEmbedding2p5D(
-    10, 8, parallel_context=parallel_context
+    16, 8, parallel_context=parallel_context
 )
 vocab_embedding_2p5d.weight.data.copy_(w)
 

@@ -21,7 +21,7 @@ target = torch.randn((2, 5, 8)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-embedding = torch.nn.Embedding(10, 8).cuda()
+embedding = torch.nn.Embedding(16, 8).cuda()
 w = deepcopy(embedding.weight.data)
 
 out = embedding(input_)
@@ -40,7 +40,7 @@ input_ = split_batch_2d(input_, summa_dim, parallel_context=parallel_context)
 target = split_2d(target, summa_dim, parallel_context=parallel_context)
 w = split_embedding_2d(w, summa_dim, parallel_context=parallel_context)
 
-embedding_2d = Embedding2D(10, 8, parallel_context=parallel_context)
+embedding_2d = Embedding2D(16, 8, parallel_context=parallel_context)
 embedding_2d.weight.data = w
 
 pout = embedding_2d(input_)
