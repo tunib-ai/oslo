@@ -29,6 +29,18 @@ from oslo.torch.nn.parallel.data_parallel import (
     ShardedDataParallel,
     FullyShardedDataParallel,
 )
+from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
+
+# from oslo.torch.nn.parallel.data_parallel.distributed_data_parallel import (
+#     DistributedDataParallel,
+# )
+# from oslo.torch.nn.parallel.data_parallel.fully_sharded_data_parallel import (
+#     FullyShardedDataParallel,
+# )
+# from oslo.torch.nn.parallel.data_parallel.sharded_data_parallel import (
+#     ShardedDataParallel,
+# )
+
 from oslo.torch.nn.modules.activation import MultiheadAttention
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.data_parallel.auto_wrap import enable_wrap, wrap, auto_wrap
@@ -179,41 +191,21 @@ class Trainer:
         else:
             self.is_model_parallel = False
 
-        # self.sharded_ddp = None
         self.parallel_mode = None
         self.parallel_context = None
         self.tensor_parallel_mode = None
         if len(args.parallel_mode) > 0:
-            if ParallelMode.DATA in args.parallel_mode:
-                self.parallel_mode = ParallelMode.DATA
-                if args.local_rank == -1:
-                    raise ValueError(
-                        "Using sharded DDP only works in distributed training."
-                    )
-                elif ShardedDDPOption.SIMPLE in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.SIMPLE
-                elif ShardedDDPOption.ZERO_DP_2 in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.ZERO_DP_2
-                elif ShardedDDPOption.ZERO_DP_3 in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.ZERO_DP_3
-
-                self.parallel_context = ParallelContext.from_torch(
-                    data_parallel_size=args.data_parallel_size,
-                    sequence_parallel_size=args.sequence_parallel_size,
-                    expert_parallel_size=args.expert_parallel_size,
-                    pipeline_parallel_size=args.pipeline_parallel_size,
-                    tensor_parallel_size=args.tensor_parallel_size,
-                    tensor_parallel_depth=args.tensor_parallel_depth,
-                    tensor_parallel_mode=self.tensor_parallel_mode,
-                    backend=args.parallel_backend,  # TODO self?
-                    seed=args.parallel_seed,
-                )
-            elif ParallelMode.MODEL in args.parallel_mode:
-                pass
-            elif ParallelMode.PIPELINE in args.parallel_mode:
-                pass
-            elif ParallelMode.TENSOR in args.parallel_mode:
-                pass
+            self.parallel_context = ParallelContext.from_torch(
+                data_parallel_size=args.data_parallel_size,
+                sequence_parallel_size=args.sequence_parallel_size,
+                expert_parallel_size=args.expert_parallel_size,
+                pipeline_parallel_size=args.pipeline_parallel_size,
+                tensor_parallel_size=args.tensor_parallel_size,
+                tensor_parallel_depth=args.tensor_parallel_depth,
+                tensor_parallel_mode=self.tensor_parallel_mode,
+                backend=args.parallel_backend,  # TODO self?
+                seed=args.parallel_seed,
+            )
 
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
@@ -329,17 +321,13 @@ class Trainer:
             logger.info(f"Using {args.half_precision_backend} half precision backend")
 
         self.do_grad_scaling = False
-        if (
-            args.fp16 or args.bf16
-        ) and not args.deepspeed:  # deepspeed manages its own half precision
+        if args.fp16 or args.bf16:
             if args.half_precision_backend == "amp":
                 self.use_amp = True
                 self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
                 self.do_grad_scaling = True
-                if self.sharded_ddp is not None:
-                    # TODO change sharded ddp to oslo's
-                    # self.scaler = ShardedGradScaler()
-                    self.scaler = torch.cuda.amp.GradScaler()
+                if args.parallel_mode is not None:
+                    self.scaler = ShardedGradScaler(self.parallel_context)
                 else:
                     self.scaler = torch.cuda.amp.GradScaler()
             else:
@@ -1587,14 +1575,10 @@ class Trainer:
 
         output_dir = os.path.join(run_dir, checkpoint_folder)
         self.save_model(output_dir, _internal_call=True)
-        if self.deepspeed:
-            # under zero3 model file itself doesn't get saved since it's bogus! Unless deepspeed
-            # config `stage3_gather_16bit_weights_on_model_save` is True
-            self.deepspeed.save_checkpoint(output_dir)
 
-        # Save optimizer and scheduler
-        if self.sharded_ddp == ShardedDDPOption.SIMPLE:
-            self.optimizer.consolidate_state_dict()
+        # # Save optimizer and scheduler TODO
+        # if self.sharded_ddp == ShardedDDPOption.SIMPLE:
+        #     self.optimizer.consolidate_state_dict()
 
         if self.args.should_save and not self.deepspeed:
             # deepspeed.save_checkpoint above saves model/optim/sched
@@ -2115,11 +2099,6 @@ class Trainer:
         # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
         if unwrap_model(model) is not model:
             return model
-        #
-        # # Mixed precision training with apex (torch < 1.6)
-        # if self.use_apex and training:
-        #     model, self.optimizer = amp.initialize(
-        #         model, self.optimizer, opt_level=self.args.fp16_opt_level)
 
         # Multi-gpu training (should be after apex fp16 initialization)
         if self.args.n_gpu > 1:
@@ -2131,25 +2110,9 @@ class Trainer:
             return model
 
         # Distributed training (should be after apex fp16 initialization)
-        if self.sharded_ddp is not None:
-            # Sharded DDP!
-            if self.sharded_ddp == ShardedDDPOption.SIMPLE:
-                model = ShardedDataParallel(model, self.optimizer)
-            else:
-                mixed_precision = self.args.fp16 or self.args.bf16
-                cpu_offload = ShardedDDPOption.OFFLOAD in self.args.sharded_ddp
-                zero_3 = self.sharded_ddp == ShardedDDPOption.ZERO_DP_3
-                # XXX: Breaking the self.model convention but I see no way around it for now.
-                if ShardedDDPOption.AUTO_WRAP in self.args.sharded_ddp:
-                    model = auto_wrap(model)
-                # with enable_wrap(wrapper_cls=FSDP, parallel_context=self.parallel_context):
-                #     wrapper_fsdp = wrap(model)
-                self.model = model = FullyShardedDataParallel(
-                    model,
-                    mixed_precision=mixed_precision,
-                    reshard_after_forward=zero_3,
-                    cpu_offload=cpu_offload,
-                ).to(self.args.device)
+        if self.parallel_context is not None:
+            if self.args.data_parallel_size > 1:
+                model = auto_wrap(model)
 
         elif self.args.local_rank != -1:
             kwargs = {}

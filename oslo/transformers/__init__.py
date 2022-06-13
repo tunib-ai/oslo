@@ -7,5 +7,5 @@ from oslo.transformers.models.gpt2.modeling_gpt2 import (
 )
 
 
-from oslo.transformers.training_args import TrainingArguments
-from oslo.transformers.trainer import Trainer
+# from oslo.transformers.training_args import TrainingArguments
+# from oslo.transformers.trainer import Trainer

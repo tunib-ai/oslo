@@ -637,7 +637,16 @@ class TrainingArguments:
             "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    sharded_ddp: str = field(
+    # sharded_ddp: str = field(
+    #     default="",
+    #     metadata={
+    #         "help": "Whether or not to use sharded DDP training (in distributed training only). The base option "
+    #         "should be `simple`, `zero_dp_2` or `zero_dp_3` and you can add CPU-offload to `zero_dp_2` or `zero_dp_3` "
+    #         "like this: zero_dp_2 offload` or `zero_dp_3 offload`. You can add auto-wrap to `zero_dp_2` or "
+    #         "with the same syntax: zero_dp_2 auto_wrap` or `zero_dp_3 auto_wrap`.",
+    #     },
+    # )
+    parallel_mode: str = field(
         default="",
         metadata={
             "help": "Whether or not to use sharded DDP training (in distributed training only). The base option "
