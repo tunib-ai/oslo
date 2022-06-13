@@ -3,7 +3,7 @@ import wandb
 from datasets import load_dataset
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
+from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, AutoModelForCausalLM
 
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
@@ -13,8 +13,33 @@ from copy import deepcopy
 from oslo.torch.nn import Linear2D
 from _utils import split_2d, gather_2d
 
+
+def latency_trace(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        return result, end-start
+    return wrapper
+
+
+@latency_trace
+def fw(func, *args, **kwargs):
+    return func(*args, **kwargs).loss
+
+
+@latency_trace
+def bw(tensors):
+    return tensors.backward()
+
+
 tp_size = 8
 tp_depth = 2
+
+model_name = "gpt2"
+mkwargs = {
+}
+dataset_name = "squad"
 
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
@@ -26,7 +51,7 @@ parallel_context = ParallelContext.from_torch(
 )
 
 # 토크나이저 생성
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
+tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
 tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
@@ -46,13 +71,13 @@ optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 
 # 데이터셋 생성
 batch_size = 16
-datasets = load_dataset("squad").data["train"]["context"]
+datasets = load_dataset(dataset_name).data["train"]["context"]
 datasets = [str(sample) for sample in datasets[:500]]
 dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name=f"tp2p5d_bs{batch_size}")
+    wandb.init(project="oslo", name=f"{model_name}_tp2p5d_bs{batch_size}")
     cur = time.time()
 
 # 모니터링 생성 대기
@@ -71,17 +96,26 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss
-    loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
+    loss_no_tp, notp_fw_time = \
+        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    loss_tp, tp_fw_time = \
+        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
 
     if dist.get_rank() == 0:
         print(f"TP:{loss_tp}, NOTP:{loss_no_tp}")
         wandb.log({"tp": loss_tp, "notp": loss_no_tp})
 
-    loss_no_tp.backward()
-    loss_tp.backward()
+    _, notp_bw_time = bw(loss_no_tp)
+    _, tp_bw_time = bw(loss_tp)
 
     optimizer_tp.step()
     optimizer_no_tp.step()
+
+    if dist.get_rank() == 0:
+        wandb.log({
+            "tp.forward.time:": tp_fw_time,
+            "tp.backward.time:": tp_bw_time,
+            "notp.forward.time:": notp_fw_time,
+            "notp.backward.time:": notp_bw_time})
 
 dist.barrier()

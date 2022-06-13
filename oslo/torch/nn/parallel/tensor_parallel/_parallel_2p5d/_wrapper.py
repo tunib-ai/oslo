@@ -1,7 +1,11 @@
 import copy
+import os
 
 import torch
 import torch.nn as nn
+
+from typing import Union, Optional, Callable
+from logging import getLogger
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
@@ -33,7 +37,7 @@ from oslo.transformers.mapping_utils import (
 )
 
 from oslo.transformers.constants import BATCH_DIMENSIONS
-
+from transformers import AutoConfig
 
 class _TensorParallel2p5D(ParallelWrapper):
     """
@@ -49,9 +53,11 @@ class _TensorParallel2p5D(ParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
+        module_args: dict = None
     ):
         super().__init__()
         self.module = module
+        self.config = self.module.config
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
 
@@ -63,6 +69,15 @@ class _TensorParallel2p5D(ParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
 
+        if module_args is None:
+            if is_huggingface_model(module):
+                module_args = module.config
+            else:
+                raise ValueError(
+                    "`config` must be input if the model is not huggingface model."
+                )
+
+        self.config = module_args
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 
@@ -449,7 +464,7 @@ class _TensorParallel2p5D(ParallelWrapper):
         module.__class__ = Linear2p5D
 
     @torch.no_grad()
-    def _deparallelize(self):
+    def deparallelize(self):
         self._deparallelize_layernorm()
         self._deparallelize_linear()
         self._deparallelize_embedding()
@@ -462,90 +477,138 @@ class _TensorParallel2p5D(ParallelWrapper):
                     tesseract_dim = self.parallel_context.get_world_size(
                         ParallelMode.TENSOR_2P5D_COL
                     )
-                    reduced_arg = getattr(module, elem.name) * tesseract_dim
-                    setattr(module, elem.name, reduced_arg)
+                    expanded_arg = getattr(module, elem.name) * tesseract_dim
+                    setattr(module, elem.name, expanded_arg)
 
     def _deparallelize_embedding(self):
-        pass
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == VocabParallelEmbedding2p5D:
+                self._gather_embedding(module)
 
     def _deparallelize_linear(self):
-        # for param_name, module in self.module.named_modules():
-        #     if self.tensor_parallel_mapping.is_column_parallel(
-        #             self.module, param_name
-        #     ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
-        #         self._slice_linear(
-        #             module=module,
-        #             reversed=self.tensor_parallel_mapping.is_reversed_param(
-        #                 self.module, param_name
-        #             ),
-        #             fusion_degree=self.tensor_parallel_mapping.get_combined_qkv_degree(
-        #                 self.module, param_name, module
-        #             ),
-        #             slice_bias=True,
-        #         )
-        #         module.__class__ = Linear2p5D
-        # TODO: gather this logics
         for param_name, module in self.module.named_modules():
             if module.__class__ == Linear2p5D:
                 self._gather_linear(module)
-                module.__class__ = nn.Linear
 
-    def _deparallelize_layernorm(self, module):
-        pass
+    def _deparallelize_layernorm(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == LayerNorm2p5D:
+                self._gather_layernorm(module)
 
     def _gather_embedding(self, module):
-        pass
+        tesseract_dim = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        if self.module.get_input_embeddings():
+            w = gather_2d(self.parallel_context, module.weight, tesseract_dim, col_first=True)
+
+            assert hasattr(
+                self.module, "orig_vocab_size"
+            ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
+            orig_vocab_size = self.module.orig_vocab_size
+
+            module.weight.data = w[:, :orig_vocab_size]
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=None,
+                vocab_end_index=None,
+                parallel_context=None,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=None
+            )
+        else:
+            w = gather_1d(self.parallel_context, module.weight, tesseract_dim, 1)
+            w = gather_1d(self.parallel_context, w, tesseract_dim, 1)
+            module.weight.data = w
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=None,
+                embedding_dim = module.weight.size()[1]
+            )
+        module.__class__ = nn.Embedding
 
     def _gather_linear(self, module: Linear2p5D):
-        # , reversed, fusion_degree, slice_bias
         is_reversed = module.reversed
         fusion_degree = module.fusion_degree
         slice_bias = module.slice_bias
 
         tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 
+        w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
         if fusion_degree > 1:
             w = self._reconstruct_combined_qkv(self.weight.data, tesseract_dim, fusion_degree, False)
-        else:
-            w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
+        module.weight.data = w
 
         if is_reversed:
             w = w.t()
         module.weight.data = w
 
         if hasattr(module, "bias") and module.bias is not None:
-            if slice_bias is True and module.bias.dim() >= 1:
-                if fusion_degree > 1:
-                    b = self._reconstruct_combined_qkv(self.bias.data, tesseract_dim, fusion_degree, True)
-                else:
-                    b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
-                module.bias.data = b
+            # if slice_bias is True and module.bias.dim() >= 1:
+            b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+            if fusion_degree > 1:
+                b = self._reconstruct_combined_qkv(self.bias.data, tesseract_dim, fusion_degree, True)
+            module.bias.data = b
 
         _update_module_arguments(
             module=module,
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
-            row_rank=None,
-            col_rank=None,
-            dep_rank=None,
-            tesseract_dim=None,
-            data_parallel_rank=None,
-            pipeline_parallel_rank=None,
-            tensor_parallel_size=None,
-            pipeline_parallel_size=None,
-            reversed=None,
-            fusion_degree=None,
-            orig_module=None,
             skip_bias_add=module.skip_bias_add
             if hasattr(module, "skip_bias_add")
             else False,
-            gather_output=None,
         )
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.gather_output
+        del module.parallel_context
+
         module.__class__ = nn.Linear
 
     def _gather_layernorm(self, module):
-        pass
+        if hasattr(module, "weight") and module.weight is not None:
+            if module.weight.dim() >= 1:
+                w = gather_1d(self.parallel_context, module.weight.data, 0)
+                module.weight.data = w
+
+            if hasattr(module.weight, "oslo_parallel"):
+                # delete oslo_parallel if it exists
+                del module.weight.oslo_parallel
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if module.bias.dim() >= 1:
+                b = gather_1d(self.parallel_context, module.bias.data, 0)
+                module.bias.data = b
+
+            if hasattr(module.bias, "oslo_parallel"):
+                del module.weight.oslo_parallel
+
+        del module.partitioned_dim
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.orig_module
+        _update_module_arguments(
+            module,
+            normalized_shape=module.weight.size()[0],
+        )
+        module.__class__ = nn.LayerNorm
 
     @staticmethod
     def _reconstruct_combined_qkv(tensor, tesseract_dim, fusion_degree, is_bias=False):
@@ -569,3 +632,123 @@ class _TensorParallel2p5D(ParallelWrapper):
         tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
         tensor = [tensor[j] for j in range(tessearct_dim)]
         return tensor
+
+    @torch.no_grad()
+    def save_parallelized(
+            self,
+            new_module,
+            save_directory: Union[str, os.PathLike],
+            save_config: bool = True,
+            state_dict: Optional[dict] = None,
+            save_function: Callable = torch.save,
+            merge_checkpoints: bool = False,
+            mapping: Optional[dict] = None,
+            **kwargs,
+    ):
+        import os
+        import torch.distributed as dist
+        from transformers.modeling_utils import get_parameter_dtype, unwrap_model
+
+        logger = getLogger("Tensor2p5D")
+        PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
+        # mapping = kwargs.pop("tp_mapping", None)
+
+        if (
+                self.parallel_context.get_world_size(ParallelMode.TENSOR) == 1
+                and self.parallel_context.get_world_size(ParallelMode.PIPELINE) == 1
+        ):
+            if dist.get_rank() == 0:
+                self.save_pretrained(
+                    save_directory=save_directory,
+                    save_config=save_config,
+                    state_dict=state_dict,
+                    save_function=save_function,
+                    **kwargs,
+                )
+            dist.barrier()
+            return None
+
+        if merge_checkpoints:
+            model_to_save = self.__class__(
+                module=new_module,
+                parallel_context=self.parallel_context,
+                mapping=mapping,
+                module_args=self.config
+            ).eval()
+
+            if state_dict is None:
+                state_dict = self.state_dict()
+
+            model_to_save.load_state_dict(state_dict)
+
+            if self.parallel_context.get_world_size(ParallelMode.TENSOR) > 1:
+                model_to_save.deparallelize()
+
+            if dist.get_rank() == 0:
+                model_to_save.module.save_pretrained(
+                    save_directory=save_directory,
+                    save_config=save_config,
+                    save_function=save_function,
+                    **kwargs,
+                )
+            del model_to_save
+
+            dist.barrier()
+            return None
+
+        if os.path.isfile(save_directory):
+            logger.error(
+                f"Provided path ({save_directory}) should be a directory, not a file"
+            )
+            return
+
+        os.makedirs(save_directory, exist_ok=True)
+
+        # Only save the model itself if we are using distributed training
+        model_to_save = unwrap_model(self)
+
+        # save the string version of dtype to the config, e.g. convert torch.float32 => "float32"
+        # we currently don't use this setting automatically, but may start to use with v5
+        dtype = get_parameter_dtype(model_to_save)
+        model_to_save.config.torch_dtype = str(dtype).split(".")[1]
+
+        # Attach architecture to the config
+        model_to_save.config.architectures = [model_to_save.__class__.__name__]
+
+        # Save the config
+        if save_config:
+            model_to_save.config.save_pretrained(save_directory)
+
+        # Save the model
+        if state_dict is None:
+            state_dict = model_to_save.state_dict()
+
+        # Handle the case where some state_dict keys shouldn't be saved
+        if getattr(self, "_keys_to_ignore_on_save") is not None:
+            state_dict = {
+                k: v for k, v in state_dict.items() if k not in self._keys_to_ignore_on_save
+            }
+
+        # If we save using the predefined names, we can load using `from_pretrained`
+        weights_name = PARALLELIZED_WEIGHTS_NAME
+        weights_name = weights_name.replace(
+            "tp_0", f"tp_{self.parallel_context.get_local_rank(ParallelMode.TENSOR)}"
+        )
+        weights_name = weights_name.replace(
+            "pp_0", f"pp_{self.parallel_context.get_local_rank(ParallelMode.PIPELINE)}"
+        )
+
+        output_model_file = os.path.join(save_directory, weights_name)
+
+        if self.parallel_context.get_world_size(ParallelMode.DATA) > 1:
+            if self.parallel_context.get_local_rank(ParallelMode.DATA) == 0:
+                save_function(state_dict, output_model_file)
+        else:
+            save_function(state_dict, output_model_file)
+
+        dist.barrier()
+        logger.info(f"Model weights saved in {output_model_file}")
+
+    @staticmethod
+    def from_parallelized(cls):
+        pass

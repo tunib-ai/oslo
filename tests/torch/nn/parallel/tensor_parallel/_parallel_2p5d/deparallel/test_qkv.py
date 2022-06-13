@@ -4,8 +4,7 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._wrapper import _Tens
 from oslo.torch.nn import Linear2p5D
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from copy import deepcopy
-from _utils import gather_2d, gather_1d
-
+from .._utils import *
 
 tp_size = 8
 tp_depth = 2
