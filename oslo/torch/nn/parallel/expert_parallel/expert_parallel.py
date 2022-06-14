@@ -17,13 +17,21 @@ from oslo.transformers.mapping_utils import _ExpertParallelMappingForHuggingFace
 from oslo.torch.nn.parallel.expert_parallel._context import ExpertParallelContext
 from oslo.torch.nn.parallel.expert_parallel.mapping import ExpertParallelMapping
 
+from oslo.torch.nn.parallel.expert_parallel.experts import Experts
 from oslo.torch.nn.parallel.expert_parallel.layers import (
     Top1Router,
     Top2Router,
     FP32LinearGate,
+    TopKGate,
 )
-from oslo.torch.nn.parallel.expert_parallel.layers import ExpertParallelFrontBlock
-from oslo.torch.nn.parallel.expert_parallel.layers import ExpertParallelBehindBlock
+from oslo.torch.nn.parallel.expert_parallel.layers import (
+    ExpertParallelFrontBlock,
+    ExpertParallelFrontBlockDS,
+)
+from oslo.torch.nn.parallel.expert_parallel.layers import (
+    ExpertParallelBehindBlock,
+    ExpertParallelBehindBlockDS,
+)
 
 from oslo.torch.nn.parallel.expert_parallel._ops import OSLO_EP_KERNEL_FLAG
 
@@ -58,7 +66,7 @@ class ExpertParallel(ParallelWrapper):
         2. Support data parallel for non-expert paramete
 
     Examples:
-        >>> from oslo.torch.nn.parallel import ExpertParallel
+        >>> from oslo.torch.nn.parallel.expert_parallel.expert_parallel import ExpertParallel
 
         >>> model = AnyTransformerModel()
         >>> ep_wrapper = ExpertParallel(model, parallel_context=..., ...)
@@ -81,6 +89,7 @@ class ExpertParallel(ParallelWrapper):
         min_capacity: int = 4,
         select_policy: str = "first",
         noisy_policy: str = None,
+        use_rts: bool = True,
         drop_tks: bool = True,
         use_residual: bool = None,
         mapping: object = None,
@@ -105,7 +114,7 @@ class ExpertParallel(ParallelWrapper):
             self.use_residual = True if top_k == 1 else False
 
         if noisy_policy is None:
-            noisy_policy = "Jitter" if use_residual else "Gaussian"
+            noisy_policy = "Jitter" if use_residual else "RSample"
 
         self.router_args = {
             "ep_context": self.ep_context,
@@ -118,6 +127,13 @@ class ExpertParallel(ParallelWrapper):
             "drop_tks": drop_tks,
         }
         self.router_cls = Top2Router
+        self.top_k = top_k
+        self.capacity_factor_train = capacity_factor_train
+        self.capacity_factor_eval = capacity_factor_eval
+        self.min_capacity = min_capacity
+        self.noisy_policy = noisy_policy
+        self.use_rts = use_rts
+
         if top_k == 1:
             self.router_cls = Top1Router
             self.router_args["select_policy"] = (
@@ -159,7 +175,8 @@ class ExpertParallel(ParallelWrapper):
                         self.model, module_name
                     ),
                 )
-                module.__class__ = ExpertParallelFrontBlock
+                # module.__class__ = ExpertParallelFrontBlock
+                module.__class__ = ExpertParallelFrontBlockDS
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
             ):
@@ -170,7 +187,8 @@ class ExpertParallel(ParallelWrapper):
                         self.model, module_name
                     ),
                 )
-                module.__class__ = ExpertParallelBehindBlock
+                # module.__class__ = ExpertParallelBehindBlock
+                module.__class__ = ExpertParallelBehindBlockDS
 
         return
 
@@ -183,6 +201,51 @@ class ExpertParallel(ParallelWrapper):
                 split_id = i + 1
 
         return ".".join(spl_modules[:split_id])
+
+    def _wrap_front_ds(self, module: nn.Module, module_name: str, reversed: bool):
+        out_features, in_features = module.weight.size()
+        if reversed:
+            out_features, in_features = in_features, out_features
+
+        gate = TopKGate(
+            in_features,
+            self.num_experts,
+            self.top_k,
+            self.capacity_factor_train,
+            self.capacity_factor_eval,
+            self.min_capacity,
+            self.noisy_policy,
+            self.drop_tokens,
+            self.use_rts,
+        )
+
+        expert_parallel_residual, expert_parallel_residual_mix = None, None
+        if self.use_residual:
+            expert_parallel_residual = copy.deepcopy(module)
+            expert_parallel_residual_mix = nn.Linear(in_features, 2)
+
+        link_info_k = self._extract_link_info_key(module_name)
+        if link_info_k not in self.link_info:
+            self.link_info[link_info_k] = dict()
+
+        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
+        experts = Experts(module, num_local_experts)
+
+        _update_module_arguments(
+            module=module,
+            ep_context=self.ep_context,
+            link_info=self.link_info[link_info_k],
+            gate=gate,
+            in_features=in_features,
+            out_features=out_features,
+            front_experts=experts,
+            ep_group=ep_info.ep_group,
+            ep_size=ep_info.ep_size,
+            num_local_experts=num_local_experts,
+            use_residual=self.use_residual,
+            expert_parallel_residual=expert_parallel_residual,
+            expert_parallel_residual_mix=expert_parallel_residual_mix,
+        )
 
     def _wrap_front(self, module: nn.Module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
@@ -242,6 +305,36 @@ class ExpertParallel(ParallelWrapper):
             param.__setattr__("ep_info", ep_info)
 
         return module
+
+    def _wrap_behind_ds(self, module, module_name: str, reversed: bool):
+        out_features, in_features = module.weight.size()
+        if reversed:
+            out_features, in_features = in_features, out_features
+
+        expert_parallel_residual = None
+        if self.use_residual:
+            expert_parallel_residual = copy.deepcopy(module)
+
+        link_info_k = self._extract_link_info_key(module_name)
+        if link_info_k not in self.link_info:
+            self.link_info[link_info_k] = dict()
+
+        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
+        experts = Experts(module, num_local_experts)
+
+        _update_module_arguments(
+            module,
+            ep_context=self.ep_context,
+            link_info=self.link_info[link_info_k],
+            in_features=in_features,
+            out_features=out_features,
+            experts=experts,
+            ep_size=ep_info.ep_size,
+            ep_group=ep_info.ep_group,
+            num_local_experts=num_local_experts,
+            use_residual=self.use_residual,
+            expert_parallel_residual=expert_parallel_residual,
+        )
 
     def _wrap_behind(self, module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()

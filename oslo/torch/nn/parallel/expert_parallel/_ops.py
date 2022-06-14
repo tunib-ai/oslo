@@ -38,7 +38,7 @@ class AllToAll(torch.autograd.Function):
 
     @staticmethod
     def backward(context: Any, *grad_outputs: Tensor) -> Tuple[Tensor, None]:
-        return AllToAll.forward(None, *grad_outputs, context.comm_group), None
+        return (None, AllToAll.apply(None, *grad_outputs, context.comm_group))
 
 
 class EPDispatch(torch.autograd.Function):
