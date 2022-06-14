@@ -84,8 +84,8 @@ wrapper_tp.save_parallelized('test/', merge_checkpoints=False)
 dist.barrier()
 
 # 로드
-model_gathered = GPT2LMHeadModel(GPT2Config.from_pretrained("test/")).cuda()
-optimizer_gathered = Adam(model_gathered.parameters(), lr=3e-5)
+model_reparallel = TensorParallel.from_parallelized('test/', parallel_context, GPT2LMHeadModel)
+optimizer_reparallel = Adam(model_reparallel.parameters(), lr=3e-5)
 
 dist.barrier()
 
@@ -93,7 +93,7 @@ dist.barrier()
 for data in dataloader:
     optimizer_tp.zero_grad()
     optimizer_no_tp.zero_grad()
-    optimizer_gathered.zero_grad()
+    model_reparallel.zero_grad()
 
     inputs = tokenizer(
         data,
@@ -107,20 +107,20 @@ for data in dataloader:
         fw(model_no_tp, **inputs, labels=inputs["input_ids"])
     loss_tp, tp_fw_time = \
         fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
-    loss_gathered, gathered_fw_time = \
-        fw(model_gathered, **inputs, labels=inputs["input_ids"])
+    loss_reparallel, reparallel_fw_time = \
+        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
 
     if dist.get_rank() == 0:
-        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, GATHRED:{loss_gathered}")
-        wandb.log({"tp": loss_tp, "notp": loss_no_tp, "GATHRED": loss_gathered})
+        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, reparallel:{loss_reparallel}")
+        wandb.log({"tp": loss_tp, "notp": loss_no_tp, "reparallel": loss_reparallel})
 
     _, notp_bw_time = bw(loss_no_tp)
     _, tp_bw_time = bw(loss_tp)
-    _, gathered_bw_time = bw(loss_gathered)
+    _, reparallel_bw_time = bw(loss_reparallel)
 
     optimizer_tp.step()
     optimizer_no_tp.step()
-    optimizer_gathered.step()
+    optimizer_reparallel.step()
 
     if dist.get_rank() == 0:
         wandb.log({
@@ -128,12 +128,8 @@ for data in dataloader:
             "tp.backward.time:": tp_bw_time,
             "notp.forward.time:": notp_fw_time,
             "notp.backward.time:": notp_bw_time,
-            "gathered.forward.time:": gathered_fw_time,
-            "gathered.backward.time:": gathered_bw_time
+            "reparallel.forward.time:": reparallel_fw_time,
+            "reparallel.backward.time:": reparallel_bw_time
         })
 
 dist.barrier()
-
-
-
-

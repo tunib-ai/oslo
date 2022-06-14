@@ -3,6 +3,7 @@ import os
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 from typing import Union, Optional, Callable
 from logging import getLogger
@@ -52,11 +53,11 @@ class _TensorParallel2p5D(ParallelWrapper):
     """
 
     def __init__(
-        self,
-        module: nn.Module,
-        parallel_context: ParallelContext,
-        mapping: dict = None,
-        module_args: dict = None
+            self,
+            module: nn.Module,
+            parallel_context: ParallelContext,
+            mapping: dict = None,
+            module_args: dict = None
     ):
         super().__init__()
         self.module = module
@@ -119,7 +120,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                         ParallelMode.TENSOR_2P5D_COL
                     )
                     assert (
-                        getattr(module, elem.name) % tesseract_dim == 0
+                            getattr(module, elem.name) % tesseract_dim == 0
                     ), f"{elem.name} must be divisible by tesseract_dim."
                     reduced_arg = getattr(module, elem.name) // tesseract_dim
                     setattr(module, elem.name, reduced_arg)
@@ -134,7 +135,7 @@ class _TensorParallel2p5D(ParallelWrapper):
     def _parallalize_linear(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_column_parallel(
-                self.module, param_name
+                    self.module, param_name
             ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._slice_linear(
                     module=module,
@@ -157,7 +158,7 @@ class _TensorParallel2p5D(ParallelWrapper):
     def _parallelize_head(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_head(
-                self.module, param_name
+                    self.module, param_name
             ) and isinstance(module, nn.Linear):
                 self._slice_head(
                     module=module,
@@ -647,12 +648,8 @@ class _TensorParallel2p5D(ParallelWrapper):
             mapping: Optional[dict] = None,
             **kwargs,
     ):
-        import os
-        import torch.distributed as dist
-
         logger = getLogger("Tensor2p5D")
         PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
-        # mapping = kwargs.pop("tp_mapping", None)
 
         if (
                 self.parallel_context.get_world_size(ParallelMode.TENSOR) == 1
@@ -755,6 +752,51 @@ class _TensorParallel2p5D(ParallelWrapper):
         dist.barrier()
         logger.info(f"Model weights saved in {output_model_file}")
 
-    @staticmethod
-    def from_parallelized(cls):
-        pass
+    def from_parallelized(self, path):
+        PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
+        parallelized_model_path = path
+
+        file_names = {
+            os.path.join(
+                parallelized_model_path,
+                PARALLELIZED_WEIGHTS_NAME.replace("tp_0", f"tp_{tp}").replace(
+                    "pp_0", f"pp_{pp}"
+                ),
+            )
+            for tp in range(self.parallel_context.get_world_size(ParallelMode.TENSOR))
+            for pp in range(self.parallel_context.get_world_size(ParallelMode.PIPELINE))
+        }
+
+        if os.path.isdir(parallelized_model_path):
+            if all(os.path.isfile(file_name) for file_name in file_names):
+                state_dict = torch.load(
+                    os.path.join(
+                        parallelized_model_path,
+                        PARALLELIZED_WEIGHTS_NAME.replace(
+                            "tp_0",
+                            f"tp_{self.parallel_context.get_local_rank(ParallelMode.TENSOR)}",
+                        ).replace(
+                            "pp_0",
+                            f"pp_{self.parallel_context.get_local_rank(ParallelMode.PIPELINE)}",
+                        ),
+                    )
+                )
+
+                if getattr(self, "_keys_to_ignore_on_save", None) is not None:
+                    state_dict = {
+                        k: v
+                        for k, v in state_dict.items()
+                        if k not in self._keys_to_ignore_on_save
+                    }
+
+                self.load_state_dict(state_dict=state_dict, strict=False)
+
+            else:
+                raise FileNotFoundError(
+                    f"all the {file_names} are necessary. "
+                    f"but some of them do not exist. Please check your checkpoint files."
+                )
+        else:
+            raise NotADirectoryError(
+                f"directory named {parallelized_model_path} is not valid. "
+            )

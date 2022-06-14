@@ -4,6 +4,7 @@ import os
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 from transformers import AutoConfig
 
@@ -28,6 +29,8 @@ from oslo.torch.nn.parallel.utils import (
     unwrap_parallel,
     get_parallel_context,
     is_huggingface_model,
+    allocate_params,
+    get_parameter_dtype
 )
 
 
@@ -64,7 +67,7 @@ class TensorParallel(ParallelWrapper):
     ):
         super().__init__()
         if is_huggingface_model(module):
-            assert module_args is not None, "module_args must not be provided in huggingface module."
+            assert module_args is None, "module_args must not be provided in huggingface module."
         else:
             assert isinstance(module_args, dict), "module_args must be a dict."
 
@@ -218,6 +221,17 @@ class TensorParallel(ParallelWrapper):
             **kwargs,
         )
 
-    @staticmethod
-    def from_parallelized(cls):
-        pass
+    @classmethod
+    def from_parallelized(cls, parallelized_model_path,  parallel_context, huggingface_task_class=None):
+        assert huggingface_task_class is not None, "currently, only huggingface model is supported."
+
+        config = AutoConfig.from_pretrained(parallelized_model_path)
+        base_model = huggingface_task_class(config)
+
+        config = config.to_dict()
+
+        self = cls(base_model, parallel_context, None, config if huggingface_task_class is None else None)
+        allocate_params(self, parallel_context)
+        self.module.from_parallelized(parallelized_model_path)
+
+        return self
