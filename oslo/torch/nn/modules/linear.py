@@ -165,8 +165,8 @@ class ColLinear1D(Linear):
 
         if self.gather_output:
             outputs = all_gather_tensor_1d(
-                outputs, 
-                dim=-1, 
+                outputs,
+                dim=-1,
                 parallel_context=self.parallel_context,
             )
             if hasattr(self, "orig_num_classes"):

@@ -48,7 +48,9 @@ input_ = split_batch_2p5d(input_, tesseract_dim, parallel_context=parallel_conte
 target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
 w = split_embedding_2p5d(w, tesseract_dim, dim=-1, parallel_context=parallel_context)
 
-embedding_2p5d = Embedding2p5D(num_embeddings, embedding_dim, parallel_context=parallel_context)
+embedding_2p5d = Embedding2p5D(
+    num_embeddings, embedding_dim, parallel_context=parallel_context
+)
 embedding_2p5d.weight.data.copy_(w)
 
 pout = embedding_2p5d(input_)

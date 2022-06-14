@@ -18,7 +18,7 @@ def split_2p5d(tensor, tesseract_dim, parallel_context):
         parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
     ]
     return tensor
-    
+
 
 def split_layernorm_2p5d(tensor, summa_dim, parallel_context):
     tensor = tensor.chunk(summa_dim, dim=0)[

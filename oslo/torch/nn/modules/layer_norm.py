@@ -346,6 +346,7 @@ class LayerNorm3D(LayerNorm):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             layernorm_3d,
         )
+
         outputs = layernorm_3d(
             input,
             self.weight,

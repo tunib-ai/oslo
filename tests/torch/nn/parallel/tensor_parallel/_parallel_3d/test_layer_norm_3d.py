@@ -63,7 +63,9 @@ optimizer.step()
 pout_update = layernorm_3d(input_)
 
 pout = gather_output_3d(pout, cubic_dim, parallel_context=parallel_context)
-pout_update = gather_output_3d(pout_update, cubic_dim, parallel_context=parallel_context)
+pout_update = gather_output_3d(
+    pout_update, cubic_dim, parallel_context=parallel_context
+)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

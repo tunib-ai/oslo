@@ -47,9 +47,7 @@ dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(
-        project="oslo", name=f"{model_name}_nprocs{tp_size}_tp3d_bs{batch_size}"
-    )
+    wandb.init(project="oslo", name=f"{model_name}_nprocs{tp_size}_tp3d_bs{batch_size}")
     cur = time.time()
 
 # 모니터링 생성 대기
@@ -71,7 +69,7 @@ for data in dataloader:
     fw_start = time.time()
     loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss
     fw_time = time.time() - fw_start
-    
+
     fw_start_tp = time.time()
     loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
     fw_time_tp = time.time() - fw_start_tp
@@ -88,10 +86,15 @@ for data in dataloader:
 
     if dist.get_rank() == 0:
         print(f"[tp/notp loss]: {loss_tp:.4f}, {loss_no_tp:.4f}")
-        wandb.log({
-            "tp_loss": loss_tp, "notp_loss": loss_no_tp,
-            "tp_fw_time": fw_time_tp, "notp_fw_time": fw_time,
-            "tp_bw_time": bw_time_tp, "notp_bw_time": bw_time,
-        })
+        wandb.log(
+            {
+                "tp_loss": loss_tp,
+                "notp_loss": loss_no_tp,
+                "tp_fw_time": fw_time_tp,
+                "notp_fw_time": fw_time,
+                "tp_bw_time": bw_time_tp,
+                "notp_bw_time": bw_time,
+            }
+        )
 
 dist.barrier()

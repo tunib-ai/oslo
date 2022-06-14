@@ -14,10 +14,7 @@ from oslo.torch.distributed.nn.functional import (
 )
 
 
-def transpose_3d(
-    tensor: Tensor,
-    parallel_context: Optional[ParallelContext] = None
-):
+def transpose_3d(tensor: Tensor, parallel_context: Optional[ParallelContext] = None):
     world_size = parallel_context.get_world_size(ParallelMode.TENSOR_3D)
     cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
     i = parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
@@ -91,7 +88,9 @@ class Matmul_AB_3D(torch.autograd.Function):
     def backward(ctx: Any, output_grad: Tensor) -> Tuple[Tensor, ...]:
         inputs, weight = ctx.saved_tensors
         with torch.no_grad():
-            output_grad = transpose_3d(output_grad, parallel_context=ctx.parallel_context)
+            output_grad = transpose_3d(
+                output_grad, parallel_context=ctx.parallel_context
+            )
             output_grad = all_gather(
                 output_grad,
                 ctx.output_dim,
@@ -475,7 +474,7 @@ class _Layernorm3D(torch.autograd.Function):
                 parallel_mode=ctx.weight_parallel_mode,
             )
             weight_grad = all_reduce(
-                weight_grad, 
+                weight_grad,
                 parallel_context=ctx.parallel_context,
                 parallel_mode=ctx.input_parallel_mode,
             )
@@ -667,10 +666,7 @@ class _AllGatherTensor3D(torch.autograd.Function):
             ctx.parallel_context = parallel_context
             ctx.parallel_mode = parallel_mode
         output = all_gather(
-            inputs, 
-            dim, 
-            parallel_context=parallel_context, 
-            parallel_mode=parallel_mode
+            inputs, dim, parallel_context=parallel_context, parallel_mode=parallel_mode
         )
         return output
 
@@ -792,8 +788,14 @@ class _ReduceByBatch3D(torch.autograd.Function):
         input_parallel_mode: Optional[ParallelMode] = None,
         weight_parallel_mode: Optional[ParallelMode] = None,
     ) -> Tensor:
-        output = all_reduce(inputs, parallel_context=parallel_context, parallel_mode=input_parallel_mode)
-        output = all_reduce(output, parallel_context=parallel_context, parallel_mode=weight_parallel_mode)
+        output = all_reduce(
+            inputs, parallel_context=parallel_context, parallel_mode=input_parallel_mode
+        )
+        output = all_reduce(
+            output,
+            parallel_context=parallel_context,
+            parallel_mode=weight_parallel_mode,
+        )
 
         if ctx:
             ctx.reduce_mean = reduce_mean

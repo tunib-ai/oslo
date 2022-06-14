@@ -490,6 +490,7 @@ class Embedding3D(nn.Embedding):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             broadcast_weight_3d_from_diagonal,
         )
+
         weight = broadcast_weight_3d_from_diagonal(
             self.weight,
             parallel_context=self.parallel_context,
@@ -551,6 +552,7 @@ class VocabParallelEmbedding3D(nn.Embedding):
             all_gather_tensor_3d,
             reduce_scatter_tensor_3d,
         )
+
         input = gather_batch_3d(
             input,
             dim=0,

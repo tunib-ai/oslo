@@ -64,7 +64,9 @@ optimizer.step()
 pout_update = linear_3d(input_)
 
 pout = gather_output_3d(pout, cubic_dim, parallel_context=parallel_context)
-pout_update = gather_output_3d(pout_update, cubic_dim, parallel_context=parallel_context)
+pout_update = gather_output_3d(
+    pout_update, cubic_dim, parallel_context=parallel_context
+)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")
@@ -76,7 +78,9 @@ if parallel_context.get_global_rank() == 0:
     print(f"output sse: \n{sse}\n")
     print(f"next output sse: \n{sse_update}\n")
 
-linear_3d = Linear3D(input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context)
+linear_3d = Linear3D(
+    input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context
+)
 linear_3d.weight.data.copy_(w)
 linear_3d.bias.data.copy_(b)
 
@@ -97,4 +101,3 @@ if parallel_context.get_global_rank() == 0:
     sse_update = torch.sum((out_update - pout_update) ** 2).item()
     print(f"output sse (gather_output=True): \n{sse}\n")
     print(f"next output sse (gather_output=True): \n{sse_update}\n")
-
