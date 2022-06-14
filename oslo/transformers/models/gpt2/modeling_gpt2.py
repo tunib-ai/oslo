@@ -8,23 +8,29 @@ import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from oslo.torch import nn as onn
-from oslo.transformers.modeling_utils import (
-    OsloModel,
-    PreTrainedModel,  # TODO: implement
-    SequenceSummary,  # TODO: implement
-    find_pruneable_heads_and_indices,
-    prune_conv1d_layer,
-)
-from oslo.transformers.modeling_outputs import (
-    BaseModelOutputWithPastAndCrossAttentions,
-    CausalLMOutputWithCrossAttentions,
-    SequenceClassifierOutputWithPast,
-    GPT2DoubleHeadsModelOutput,
-    TokenClassifierOutput,
-)  # TODO: implement output modules
-from oslo.transformers.models.gpt2.configuration_gpt2 import (
-    GPT2Config,
-)  # TODO: implement config
+from oslo.transformers.modeling_utils import OsloModel
+
+try:
+    from transformers.modeling_utils import (
+        PreTrainedModel,
+        SequenceSummary,
+        find_pruneable_heads_and_indices,
+        prune_conv1d_layer,
+    )
+    from transformers.modeling_outputs import (
+        BaseModelOutputWithPastAndCrossAttentions,
+        CausalLMOutputWithCrossAttentions,
+        SequenceClassifierOutputWithPast,
+        TokenClassifierOutput,
+    )
+    from transformers.models.gpt2.modeling_gpt2 import (
+        GPT2DoubleHeadsModelOutput,
+        GPT2Config,
+        load_tf_weights_in_gpt2,
+    )
+    from transformers import logging
+except ImportError:
+    print("You have to install `transformers` to use `oslo.transformers` modules")
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
     is_amp_available = True
@@ -32,70 +38,7 @@ if version.parse(torch.__version__) >= version.parse("1.6"):
 else:
     is_amp_available = False
 
-
-# TODO: implement logging modules
-def get_logger(name):
-    pass
-
-
-logger = get_logger(__name__)
-
-
-def load_tf_weights_in_gpt2(model, config, gpt2_checkpoint_path):
-    """Load tf checkpoints in a pytorch model"""
-    try:
-        import re
-
-        import tensorflow as tf
-    except ImportError:
-        logger.error(
-            "Loading a TensorFlow model in PyTorch, requires TensorFlow to be installed. Please see "
-            "https://www.tensorflow.org/install/ for installation instructions."
-        )
-        raise
-    tf_path = os.path.abspath(gpt2_checkpoint_path)
-    logger.info(f"Converting TensorFlow checkpoint from {tf_path}")
-    # Load weights from TF model
-    init_vars = tf.train.list_variables(tf_path)
-    names = []
-    arrays = []
-    for name, shape in init_vars:
-        logger.info(f"Loading TF weight {name} with shape {shape}")
-        array = tf.train.load_variable(tf_path, name)
-        names.append(name)
-        arrays.append(array.squeeze())
-
-    for name, array in zip(names, arrays):
-        name = name[6:]  # skip "model/"
-        name = name.split("/")
-        pointer = model
-        for m_name in name:
-            if re.fullmatch(r"[A-Za-z]+\d+", m_name):
-                scope_names = re.split(r"(\d+)", m_name)
-            else:
-                scope_names = [m_name]
-            if scope_names[0] == "w" or scope_names[0] == "g":
-                pointer = getattr(pointer, "weight")
-            elif scope_names[0] == "b":
-                pointer = getattr(pointer, "bias")
-            elif scope_names[0] == "wpe" or scope_names[0] == "wte":
-                pointer = getattr(pointer, scope_names[0])
-                pointer = getattr(pointer, "weight")
-            else:
-                pointer = getattr(pointer, scope_names[0])
-            if len(scope_names) >= 2:
-                num = int(scope_names[1])
-                pointer = pointer[num]
-        try:
-            assert (
-                pointer.shape == array.shape
-            ), f"Pointer shape {pointer.shape} and array shape {array.shape} mismatched"
-        except AssertionError as e:
-            e.args += (pointer.shape, array.shape)
-            raise
-        logger.info(f"Initialize PyTorch weight {name}")
-        pointer.data = torch.from_numpy(array)
-    return model
+logger = logging.get_logger(__name__)
 
 
 class GPT2PreTrainedModel(PreTrainedModel, OsloModel):
@@ -174,9 +117,6 @@ class GPT2Attention(nn.Module):
             )
 
         self.scale_attn_weights = config.scale_attn_weights
-        self.attention_softmax_in_fp32 = (
-            True if self.scale_attn_weights else False
-        )  # TODO: set from config
         self.is_cross_attention = is_cross_attention
         self.use_triang_mask = not self.is_cross_attention
 
@@ -193,7 +133,7 @@ class GPT2Attention(nn.Module):
         self.c_proj = onn.Conv1D(self.embed_dim, self.embed_dim, skip_bias_add=True)
 
         self.attn_dropout = nn.Dropout(config.attn_pdrop)
-        self.resid_dropout = onn.FusedBiasDropoutResidual(config.resid_pdrop)
+        self.resid_dropout = onn.FusedBiasDropout(config.resid_pdrop)
 
         self.pruned_heads = set()
 
@@ -231,7 +171,7 @@ class GPT2Attention(nn.Module):
         fused_scale_mask_softmax = onn.FusedScaleMaskSoftmax(
             scale_factor,
             self.use_triang_mask,
-            self.attention_softmax_in_fp32,
+            True,
             attention_mask,
         )
         attn_weights = fused_scale_mask_softmax(attn_weights)
@@ -293,21 +233,13 @@ class GPT2Attention(nn.Module):
             )
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
 
-        if not self.is_cross_attention:
-            # if only "normal" attention layer implements causal mask
-            query_length, key_length = query.size(-2), key.size(-2)
-            causal_mask = self.bias[
-                :, :, key_length - query_length : key_length, :key_length
-            ].bool()
-            attn_weights = torch.where(
-                causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
-            )
-
-        if attention_mask is not None:
-            # Apply the attention mask
-            attn_weights = attn_weights + attention_mask
-
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+        fused_scale_mask_softmax = onn.FusedScaleMaskSoftmax(
+            None,
+            self.use_triang_mask,
+            False,
+            attention_mask,
+        )
+        attn_weights = fused_scale_mask_softmax(attn_weights)
 
         # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op if otherwise
         if attn_weights.dtype != torch.float32:
@@ -392,7 +324,7 @@ class GPT2Attention(nn.Module):
 
         attn_output = self._merge_heads(attn_output, self.num_heads, self.head_dim)
         attn_output, attn_bias = self.c_proj(attn_output)
-        # we'll do fused bias + dropout + residual in the GPT2Block.
+        attn_output = self.resid_dropout(attn_output, attn_bias)
 
         outputs = ((attn_output, attn_bias), present)
         if output_attentions:
@@ -408,15 +340,13 @@ class GPT2MLP(nn.Module):
         self.c_fc = onn.Conv1D(intermediate_size, embed_dim, skip_bias_add=True)
         self.c_proj = onn.Conv1D(embed_dim, intermediate_size, skip_bias_add=True)
         self.act = onn.fused_bias_gelu
-        self.fused_bias_dropout_residual = onn.FusedBiasDropoutResidual(
-            config.resid_pdrop
-        )
+        self.fused_bias_dropout = onn.FusedBiasDropout(config.resid_pdrop)
 
     def forward(self, hidden_states):
         hidden_states, bias = self.c_fc(hidden_states)
         hidden_states = self.act(hidden_states, bias)
         hidden_states, bias = self.c_proj(hidden_states)
-        # we'll do fused bias + dropout + residual in the GPT2Block.
+        hidden_states = self.fused_bias_dropout(hidden_states, bias)
         return hidden_states, bias
 
 
@@ -465,8 +395,7 @@ class GPT2Block(nn.Module):
             0
         ]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
-        # fused bias + dropout + residual connection
-        hidden_states = self.attn.resid_dropout(attn_output, attn_bias, residual)
+        hidden_states = attn_output + residual
 
         if encoder_hidden_states is not None:
             # add one self-attention block for cross-attention
@@ -486,18 +415,14 @@ class GPT2Block(nn.Module):
                 output_attentions=output_attentions,
             )
             attn_output, attn_bias = cross_attn_outputs[0]
-            # fused bias + dropout + residual connection
-            hidden_states = self.attn.resid_dropout(attn_output, attn_bias, residual)
+            hidden_states = attn_output + residual
             # add cross attentions if we output attention weights
             outputs = outputs + cross_attn_outputs[2:]
 
         residual = hidden_states
         hidden_states = self.ln_2(hidden_states)
         feed_forward_hidden_states, feed_forward_bias = self.mlp(hidden_states)
-        # fused bias + dropout + residual connection
-        hidden_states = self.mlp.fused_bias_dropout_residual(
-            feed_forward_hidden_states, feed_forward_bias, residual
-        )
+        hidden_states = residual + feed_forward_hidden_states
 
         if use_cache:
             outputs = (hidden_states,) + outputs
