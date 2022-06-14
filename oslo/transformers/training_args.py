@@ -19,10 +19,26 @@ from .utils import (
     is_torch_tf32_available,
     is_torch_bf16_available,
 )
+from oslo.torch.distributed import ParallelMode
+
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
+
+
+@dataclass
+class ParallelArguments:
+    data_parallel_size: int = field(default=0, metadata={"help": "data parallel size"})
+    sequence_parallel_size: int = field(default=0, metadata={"help": "sequence data parallel size"})
+    expert_parallel_size: int = field(default=0, metadata={"help": "expert parallel size"})
+    pipeline_parallel_size: int = field(default=0, metadata={"help": "pipeline parallel size"})
+    tensor_parallel_size: int = field(default=0, metadata={"help": "tensor parallel size"})
+    tensor_parallel_depth: Optional[int] = field(default=0, metadata={"help": "tensor depth for tensor 2.5 parallelism"})
+    tensor_parallel_mode: Optional[ParallelMode] = field(default=ParallelMode.TENSOR_1D, metadata={"help": "tensor parallel mode"})
+    backend: str = field(default='nccl', metadata={"help": "distributed backend"})
+    seed: int = field(default=42, metadata={"help": "random seed value"})
+
 
 
 def default_logdir() -> str:
@@ -1202,10 +1218,3 @@ class TrainingArguments:
             return {k: v if type(v) in valid_types else str(v) for k, v in d.items()}
 
 
-# class ParallelMode(Enum):
-#     NOT_PARALLEL = "not_parallel"
-#     NOT_DISTRIBUTED = "not_distributed"
-#     DISTRIBUTED = "distributed"
-#     SAGEMAKER_MODEL_PARALLEL = "sagemaker_model_parallel"
-#     SAGEMAKER_DATA_PARALLEL = "sagemaker_data_parallel"
-#     TPU = "tpu"

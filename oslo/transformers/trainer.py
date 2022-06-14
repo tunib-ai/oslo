@@ -31,15 +31,6 @@ from oslo.torch.nn.parallel.data_parallel import (
 )
 from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
 
-# from oslo.torch.nn.parallel.data_parallel.distributed_data_parallel import (
-#     DistributedDataParallel,
-# )
-# from oslo.torch.nn.parallel.data_parallel.fully_sharded_data_parallel import (
-#     FullyShardedDataParallel,
-# )
-# from oslo.torch.nn.parallel.data_parallel.sharded_data_parallel import (
-#     ShardedDataParallel,
-# )
 
 from oslo.torch.nn.modules.activation import MultiheadAttention
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -141,7 +132,7 @@ class Trainer:
             [torch.Tensor, torch.Tensor], torch.Tensor
         ] = None,
     ):
-        self.deepspeed = None  # temp
+        # self.deepspeed = None  # temp
         if args is None:
             # No Arguments passed
             output_dir = "tmp_trainer"
@@ -167,20 +158,6 @@ class Trainer:
 
         # force device and distributed setup init explicitly
         args._setup_devices
-
-        # # Remove model_init
-        # if model is None:
-        #     if model_init is not None:
-        #         self.model_init = model_init
-        #         model = self.call_model_init()
-        # else:
-        #     if model_init is not None:
-        #         warnings.warn(
-        #             "`Trainer` requires either a `model` or `model_init` argument, but not both. "
-        #             "`model_init` will overwrite your model when calling the `train` method. This will become a fatal error in the next release.",
-        #             FutureWarning,
-        #         )
-        #     self.model_init = model_init
 
         if (
             hasattr(model, "is_parallelizable")
@@ -2096,18 +2073,15 @@ class Trainer:
 
     def _wrap_model(self, model, training=True):
 
-        # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
+        if not training:
+            return model
+
         if unwrap_model(model) is not model:
             return model
 
-        # Multi-gpu training (should be after apex fp16 initialization)
-        if self.args.n_gpu > 1:
-            model = nn.DataParallel(model)
+        # if self.args.n_gpu > 1:
+        #     model = nn.DataParallel(model)
 
-        # Note: in torch.distributed mode, there's no point in wrapping the model
-        # inside a DistributedDataParallel as we'll be under `no_grad` anyways.
-        if not training:
-            return model
 
         # Distributed training (should be after apex fp16 initialization)
         if self.parallel_context is not None:

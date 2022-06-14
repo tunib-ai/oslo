@@ -37,6 +37,8 @@ class ShardedDDPOption(ExplicitEnum):
 #     ShardedDDP = "sddp"
 
 
+
+
 def get_last_checkpoint(folder):
     content = os.listdir(folder)
     checkpoints = [
