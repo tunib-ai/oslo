@@ -1,5 +1,6 @@
 import time
 import wandb
+import torch
 import torch.distributed as dist
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -21,6 +22,9 @@ parallel_context = ParallelContext.from_torch(
     tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
     tensor_parallel_depth=2,
 )
+
+torch.set_printoptions(sci_mode=False)
+torch.manual_seed(0)
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name)
