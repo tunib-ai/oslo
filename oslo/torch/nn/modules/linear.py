@@ -129,14 +129,14 @@ class ColLinear1D(Linear):
         self.parallel_context = parallel_context
         self.reversed = False
 
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
-            out_features % world_size == 0
+            out_features % self.world_size == 0
         ), "out_features must be divisible by world_size for ColLinear1D."
 
         super().__init__(
             in_features=in_features,
-            out_features=out_features // world_size,
+            out_features=out_features // self.world_size,
             skip_bias_add=skip_bias_add,
             bias=bias,
             dtype=dtype,
@@ -164,7 +164,11 @@ class ColLinear1D(Linear):
                 outputs = outputs + self.bias
 
         if self.gather_output:
-            outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
+            outputs = all_gather_tensor_1d(
+                outputs, 
+                dim=-1, 
+                parallel_context=self.parallel_context,
+            )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
         return outputs
@@ -185,13 +189,13 @@ class RowLinear1D(Linear):
         self.parallel_context = parallel_context
         self.reversed = False
 
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
-            in_features % world_size == 0
+            in_features % self.world_size == 0
         ), "in_features must be divisible by world_size for RowLinear1D."
 
         super().__init__(
-            in_features=in_features // world_size,
+            in_features=in_features // self.world_size,
             out_features=out_features,
             bias=bias,
             dtype=dtype,
@@ -211,7 +215,11 @@ class RowLinear1D(Linear):
         )
 
         if not self.parallel_input:
-            input = scatter_tensor_1d(input, -1, self.parallel_context)
+            input = scatter_tensor_1d(
+                input,
+                dim=-1,
+                parallel_context=self.parallel_context,
+            )
 
         outputs = F.linear(input, self.weight)
         outputs = all_reduce_tensor_1d(outputs, self.parallel_context)
@@ -352,15 +360,15 @@ class Linear2D(Linear):
             outputs = all_gather_tensor_2d(
                 outputs,
                 dim=0,
-                parallel_mode=ParallelMode.TENSOR_2D_COL,
                 parallel_context=self.parallel_context,
-            ).clone()
+                parallel_mode=ParallelMode.TENSOR_2D_COL,
+            )
             outputs = all_gather_tensor_2d(
                 outputs,
                 dim=-1,
-                parallel_mode=ParallelMode.TENSOR_2D_ROW,
                 parallel_context=self.parallel_context,
-            ).clone()
+                parallel_mode=ParallelMode.TENSOR_2D_ROW,
+            )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
         return outputs
@@ -493,15 +501,15 @@ class Linear2p5D(Linear):
             outputs = all_gather_tensor_2p5d(
                 outputs,
                 dim=-1,
-                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
                 parallel_context=self.parallel_context,
-            ).clone()
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
+            )
             outputs = all_gather_tensor_2p5d(
                 outputs,
                 dim=0,
-                col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
                 parallel_context=self.parallel_context,
-            ).clone()
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
+            )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
         return outputs
@@ -547,16 +555,13 @@ class Linear3D(Linear):
             )
             self.reset_parameters()
 
-        self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
-        self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
-        self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
-
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             Matmul_ABT_3D,
+            all_gather_tensor_3d,
         )
 
-        return Matmul_ABT_3D.apply(
+        outputs = Matmul_ABT_3D.apply(
             input,
             self.weight,
             self.bias,
@@ -564,7 +569,29 @@ class Linear3D(Linear):
             0,
             0,
             self.parallel_context,
-            self.input_parallel_mode,
-            self.weight_parallel_mode,
-            self.output_parallel_mode,
+            ParallelMode.TENSOR_3D_INPUT,
+            ParallelMode.TENSOR_3D_WEIGHT,
+            ParallelMode.TENSOR_3D_OUTPUT,
         )
+        if self.gather_output:
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=-1,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_OUTPUT,
+            )
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=0,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_INPUT,
+            )
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=0,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
+            )
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., : self.orig_num_classes]
+        return outputs

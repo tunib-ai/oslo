@@ -1,15 +1,16 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2D
 from _utils import split_batch_2d, split_2d, gather_2d
 
+tp_size = 4
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=4,
+    tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_2D,
 )
 

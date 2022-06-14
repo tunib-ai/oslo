@@ -1,10 +1,8 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2p5D
-
-from copy import deepcopy
 from _utils import split_batch_2p5d, split_2p5d, gather_2p5d
 
 tp_size = 8
@@ -20,13 +18,18 @@ parallel_context = ParallelContext.from_torch(
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
+
+batch_size = 2
+seq_len = 5
+num_embeddings = 16
+embedding_dim = 8
 tesseract_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 input_ = torch.LongTensor([[0, 1, 6, 3, 8], [5, 2, 7, 4, 9]]).cuda()
-target = torch.randn((2, 5, 8)).cuda()
+target = torch.randn((batch_size, seq_len, embedding_dim)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-vocab_embedding = torch.nn.Embedding(16, 8).cuda()
+vocab_embedding = torch.nn.Embedding(num_embeddings, embedding_dim).cuda()
 w = deepcopy(vocab_embedding.weight.data)
 
 out = vocab_embedding(input_)
@@ -46,7 +49,7 @@ target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
 w = split_2p5d(w, tesseract_dim, parallel_context=parallel_context)
 
 vocab_embedding_2p5d = VocabParallelEmbedding2p5D(
-    16, 8, parallel_context=parallel_context
+    num_embeddings, embedding_dim, parallel_context=parallel_context
 )
 vocab_embedding_2p5d.weight.data.copy_(w)
 

@@ -153,7 +153,7 @@ class LayerNorm2D(LayerNorm):
             Var_i = Var_i - E_i * E_i
             Var_i = 1.0 / torch.sqrt(Var_i + self.eps)
 
-        output = layernorm_2d(
+        outputs = layernorm_2d(
             input,
             E_i,
             Var_i,
@@ -193,10 +193,10 @@ class LayerNorm2D(LayerNorm):
                 ParallelMode.TENSOR_2D_ROW,
                 ParallelMode.TENSOR_2D_COL,
             )
-            output = torch.addcmul(bias, scale, output)
+            outputs = torch.addcmul(bias, scale, outputs)
         else:
-            output = torch.mul(scale, output)
-        return output
+            outputs = torch.mul(scale, outputs)
+        return outputs
 
 
 class LayerNorm2p5D(LayerNorm):
@@ -272,7 +272,7 @@ class LayerNorm2p5D(LayerNorm):
             # this time 1/sqrt(Var_x + epsilon)
             Var_x = 1.0 / torch.sqrt(Var_x + self.eps)
 
-        output = layernorm_2p5d(
+        outputs = layernorm_2p5d(
             input,
             E_x,
             Var_x,
@@ -313,10 +313,10 @@ class LayerNorm2p5D(LayerNorm):
                 self.parallel_context,
                 ParallelMode.TENSOR_2P5D_COL,
             )
-            output = torch.addcmul(bias, scale, output)
+            outputs = torch.addcmul(bias, scale, outputs)
         else:
-            output = torch.mul(scale, output)
-        return output
+            outputs = torch.mul(scale, outputs)
+        return outputs
 
 
 class LayerNorm3D(LayerNorm):
@@ -328,8 +328,6 @@ class LayerNorm3D(LayerNorm):
         dtype: Optional[torch.dtype] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-
-        super().__init__()
         self.parallel_context = parallel_context
         self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         assert (
@@ -344,26 +342,22 @@ class LayerNorm3D(LayerNorm):
             dtype=dtype,
         )
 
-        self.input_parallel_mode = ParallelMode.TENSOR_3D_INPUT
-        self.weight_parallel_mode = ParallelMode.TENSOR_3D_WEIGHT
-        self.output_parallel_mode = ParallelMode.TENSOR_3D_OUTPUT
-
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
             layernorm_3d,
         )
-
-        return layernorm_3d(
+        outputs = layernorm_3d(
             input,
             self.weight,
             self.bias,
             self.normalized_shape,
             self.eps,
-            self.parallel_context,
-            self.input_parallel_mode,
-            self.weight_parallel_mode,
-            self.output_parallel_mode,
+            parallel_context=self.parallel_context,
+            input_parallel_mode=ParallelMode.TENSOR_3D_INPUT,
+            weight_parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
+            output_parallel_mode=ParallelMode.TENSOR_3D_OUTPUT,
         )
+        return outputs
 
 
 class FusedLayerNorm(nn.Module):

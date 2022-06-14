@@ -196,6 +196,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                 vocab_start_index=vocab_start_index,
                 vocab_end_index=vocab_end_index,
                 parallel_context=self.parallel_context,
+                tesseract_dim=tesseract_dim,
                 num_embeddings=module.weight.size()[0],
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
@@ -209,6 +210,7 @@ class _TensorParallel2p5D(ParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
+                tesseract_dim=tesseract_dim,
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
@@ -247,7 +249,7 @@ class _TensorParallel2p5D(ParallelWrapper):
 
         weight_list = module.weight.data.chunk(tesseract_dim, dim=1)
         weight_list = [
-            weight.chunk(tesseract_dim * fusion_degree, dim=0) for weight in weight_list
+            weight.chunk(fusion_degree * tesseract_dim, dim=0) for weight in weight_list
         ]
 
         if fusion_degree > 1:
@@ -273,7 +275,7 @@ class _TensorParallel2p5D(ParallelWrapper):
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(tesseract_dim * fusion_degree, dim=0)
+                bias_list = module.bias.data.chunk(fusion_degree * tesseract_dim, dim=0)
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
@@ -301,10 +303,10 @@ class _TensorParallel2p5D(ParallelWrapper):
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            tesseract_dim=tesseract_dim,
             row_rank=row_rank,
             col_rank=col_rank,
             dep_rank=dep_rank,
-            tesseract_dim=tesseract_dim,
             data_parallel_rank=data_parallel_rank,
             pipeline_parallel_rank=pipeline_parallel_rank,
             tensor_parallel_size=tensor_parallel_size,
@@ -374,10 +376,10 @@ class _TensorParallel2p5D(ParallelWrapper):
             normalized_shape=module.weight.size()[0] * tesseract_dim,
             partitioned_dim=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            tesseract_dim=tesseract_dim,
             row_rank=row_rank,
             col_rank=col_rank,
             dep_rank=dep_rank,
-            tesseract_dim=tesseract_dim,
             data_parallel_rank=data_parallel_rank,
             pipeline_parallel_rank=pipeline_parallel_rank,
             tensor_parallel_size=tensor_parallel_size,
@@ -428,10 +430,10 @@ class _TensorParallel2p5D(ParallelWrapper):
                 in_features=module.weight.size()[1],
                 out_features=module.weight.size()[0],
                 parallel_context=self.parallel_context,
+                tesseract_dim=tesseract_dim,
                 row_rank=row_rank,
                 col_rank=col_rank,
                 dep_rank=dep_rank,
-                tesseract_dim=tesseract_dim,
                 data_parallel_rank=data_parallel_rank,
                 pipeline_parallel_rank=pipeline_parallel_rank,
                 tensor_parallel_size=tensor_parallel_size,
