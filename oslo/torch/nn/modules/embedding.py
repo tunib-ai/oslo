@@ -564,7 +564,7 @@ class VocabParallelEmbedding3D(nn.Embedding):
 
         weight = all_gather_tensor_3d(
             self.weight,
-            0,
+            dim=0,
             parallel_context=self.parallel_context,
             parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
         )
