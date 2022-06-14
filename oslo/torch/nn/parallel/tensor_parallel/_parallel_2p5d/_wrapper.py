@@ -31,14 +31,16 @@ from oslo.torch.nn.parallel.utils import (
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
-    allocate_params
+    allocate_params,
+    unwrap_parallel,
+    get_parameter_dtype
 )
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
 
 from oslo.transformers.constants import BATCH_DIMENSIONS
-from transformers import AutoConfig
+
 
 class _TensorParallel2p5D(ParallelWrapper):
     """
@@ -58,7 +60,6 @@ class _TensorParallel2p5D(ParallelWrapper):
     ):
         super().__init__()
         self.module = module
-        self.config = self.module.config
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
 
@@ -648,7 +649,6 @@ class _TensorParallel2p5D(ParallelWrapper):
     ):
         import os
         import torch.distributed as dist
-        from transformers.modeling_utils import get_parameter_dtype, unwrap_model
 
         logger = getLogger("Tensor2p5D")
         PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
@@ -687,12 +687,16 @@ class _TensorParallel2p5D(ParallelWrapper):
                 model_to_save.deparallelize()
 
             if dist.get_rank() == 0:
-                model_to_save.module.save_pretrained(
-                    save_directory=save_directory,
-                    save_config=save_config,
-                    save_function=save_function,
-                    **kwargs,
-                )
+                if is_huggingface_model(model_to_save.module):
+                    model_to_save.module.save_pretrained(
+                        save_directory=save_directory,
+                        save_config=save_config,
+                        save_function=save_function,
+                        **kwargs,
+                    )
+                else:
+                    # TODO : Non-huggingface model
+                    pass
             del model_to_save
 
             dist.barrier()
@@ -707,7 +711,7 @@ class _TensorParallel2p5D(ParallelWrapper):
         os.makedirs(save_directory, exist_ok=True)
 
         # Only save the model itself if we are using distributed training
-        model_to_save = unwrap_model(self)
+        model_to_save = unwrap_parallel(self)
 
         # save the string version of dtype to the config, e.g. convert torch.float32 => "float32"
         # we currently don't use this setting automatically, but may start to use with v5
@@ -726,7 +730,7 @@ class _TensorParallel2p5D(ParallelWrapper):
             state_dict = model_to_save.state_dict()
 
         # Handle the case where some state_dict keys shouldn't be saved
-        if getattr(self, "_keys_to_ignore_on_save") is not None:
+        if getattr(self, "_keys_to_ignore_on_save", None) is not None:
             state_dict = {
                 k: v for k, v in state_dict.items() if k not in self._keys_to_ignore_on_save
             }

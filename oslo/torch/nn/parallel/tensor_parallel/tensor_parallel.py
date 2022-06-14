@@ -5,6 +5,8 @@ import os
 import torch
 import torch.nn as nn
 
+from transformers import AutoConfig
+
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._wrapper import (
     _TensorParallel1D,
@@ -58,18 +60,24 @@ class TensorParallel(ParallelWrapper):
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
-        config: dict = None
+        module_args: dict = None
     ):
         super().__init__()
+        if is_huggingface_model(module):
+            assert module_args is not None, "module_args must not be provided in huggingface module."
+        else:
+            assert isinstance(module_args, dict), "module_args must be a dict."
+
         self.parallel_context = get_parallel_context(module, parallel_context)
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
+
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context, mapping, config)
+            self.module = _TensorParallel1D(module, self.parallel_context, mapping, module_args)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context, mapping, config)
+            self.module = _TensorParallel2D(module, self.parallel_context, mapping, module_args)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping, config)
+            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping, module_args)
         else:
             raise ValueError(
                 "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
