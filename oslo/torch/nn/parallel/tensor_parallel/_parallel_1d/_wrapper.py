@@ -81,6 +81,9 @@ class _TensorParallel1D(ParallelWrapper):
                     world_size = self.parallel_context.get_world_size(
                         ParallelMode.TENSOR_1D
                     )
+                    assert (
+                        getattr(module, elem.name) % world_size == 0
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by world_size ({world_size})."
                     reduced_arg = getattr(module, elem.name) // world_size
                     setattr(module, elem.name, reduced_arg)
 

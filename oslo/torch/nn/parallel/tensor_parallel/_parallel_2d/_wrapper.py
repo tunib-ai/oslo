@@ -102,7 +102,7 @@ class _TensorParallel2D(ParallelWrapper):
                     )
                     assert (
                         getattr(module, elem.name) % summa_dim == 0
-                    ), f"{elem.name} must be divisible by summa_dim."
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by summa_dim ({summa_dim})."
                     reduced_arg = getattr(module, elem.name) // summa_dim
                     setattr(module, elem.name, reduced_arg)
 

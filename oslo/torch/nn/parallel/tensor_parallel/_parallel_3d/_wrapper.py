@@ -102,7 +102,7 @@ class _TensorParallel3D(ParallelWrapper):
                     )
                     assert (
                         getattr(module, elem.name) % cubic_dim == 0
-                    ), f"{elem.name} must be divisible by cubic_dim."
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by cubic_dim ({cubic_dim})."
                     reduced_arg = getattr(module, elem.name) // cubic_dim
                     setattr(module, elem.name, reduced_arg)
 

@@ -99,7 +99,7 @@ class _TensorParallel2p5D(ParallelWrapper):
                     )
                     assert (
                         getattr(module, elem.name) % tesseract_dim == 0
-                    ), f"{elem.name} must be divisible by tesseract_dim."
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by tesseract_dim ({tesseract_dim})."
                     reduced_arg = getattr(module, elem.name) // tesseract_dim
                     setattr(module, elem.name, reduced_arg)
 
