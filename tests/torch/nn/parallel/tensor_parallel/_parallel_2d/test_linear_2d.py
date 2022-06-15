@@ -1,15 +1,16 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2D
-from _utils import split_2d, split_1d_twice, gather_2d
+from _utils import split_2d, split_bias_2d, gather_2d
 
+tp_size = 4
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=4,
+    tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_2D,
 )
 
@@ -42,14 +43,10 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
 
-# split input_ into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-input_ = split_2d(parallel_context, input_, summa_dim, col_first=True)
-# split target into 0:[0, 0], 1:[0, 1], 2:[1, 0], 3:[1, 1]
-ptarget = split_2d(parallel_context, target, summa_dim, col_first=True)
-# split weight into 0:[0, 0], 1:[1, 0], 2:[0, 1], 3:[1, 1]
-w = split_2d(parallel_context, w, summa_dim, col_first=False)
-# split bias into 0:[0], 1:[2], 2:[1], 3:[3]
-b = split_1d_twice(parallel_context, b, summa_dim, dim=0)
+input_ = split_2d(input_, summa_dim, parallel_context=parallel_context)
+ptarget = split_2d(target, summa_dim, parallel_context=parallel_context)
+w = split_2d(w, summa_dim, parallel_context=parallel_context)
+b = split_bias_2d(b, summa_dim, parallel_context=parallel_context)
 
 linear_2d = Linear2D(input_dim, hidden_dim, parallel_context=parallel_context)
 linear_2d.weight.data.copy_(w)
@@ -63,8 +60,8 @@ optimizer.step()
 
 pout_update = linear_2d(input_)
 
-pout = gather_2d(parallel_context, pout, summa_dim, col_first=False)
-pout_update = gather_2d(parallel_context, pout_update, summa_dim, col_first=False)
+pout = gather_2d(pout, summa_dim, parallel_context=parallel_context)
+pout_update = gather_2d(pout_update, summa_dim, parallel_context=parallel_context)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")
