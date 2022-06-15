@@ -84,7 +84,12 @@ wrapper_tp.save_parallelized('test/', merge_checkpoints=False)
 dist.barrier()
 
 # 로드
-model_reparallel = TensorParallel.from_parallelized('test/', parallel_context, GPT2LMHeadModel)
+model_reparallel = TensorParallel(
+    GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")),
+    parallel_context
+)
+allocate_params(model_reparallel, parallel_context)
+model_reparallel.from_parallelized('test/')
 optimizer_reparallel = Adam(model_reparallel.parameters(), lr=3e-5)
 
 dist.barrier()
