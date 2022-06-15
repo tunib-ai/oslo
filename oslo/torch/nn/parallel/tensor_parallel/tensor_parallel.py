@@ -1,6 +1,8 @@
 from typing import Union, Optional, Callable
 
 import os
+import json
+from operator import xor
 
 import torch
 import torch.nn as nn
@@ -221,17 +223,61 @@ class TensorParallel(ParallelWrapper):
             **kwargs,
         )
 
-    @classmethod
-    def from_parallelized(cls, parallelized_model_path,  parallel_context, huggingface_task_class=None):
-        assert huggingface_task_class is not None, "currently, only huggingface model is supported."
+    @staticmethod
+    def get_module_args(module):
+        state_dict = module.state_dict()
+        return {
+            key: value.shape for key, value in state_dict.items()
+        }
 
-        config = AutoConfig.from_pretrained(parallelized_model_path)
-        base_model = huggingface_task_class(config)
+    def from_parallelized(self, path):
+        return self.module.from_parallelized(path)
 
-        config = config.to_dict()
-
-        self = cls(base_model, parallel_context, None, config if huggingface_task_class is None else None)
-        allocate_params(self, parallel_context)
-        self.module.from_parallelized(parallelized_model_path)
-
-        return self
+    # @classmethod
+    # def from_parallelized(cls, parallelized_model_path, parallel_context,
+    #                       huggingface_task_class=None, base_model_class=None):
+    #     """
+    #     :param parallelized_model_path:  path to the parallelized model
+    #     :param parallel_context: parallel context
+    #     :param huggingface_task_class: huggingface task class ex. BertForSequenceClassification
+    #     :param base_model_class: custom model's class field ex. CustomModel
+    #     :return: TensorParallelWrapper
+    #
+    #     Examples:
+    #
+    #     >>> # huggingface model
+    #     >>> huggingface_parallelized = TensorParallel.from_parallelized(
+    #     >>>   "bert-base-uncased",
+    #     >>>    parallel_context,
+    #     >>>    huggingface_task_class=BertForSequenceClassification,
+    #     >>> )
+    #
+    #     >>> # custom model
+    #     >>> from path.to.custom.model import CustomModel
+    #     >>> custom_parallelized = TensorParallel.from_parallelized(
+    #     >>>     "/path/to/custom_model",
+    #     >>>    parallel_context,
+    #     >>>    base_model_class=CustomModel,
+    #     >>>)
+    #     """
+    #     assert xor(huggingface_task_class is None, base_model_class is None), \
+    #         "`huggingface_task_class` and `orig_model` must be input only one of them."
+    #
+    #     if base_model_class is None:
+    #         config = AutoConfig.from_pretrained(parallelized_model_path)
+    #         base_model = huggingface_task_class(config)
+    #         config = None
+    #     else:
+    #         config_path = os.path.join(parallelized_model_path, "config.json")
+    #         if os.path.exists(config_path):
+    #             with open(config_path, "r") as f:
+    #                 config = dict(json.load(f))
+    #         else:
+    #             raise ValueError(f"`config.json` is not found in {parallelized_model_path}.")
+    #         base_model = base_model_class(**config)
+    #
+    #     self = cls(base_model, parallel_context, None, config)
+    #     allocate_params(self, parallel_context)
+    #     self.module.from_parallelized(parallelized_model_path)
+    #
+    #     return self

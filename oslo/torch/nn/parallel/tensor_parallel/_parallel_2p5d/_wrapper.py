@@ -1,5 +1,6 @@
 import copy
 import os
+import json
 
 import torch
 import torch.nn as nn
@@ -692,8 +693,13 @@ class _TensorParallel2p5D(ParallelWrapper):
                         **kwargs,
                     )
                 else:
-                    # TODO : Non-huggingface model
-                    pass
+                    if save_config:
+                        with open(os.path.join(save_directory, "config.json"), "w") as f:
+                            json.dump(self.config, f)
+                    save_function(
+                        model_to_save,
+                        os.path.join(save_directory, "pytorch_model.bin"),
+                    )
             del model_to_save
 
             dist.barrier()
@@ -753,6 +759,12 @@ class _TensorParallel2p5D(ParallelWrapper):
         logger.info(f"Model weights saved in {output_model_file}")
 
     def from_parallelized(self, path):
+        """
+        Example:
+        >>> model = AnyModel()
+        >>> model = TensorParallel(model, ...)
+        >>> model.from_parallelized(path)
+        """
         PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
         parallelized_model_path = path
 
