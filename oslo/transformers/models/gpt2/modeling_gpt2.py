@@ -1,4 +1,3 @@
-import os
 import math
 from typing import Tuple
 from packaging import version
@@ -9,6 +8,7 @@ from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 from oslo.torch import nn as onn
 from oslo.transformers.modeling_utils import OsloModel
+import oslo.torch.nn.modules.functional as F
 
 try:
     from transformers.modeling_utils import (
@@ -163,18 +163,42 @@ class GPT2Attention(nn.Module):
 
         scale_factor = 1.0
         if self.scale_attn_weights:
-            scale_factor = scale_factor / (value.size(-1) ** 0.5)
+            scale_factor /= value.size(-1) ** 0.5
 
         if self.scale_attn_by_inverse_layer_idx:
-            scale_factor = scale_factor / float(self.layer_idx + 1)
+            scale_factor /= float(self.layer_idx + 1)
 
-        fused_scale_mask_softmax = onn.FusedScaleMaskSoftmax(
-            scale_factor,
-            self.use_triang_mask,
-            True,
-            attention_mask,
-        )
-        attn_weights = fused_scale_mask_softmax(attn_weights)
+        if F._is_fused_scale_mask_softmax_available(
+            input=attn_weights,
+            scale=scale_factor,
+            use_triang_mask=self.use_triang_mask,
+            softmax_in_fp32=True,
+        ):
+            attn_weights = F.fused_scale_mask_softmax(
+                input=attn_weights,
+                scale=scale_factor,
+                use_triang_mask=self.use_triang_mask,
+                softmax_in_fp32=True,
+                pad_mask=attention_mask,
+            )
+        else:
+            attn_weights *= scale_factor
+
+            if not self.is_cross_attention:
+                # if only "normal" attention layer implements causal mask
+                query_length, key_length = query.size(-2), key.size(-2)
+                causal_mask = self.bias[
+                    :, :, key_length - query_length : key_length, :key_length
+                ].bool()
+                attn_weights = torch.where(
+                    causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
+                )
+
+            if attention_mask is not None:
+                # Apply the attention mask
+                attn_weights = attn_weights + attention_mask
+
+            attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
         # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op otherwise
         attn_weights = attn_weights.type(value.dtype)
@@ -233,13 +257,35 @@ class GPT2Attention(nn.Module):
             )
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
 
-        fused_scale_mask_softmax = onn.FusedScaleMaskSoftmax(
-            None,
-            self.use_triang_mask,
-            False,
-            attention_mask,
-        )
-        attn_weights = fused_scale_mask_softmax(attn_weights)
+        if F._is_fused_scale_mask_softmax_available(
+            input=attn_weights,
+            scale=1.0,
+            use_triang_mask=self.use_triang_mask,
+            softmax_in_fp32=False,
+        ):
+            attn_weights = F.fused_scale_mask_softmax(
+                input=attn_weights,
+                scale=None,
+                use_triang_mask=self.use_triang_mask,
+                softmax_in_fp32=False,
+                pad_mask=attention_mask,
+            )
+        else:
+            if not self.is_cross_attention:
+                # if only "normal" attention layer implements causal mask
+                query_length, key_length = query.size(-2), key.size(-2)
+                causal_mask = self.bias[
+                    :, :, key_length - query_length : key_length, :key_length
+                ].bool()
+                attn_weights = torch.where(
+                    causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
+                )
+
+            if attention_mask is not None:
+                # Apply the attention mask
+                attn_weights = attn_weights + attention_mask
+
+            attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
         # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op if otherwise
         if attn_weights.dtype != torch.float32:
@@ -326,7 +372,7 @@ class GPT2Attention(nn.Module):
         attn_output, attn_bias = self.c_proj(attn_output)
         attn_output = self.resid_dropout(attn_output, attn_bias)
 
-        outputs = ((attn_output, attn_bias), present)
+        outputs = (attn_output, present)
         if output_attentions:
             outputs += (attn_weights,)
 
@@ -347,7 +393,7 @@ class GPT2MLP(nn.Module):
         hidden_states = self.act(hidden_states, bias)
         hidden_states, bias = self.c_proj(hidden_states)
         hidden_states = self.fused_bias_dropout(hidden_states, bias)
-        return hidden_states, bias
+        return hidden_states
 
 
 class GPT2Block(nn.Module):
@@ -356,15 +402,15 @@ class GPT2Block(nn.Module):
         hidden_size = config.hidden_size
         inner_dim = config.n_inner if config.n_inner is not None else 4 * hidden_size
 
-        self.ln_1 = onn.FusedLayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+        self.ln_1 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
         self.attn = GPT2Attention(config, layer_idx=layer_idx)
-        self.ln_2 = onn.FusedLayerNorm(hidden_size, eps=config.layer_norm_epsilon)
+        self.ln_2 = nn.LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
         if config.add_cross_attention:
             self.crossattention = GPT2Attention(
                 config, is_cross_attention=True, layer_idx=layer_idx
             )
-            self.ln_cross_attn = onn.FusedLayerNorm(
+            self.ln_cross_attn = nn.LayerNorm(
                 hidden_size, eps=config.layer_norm_epsilon
             )
 
@@ -391,9 +437,7 @@ class GPT2Block(nn.Module):
             use_cache=use_cache,
             output_attentions=output_attentions,
         )
-        attn_output, attn_bias = attn_outputs[
-            0
-        ]  # output_attn: a, present, (attentions)
+        attn_output = attn_outputs[0]  # output_attn: a, present, (attentions)
         outputs = attn_outputs[1:]
         hidden_states = attn_output + residual
 
@@ -414,14 +458,14 @@ class GPT2Block(nn.Module):
                 encoder_attention_mask=encoder_attention_mask,
                 output_attentions=output_attentions,
             )
-            attn_output, attn_bias = cross_attn_outputs[0]
+            attn_output = cross_attn_outputs[0]
             hidden_states = attn_output + residual
             # add cross attentions if we output attention weights
             outputs = outputs + cross_attn_outputs[2:]
 
         residual = hidden_states
         hidden_states = self.ln_2(hidden_states)
-        feed_forward_hidden_states, feed_forward_bias = self.mlp(hidden_states)
+        feed_forward_hidden_states = self.mlp(hidden_states)
         hidden_states = residual + feed_forward_hidden_states
 
         if use_cache:
@@ -447,7 +491,7 @@ class GPT2Model(GPT2PreTrainedModel):
         self.h = nn.ModuleList(
             [GPT2Block(config, layer_idx=i) for i in range(config.num_hidden_layers)]
         )
-        self.ln_f = onn.FusedLayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
+        self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         # Model parallel
         self.model_parallel = False
