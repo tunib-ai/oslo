@@ -613,11 +613,13 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             reshaped_w = tensor.view(tesseract_dim*fusion_degree, -1, last_dim)
             # print(f"tensor.size: {tensor.size()}, reshaped_w.size: {reshaped_w.size()}")
             recon_w = torch.cat([
-                reshaped_w[:fusion_degree], reshaped_w[fusion_degree:]], 1).view(-1, last_dim).contiguous()
+                reshaped_w[i * fusion_degree: (i+1) * fusion_degree]
+                for i in range(tesseract_dim)], 1).view(-1, last_dim).contiguous()
         else:
             reshaped_w = tensor.view(fusion_degree*tesseract_dim, -1)
             recon_w = torch.cat([
-                reshaped_w[:fusion_degree], reshaped_w[fusion_degree:]], 1).view(-1, last_dim).contiguous()
+                reshaped_w[i * fusion_degree: (i+1) * fusion_degree]
+                for i in range(tesseract_dim)], 1).view(-1, last_dim).contiguous()
         return recon_w
 
     @staticmethod
