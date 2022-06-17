@@ -5,13 +5,13 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
-from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
+from oslo.torch.distributed import ParallelContext, ParallelMode
 import time
 
 
-def time_trace(func):
+def latency_trace(func):
     def wrapper(*args, **kwargs):
         start = time.time()
         result = func(*args, **kwargs)
@@ -20,27 +20,32 @@ def time_trace(func):
     return wrapper
 
 
-@time_trace
+@latency_trace
 def fw(func, *args, **kwargs):
     return func(*args, **kwargs).loss
 
 
-@time_trace
+@latency_trace
 def bw(tensors):
     return tensors.backward()
 
-# parallel context 생성
-parallel_context = ParallelContext.from_torch(
-    data_parallel_size=1,
-    pipeline_parallel_size=1,
-    tensor_parallel_size=4,
-    tensor_parallel_mode=ParallelMode.TENSOR_1D,
-)
+
+tp_size = 8
+tp_depth = 2
 
 model_name = "gpt2"
 mkwargs = {
 }
 dataset_name = "squad"
+
+# parallel context 생성
+parallel_context = ParallelContext.from_torch(
+    data_parallel_size=1,
+    pipeline_parallel_size=1,
+    tensor_parallel_size=tp_size,
+    tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
+    tensor_parallel_depth=tp_depth,
+)
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
@@ -69,16 +74,31 @@ dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name=f"{model_name}_tp1d_bs{batch_size}")
+    wandb.init(project="oslo", name=f"{model_name}_tp2p5d_bs{batch_size}")
     cur = time.time()
 
+# 저장
+wrapper_tp.save_parallelized('test/', merge_checkpoints=False)
+
 # 모니터링 생성 대기
+dist.barrier()
+
+# 로드
+model_reparallel = TensorParallel(
+    GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")),
+    parallel_context
+)
+allocate_params(model_reparallel, parallel_context)
+model_reparallel.from_parallelized('test/')
+optimizer_reparallel = Adam(model_reparallel.parameters(), lr=3e-5)
+
 dist.barrier()
 
 # 학습 시작
 for data in dataloader:
     optimizer_tp.zero_grad()
     optimizer_no_tp.zero_grad()
+    model_reparallel.zero_grad()
 
     inputs = tokenizer(
         data,
@@ -92,35 +112,29 @@ for data in dataloader:
         fw(model_no_tp, **inputs, labels=inputs["input_ids"])
     loss_tp, tp_fw_time = \
         fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_reparallel, reparallel_fw_time = \
+        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
 
     if dist.get_rank() == 0:
-        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}")
-        wandb.log({"tp": loss_tp, "notp": loss_no_tp})
+        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, reparallel:{loss_reparallel}")
+        wandb.log({"tp": loss_tp, "notp": loss_no_tp, "reparallel": loss_reparallel})
 
     _, notp_bw_time = bw(loss_no_tp)
     _, tp_bw_time = bw(loss_tp)
+    _, reparallel_bw_time = bw(loss_reparallel)
 
     optimizer_tp.step()
     optimizer_no_tp.step()
+    optimizer_reparallel.step()
 
     if dist.get_rank() == 0:
         wandb.log({
             "tp.forward.time:": tp_fw_time,
             "tp.backward.time:": tp_bw_time,
             "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time})
-    #
-    # loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
-    # loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss
-    #
-    # if dist.get_rank() == 0:
-    #     print(f"TP:{loss_tp}, NOTP:{loss_no_tp}")
-    #     wandb.log({"tp": loss_tp, "notp": loss_no_tp})
-    #
-    # loss_tp.backward()
-    # loss_no_tp.backward()
-    #
-    # optimizer_tp.step()
-    # optimizer_no_tp.step()
+            "notp.backward.time:": notp_bw_time,
+            "reparallel.forward.time:": reparallel_fw_time,
+            "reparallel.backward.time:": reparallel_bw_time
+        })
 
 dist.barrier()

@@ -215,3 +215,8 @@ class BaseTensorParallelWrapper(ParallelWrapper):
             raise NotADirectoryError(
                 f"directory named {parallelized_model_path} is not valid. "
             )
+
+    @torch.no_grad()
+    def deparallelize(self):
+        return NotImplementedError
+

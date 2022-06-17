@@ -2,6 +2,7 @@ import copy
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.embedding import (
@@ -17,17 +18,19 @@ from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
 from oslo.torch.nn.parallel.utils import (
-    ParallelWrapper,
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
+)
+from oslo.torch.nn.parallel.tensor_parallel._base_wrapper import (
+    BaseTensorParallelWrapper,
 )
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
 )
 
 
-class _TensorParallel1D(ParallelWrapper):
+class _TensorParallel1D(BaseTensorParallelWrapper):
     """
     PyTorch module for 1D tensor parallelism
 
@@ -125,7 +128,7 @@ class _TensorParallel1D(ParallelWrapper):
     def _parallelize_head(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_head(
-                self.module, param_name
+                    self.module, param_name
             ) and isinstance(module, nn.Linear):
                 self._slice_head(
                     module=module,
@@ -308,3 +311,149 @@ class _TensorParallel1D(ParallelWrapper):
                 else False,
             )
         module.__class__ = ColumnParallelLinear
+
+    @torch.no_grad()
+    def deparallelize(self):
+        self._deparallelize_linear()
+        self._deparallelize_embedding()
+        self._rollback_mp_arguments()
+
+    def _rollback_mp_arguments(self):
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    world_size = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_1D
+                    )
+                    expanded_arg = getattr(module, elem.name) * world_size
+                    setattr(module, elem.name, expanded_arg)
+
+    def _deparallelize_embedding(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == VocabParallelEmbedding1D:
+                self._gather_embedding(module)
+
+    def _deparallelize_linear(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
+                self._gather_column_linear(module)
+
+            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._gather_row_linear(module)
+
+    def _gather_embedding(self, module):
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
+            # w = gather_2d(self.parallel_context, module.weight.data, world_size, col_first=True)
+            tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
+            dist.all_gather(
+                tensor_list,
+                module.weight.data.contiguous(),
+                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+            )
+            w = torch.cat(tensor_list, dim=0)
+
+            assert hasattr(
+                self.module, "orig_vocab_size"
+            ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
+            orig_vocab_size = self.module.orig_vocab_size
+
+            module.weight.data = w[:, :orig_vocab_size]
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=None,
+                vocab_end_index=None,
+                parallel_context=None,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=None
+            )
+        else:
+            tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
+            dist.all_gather(
+                tensor_list,
+                module.weight.data.contiguous(),
+                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+            )
+            w = torch.cat(tensor_list, dim=1)
+            module.weight.data = w
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=None,
+                embedding_dim = module.weight.size()[1]
+            )
+        module.__class__ = nn.Embedding
+
+    def _gather_linear(self, module, dim=1):
+        is_reversed = module.reversed
+        fusion_degree = module.fusion_degree
+
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+
+        # w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
+        tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
+        dist.all_gather(
+            tensor_list,
+            module.weight.data.contiguous(),
+            self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+        )
+        w = torch.cat(tensor_list, dim=dim)
+
+        if fusion_degree > 1:
+            w = self._reconstruct_combined_qkv(w, world_size, fusion_degree, False)
+        if is_reversed:
+            w = module.weight.data.t()
+        module.weight.data = w
+
+        if hasattr(module, "bias") and module.bias is not None:
+            # if slice_bias is True and module.bias.dim() >= 1:
+            # b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, dim)
+            tensor_list = [torch.zeros_like(module.bias.data) for _ in range(world_size)]
+            dist.all_gather(
+                tensor_list,
+                module.bias.data.contiguous(),
+                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+            )
+            b = torch.cat(tensor_list, dim=dim)
+            if fusion_degree > 1:
+                b = self._reconstruct_combined_qkv(b, world_size, fusion_degree, dim)
+            module.bias.data = b
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.gather_output
+        del module.parallel_context
+        module.__class__ = nn.Linear
+
+    def _gather_column_linear(self, module):
+        self._gather_linear(module, dim=0)
+
+    def _gather_row_linear(self, module):
+        self._gather_linear(module, dim=1)
+
+    # TODO: fix
+    @staticmethod
+    def _reconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
+        last_dim = tensor.size()[dim-1]
+        reshaped_w = tensor.view(fusion_degree * world_size, -1)
+        # print(f"tensor.size: {tensor.size()}, reshaped_w.size: {reshaped_w.size()}")
+        recon_w = torch.cat([
+            reshaped_w[i * fusion_degree: (i+1) * fusion_degree]
+            for i in range(world_size)], 1).view(-1, last_dim).contiguous()
+        return recon_w
