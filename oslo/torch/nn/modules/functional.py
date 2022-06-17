@@ -276,7 +276,7 @@ class _FusedRMSNormFunction(torch.autograd.Function):
         return grad_input, None, None
 
 
-class _FusedScaleUpeerTriangMaskSoftmaxFunction(torch.autograd.Function):
+class _FusedScaleUpperTriangMaskSoftmaxFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, inputs, scale):
         scale_t = torch.tensor([scale])
@@ -456,7 +456,7 @@ def _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask):
     if use_triang_mask:
         if pad_mask is not None:
             input += pad_mask
-        output = _FusedScaleUpeerTriangMaskSoftmaxFunction.apply(
+        output = _FusedScaleUpperTriangMaskSoftmaxFunction.apply(
             input.view(-1, sq, sk),
             scale,
         )
