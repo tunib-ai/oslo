@@ -168,22 +168,22 @@ class GPT2Attention(nn.Module):
         if self.scale_attn_by_inverse_layer_idx:
             scale_factor /= float(self.layer_idx + 1)
 
+        attn_weights *= scale_factor
+
         if F._is_fused_scale_mask_softmax_available(
             input=attn_weights,
-            scale=scale_factor,
+            scale=1.0,
             use_triang_mask=self.use_triang_mask,
             softmax_in_fp32=False,
         ):
-            attn_weights = F.fused_scale_mask_softmax(
+            attn_weights = F._fused_scale_mask_softmax_cuda(
                 input=attn_weights,
-                scale=scale_factor,
+                scale=1.0,
                 use_triang_mask=self.use_triang_mask,
                 softmax_in_fp32=False,
                 pad_mask=attention_mask,
             )
         else:
-            attn_weights *= scale_factor
-
             if not self.is_cross_attention:
                 # if only "normal" attention layer implements causal mask
                 query_length, key_length = query.size(-2), key.size(-2)
