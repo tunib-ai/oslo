@@ -172,13 +172,13 @@ class GPT2Attention(nn.Module):
             input=attn_weights,
             scale=scale_factor,
             use_triang_mask=self.use_triang_mask,
-            softmax_in_fp32=True,
+            softmax_in_fp32=False,
         ):
             attn_weights = F.fused_scale_mask_softmax(
                 input=attn_weights,
                 scale=scale_factor,
                 use_triang_mask=self.use_triang_mask,
-                softmax_in_fp32=True,
+                softmax_in_fp32=False,
                 pad_mask=attention_mask,
             )
         else:
@@ -257,35 +257,21 @@ class GPT2Attention(nn.Module):
             )
             attn_weights = attn_weights.reshape(bsz, num_heads, q_seq_len, k_seq_len)
 
-        if F._is_fused_scale_mask_softmax_available(
-            input=attn_weights,
-            scale=1.0,
-            use_triang_mask=self.use_triang_mask,
-            softmax_in_fp32=False,
-        ):
-            attn_weights = F.fused_scale_mask_softmax(
-                input=attn_weights,
-                scale=None,
-                use_triang_mask=self.use_triang_mask,
-                softmax_in_fp32=False,
-                pad_mask=attention_mask,
+        if not self.is_cross_attention:
+            # if only "normal" attention layer implements causal mask
+            query_length, key_length = query.size(-2), key.size(-2)
+            causal_mask = self.bias[
+                :, :, key_length - query_length : key_length, :key_length
+            ].bool()
+            attn_weights = torch.where(
+                causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
             )
-        else:
-            if not self.is_cross_attention:
-                # if only "normal" attention layer implements causal mask
-                query_length, key_length = query.size(-2), key.size(-2)
-                causal_mask = self.bias[
-                    :, :, key_length - query_length : key_length, :key_length
-                ].bool()
-                attn_weights = torch.where(
-                    causal_mask, attn_weights, self.masked_bias.to(attn_weights.dtype)
-                )
 
-            if attention_mask is not None:
-                # Apply the attention mask
-                attn_weights = attn_weights + attention_mask
+        if attention_mask is not None:
+            # Apply the attention mask
+            attn_weights = attn_weights + attention_mask
 
-            attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
 
         # Downcast (if necessary) back to V's dtype (if in mixed-precision) -- No-Op if otherwise
         if attn_weights.dtype != torch.float32:
