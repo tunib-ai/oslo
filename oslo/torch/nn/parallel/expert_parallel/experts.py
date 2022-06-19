@@ -6,7 +6,7 @@ class Experts(torch.nn.Module):
     def __init__(self, expert, num_local_experts=1, expert_group_name=None):
         super(Experts, self).__init__()
 
-        self.experts = torch.nn.Module(
+        self.experts = torch.nn.ModuleList(
             [copy.deepcopy(expert) for i in range(num_local_experts)]
         )
 
@@ -18,6 +18,8 @@ class Experts(torch.nn.Module):
                 param.group_name = expert_group_name
 
     def forward(self, inputs):
+        print(f"EXPERT INPUTS : {inputs}")
+        print(f"EXPERT INPUTS SIZE : {inputs.size()}")
         # |inputs| = (ep_size, num_local_experts, capacity, d_model)
         chunks = inputs.chunk(self.num_local_experts, dim=1)
         # |chunks| = (num_local_experts, )
@@ -25,6 +27,9 @@ class Experts(torch.nn.Module):
 
         expert_outputs = list()
         for chunk, expert in zip(chunks, self.experts):
+            print(f"CHUNK : {chunk}")
+            print(f"CHUNK SIZE : {chunk.size()}")
+            print(f"EXPERT WEIGHT : {expert.weight}")
             out = expert(chunk)
             # |out|
             # = (ep_size, 1, capacity, 4*d_model), for ExpertParallelFrontBlock

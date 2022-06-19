@@ -22,7 +22,7 @@ in_features = 2
 out_features = 4
 n_layers = 2
 
-world_size = 4
+world_size = 2
 num_experts = 2
 top_k = 1
 
@@ -100,6 +100,7 @@ def run_test(rank, port):
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_WORLD_SIZE"] = os.environ["WORLD_SIZE"]
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
@@ -128,6 +129,8 @@ def run_test(rank, port):
         use_residual=use_residual,
         mapping=mapping,
     )
+    # wrapper_ep.to(wrapper_ep.device)
+    # wrapper_ep._sync_ep_model_param()
 
     # 6. Print the result of wrapping
     print(f"Worker #{rank} : {wrapper_ep.device}")

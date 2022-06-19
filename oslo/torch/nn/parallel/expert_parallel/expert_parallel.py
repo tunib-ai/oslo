@@ -90,7 +90,7 @@ class ExpertParallel(ParallelWrapper):
         select_policy: str = "first",
         noisy_policy: str = None,
         use_rts: bool = True,
-        drop_tks: bool = True,
+        drop_tokens: bool = True,
         use_residual: bool = None,
         mapping: object = None,
     ):
@@ -124,7 +124,7 @@ class ExpertParallel(ParallelWrapper):
             "noisy_func": UniformNoiseSampler()
             if noisy_policy == "Jitter"
             else NormalNoiseSampler(num_experts),
-            "drop_tks": drop_tks,
+            "drop_tks": drop_tokens,
         }
         self.router_cls = Top2Router
         self.top_k = top_k
@@ -133,6 +133,7 @@ class ExpertParallel(ParallelWrapper):
         self.min_capacity = min_capacity
         self.noisy_policy = noisy_policy
         self.use_rts = use_rts
+        self.drop_tokens = drop_tokens
 
         if top_k == 1:
             self.router_cls = Top1Router
@@ -160,6 +161,7 @@ class ExpertParallel(ParallelWrapper):
     @torch.no_grad()
     def _parallelize(self):
         self._parallelize_module()
+        self.to(self.device)
         self._sync_ep_model_param()
 
     def _parallelize_module(self):
@@ -168,7 +170,7 @@ class ExpertParallel(ParallelWrapper):
         ]
         for module_name, module in to_parallelize:
             if self.expert_parallel_mapping.is_front_parallel(self.model, module_name):
-                self._wrap_front(
+                self._wrap_front_ds(
                     module,
                     module_name,
                     reversed=self.expert_parallel_mapping.is_reversed_param(
@@ -180,7 +182,7 @@ class ExpertParallel(ParallelWrapper):
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
             ):
-                self._wrap_behind(
+                self._wrap_behind_ds(
                     module,
                     module_name,
                     reversed=self.expert_parallel_mapping.is_reversed_param(
@@ -328,7 +330,7 @@ class ExpertParallel(ParallelWrapper):
             link_info=self.link_info[link_info_k],
             in_features=in_features,
             out_features=out_features,
-            experts=experts,
+            behind_experts=experts,
             ep_size=ep_info.ep_size,
             ep_group=ep_info.ep_group,
             num_local_experts=num_local_experts,

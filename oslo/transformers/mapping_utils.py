@@ -193,8 +193,8 @@ class _ExpertParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Behind("DenseReluDense.wo"),
         ],
         "GPT2": [
-            Front("mlp.c_fc"),
-            Behind("mlp.c_proj"),
+            Front("mlp.c_fc", reverse=True),
+            Behind("mlp.c_proj", reverse=True),
         ],
         "GPTNeo": [Front("c_fc"), Behind("c_proj")],
         "GPTJ": [Front("fc_in"), Behind("fc_out")],

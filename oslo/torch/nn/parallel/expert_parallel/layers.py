@@ -55,15 +55,15 @@ def multiplicative_jitter(x, device: torch.device, epsilon=1e-2):
     return x * uniform(x.shape)
 
 
-def gumbel_rsample(shape: Tuple, device: torch.Device) -> Tensor:
+def gumbel_rsample(shape: Tuple, device: torch.device) -> Tensor:
     gumbel = gumbel_map.get(device, None)
     if gumbel is None:
         one = torch.tensor(1.0, device=device)
         zero = torch.tensor(0.0, device=device)
-        gumbel = dist.gumbel.Gumbel(zero, one).rsample
+        gumbel = torch.distributions.gumbel.Gumbel(zero, one).rsample
         gumbel_map[device] = gumbel
 
-    return gumbel
+    return gumbel()
 
 
 # paper : https://arxiv.org/pdf/2006.16668.pdf
@@ -112,7 +112,7 @@ def einsum(rule, a, b):
 @torch.jit.script
 def _capacity(gates: Tensor, capacity_factor: Tensor, min_capacity: Tensor) -> Tensor:
     # |gates| = (S, E)
-    num_tokens, num_experts = gates.shape[:1]
+    num_tokens, num_experts = gates.shape[:2]
 
     # to(torch.int64) works around a bug in torch.onnx.export:
     # it should cast k to int 64 when converting torch.topk but it doesn't
@@ -191,10 +191,9 @@ def top1_gating(
     if use_rts:
         uniform = exp_selection_uniform_map.get(logits.device, None)
         if uniform is None:
-            low, high = torch.tensor(0.0), torch.tensor(1.0)
-            uniform = dist.uniform.Uniform(
-                low=low, high=high, device=logits.device
-            ).rsample
+            low = torch.tensor(0.0, device=logits.device)
+            high = torch.tensor(1.0, device=logits.device)
+            uniform = torch.distributions.uniform.Uniform(low=low, high=high).rsample
             exp_selection_uniform_map[logits.device] = uniform
         mask_rand = mask * uniform(mask.shape)
     else:
@@ -233,7 +232,7 @@ def top1_gating(
     combine_weights = einsum("se,sc->sec", gates, locations_sc)
     dispatch_mask = combine_weights.bool()
     # |combine_weights| = (num_tokens, num_experts, capacity)
-    # |dispatch_mask| = (num_tokens, num_experts, cpacity_
+    # |dispatch_mask| = (num_tokens, num_experts, capacity)
 
     return l_aux, combine_weights, dispatch_mask, exp_counts
 
@@ -401,7 +400,7 @@ class TopKGate(Module):
                 self.noisy_gate_policy if self.training else None,
                 self.drop_tokens,
                 self.use_rts,
-                self.use_kernel,
+                use_kernel,
             )
         else:
             gate_output = top2_gating(
@@ -433,6 +432,8 @@ class ExpertParallelFrontBlockDS(Module):
         use_residual: bool = False,
         expert_parallel_residual: Optional[nn.Module] = None,
     ):
+        super().__init__()
+
         self.ep_context = ep_context
         self.link_info = link_info
 
@@ -455,9 +456,7 @@ class ExpertParallelFrontBlockDS(Module):
             ), "If you want to use residual moe, then you must give residual instance"
             self.expert_parallel_residual = expert_parallel_residual
 
-            self.expert_parallel_residual_mix = nn.Linear(
-                in_features, 2, device=get_current_device()
-            )
+            self.expert_parallel_residual_mix = nn.Linear(in_features, 2)
 
     def _set_ep_group(self, ep_group):
         self.ep_group = ep_group
@@ -502,15 +501,15 @@ class ExpertParallelFrontBlockDS(Module):
         # |dispatched_input| = (num_experts, capacity, d_model)
 
         # Dispatch tokens to each expert
-        dispatched_input = AllToAll.apply(dispatched_input, self.ep_group)
+        dispatched_input = AllToAll.apply(self.ep_group, dispatched_input)
         self.link_info["a2a_shape"] = dispatched_input.shape
-        # |dispatched_input| = (num_experts, capacity, d_model)
+        # |dispatched_input| = (num_experts, capacity, in_features)
 
         # Reshape tokens for convenience of experts' forward operation
         dispatched_input = dispatched_input.reshape(
-            self.ep_size, self.num_local_experts, -1, self.out_features
+            self.ep_size, self.num_local_experts, -1, self.in_features
         )
-        # |dispatched_input| = (ep_size, num_local_experts, capacity, out_features)
+        # |dispatched_input| = (ep_size, num_local_experts, capacity, in_features)
 
         # TODO : Think about the needs to recover the shape of experts' input (a.k.a expert_shape)
         expert_output = self.front_experts(dispatched_input)
@@ -551,6 +550,8 @@ class ExpertParallelBehindBlockDS(Module):
         use_residual: bool = False,
         expert_parallel_residual: Optional[nn.Module] = None,
     ):
+        super().__init__()
+
         self.ep_context = ep_context
         self.link_info = link_info
 
@@ -568,19 +569,27 @@ class ExpertParallelBehindBlockDS(Module):
         if use_residual:
             self.expert_parallel_residual = expert_parallel_residual
 
+    def _set_ep_group(self, ep_group):
+        self.ep_group = ep_group
+
     def forward(self, inputs):
         # |inputs| =  (ep_size * num_local_experts * capacity, in_features) if not use_residual
         #         or (ep_size * num_local_experts * capacity + sent_len * batch_size, out_features) if use_residual
 
-        dim0, dim1, _ = self.link_info["front_output_shape"]
-        front_output = inputs[: dim0 * dim1].reshape(
+        dim0, dim1, dim2, _ = self.link_info["front_output_shape"]
+        front_output = inputs[: dim0 * dim1 * dim2].reshape(
             self.link_info["front_output_shape"]
         )
         # |front_output| = (ep_size, num_local_experts, capacity, out_features)
 
         expert_output = self.behind_experts(front_output)
-        expert_output = AllToAll.apply(expert_output, self.ep_group)
+        expert_output = AllToAll.apply(self.ep_group, expert_output)
         # |expert_output| = (ep_size, num_local_experts, capacity, out_features)
+
+        expert_output = expert_output.reshape(
+            self.ep_size * self.num_local_experts, -1, self.out_features
+        )
+        # |expert_output| = (ep_size * num_local_experts, capacity, out_features)
 
         # Combine
         combined_output = einsum(
@@ -596,7 +605,7 @@ class ExpertParallelBehindBlockDS(Module):
 
         # Resiudal
         if self.use_residual:
-            residual_inter = inputs[dim0 * dim1 :].reshape(
+            residual_inter = inputs[dim0 * dim1 * dim2 :].reshape(
                 self.link_info["residual_inter_shape"]
             )
             # |residual_inter| = (sent_len, batch_size, in_features)
@@ -1013,7 +1022,8 @@ class ExpertParallelFrontBlock(nn.Module):
         return front_expert_output, expert_shape
 
     def front_a2a_process(self, dispatch_data: torch.Tensor):
-        expert_input = AllToAll.apply(dispatch_data, self.ep_info.ep_group)
+        # expert_input = AllToAll.apply(dispatch_data, self.ep_info.ep_group)
+        expert_input = AllToAll.apply(self.ep_info.ep_group, dispatch_data)
         a2a_shape = expert_input.shape
         # |expert_input| = a2a_shape = (num_experts = ep_size * num_local_experts, capacity, in_features)
 
@@ -1070,6 +1080,10 @@ class ExpertParallelFrontBlock(nn.Module):
             # |residual_inter| = (sent_len, batch_size, out_features)
 
             residual_weight = self.expert_parallel_residual_mix(inputs)
+            # TODO : This part is different from deepspeed base code
+            #        because dim=-1 is relevant to noramlizing coefficients
+            #        for linear combination of experts' output and residual module output
+            #        But need to check more rogiorously.
             residual_weight = F.softmax(residual_weight, dim=-1)
             # |residual_weight| = (sent_len, batch_size, 2)
 
@@ -1189,7 +1203,9 @@ class ExpertParallelBehindBlock(nn.Module):
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
         behind_expert_output = AllToAll.apply(
-            behind_expert_output, self.ep_info.ep_group
+            # behind_expert_output, self.ep_info.ep_group
+            self.ep_info.ep_group,
+            behind_expert_output,
         )
         # |behind_expert_output| = (num_experts = ep_size * num_local_experts, capacity, out_features)
 
