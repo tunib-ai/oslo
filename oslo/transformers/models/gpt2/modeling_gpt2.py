@@ -180,7 +180,6 @@ class GPT2Attention(nn.Module):
                 input=attn_weights,
                 scale=1.0,
                 use_triang_mask=self.use_triang_mask,
-                softmax_in_fp32=False,
                 pad_mask=attention_mask,
             )
         else:
