@@ -13,7 +13,6 @@ import oslo.torch.nn.modules.functional as F
 from oslo.transformers.modeling_utils import OsloModel
 
 try:
-    from transformers.activations import ACT2FN
     from transformers.modeling_outputs import (
         BaseModelOutputWithPastAndCrossAttentions,
         BaseModelOutputWithPoolingAndCrossAttentions,
