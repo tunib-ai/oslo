@@ -59,11 +59,11 @@ def gradient_check(
             result = torch.isclose(oslo_param.grad, orig_param.grad, atol=1e-5).sum()
             if return_logits:
                 print(
-                    f"{oslo_name:36s} true_grad_ratio: {result/num_params:.4f}   num_param: {num_params:8d}   num_true_grad: {result:8d}"
+                    f"{oslo_name:36s} same_grad_ratio:  {result/num_params:.4f}   num_params:{num_params:9d}   num_same_grad:{result:9d}"
                 )
             else:
                 print(
-                    f"{oslo_name:24s} true_grad_ratio: {result/num_params:.4f}   num_param: {num_params:8d}   num_true_grad: {result:8d}"
+                    f"{oslo_name:24s} same_grad_ratio:  {result/num_params:.4f}   num_params:{num_params:9d}   num_same_grad:{result:9d}"
                 )
 
     oslo_model.zero_grad()
