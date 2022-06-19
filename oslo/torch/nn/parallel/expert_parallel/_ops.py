@@ -20,17 +20,12 @@ except ImportError:
 class AllToAll(torch.autograd.Function):
     @staticmethod
     def forward(
-        context: Any, inputs: Tensor, group: Optional[ProcessGroup] = None
+        context: Any,
+        group: ProcessGroup,
+        inputs: Tensor,
     ) -> Tensor:
-        if context is not None:
-            context.comm_group = group
-
-        if not inputs.is_contiguous():
-            inputs = inputs.is_contiguous()
-
-        if dist.get_world_size() == 1:
-            return inputs
-
+        context.comm_group = group
+        inputs = inputs.contiguous()
         output = torch.empty_like(inputs)
         dist.all_to_all_single(output, inputs, group=group)
 
@@ -38,7 +33,7 @@ class AllToAll(torch.autograd.Function):
 
     @staticmethod
     def backward(context: Any, *grad_outputs: Tensor) -> Tuple[Tensor, None]:
-        return (None, AllToAll.apply(None, *grad_outputs, context.comm_group))
+        return (None, AllToAll.apply(context.comm_group, *grad_outputs))
 
 
 class EPDispatch(torch.autograd.Function):

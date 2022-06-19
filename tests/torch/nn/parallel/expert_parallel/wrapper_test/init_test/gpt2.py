@@ -26,6 +26,7 @@ def run_test(rank, port):
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = "2"
+    os.environ["LOCAL_WORLD_SIZE"] = os.environ["WORLD_SIZE"]
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 

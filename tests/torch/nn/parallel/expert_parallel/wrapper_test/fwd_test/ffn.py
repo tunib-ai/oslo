@@ -22,7 +22,7 @@ in_features = 2
 out_features = 4
 n_layers = 2
 
-world_size = 4
+world_size = 2
 num_experts = world_size
 top_k = 1
 
@@ -102,6 +102,7 @@ def run_test(rank, port):
     os.environ["RANK"] = str(rank)
     os.environ["LOCAL_RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
+    os.environ["LOCAL_WORLD_SIZE"] = os.environ["WORLD_SIZE"]
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = str(port)
 
