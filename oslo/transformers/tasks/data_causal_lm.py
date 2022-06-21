@@ -1,13 +1,17 @@
+import logging
+import torch
 from typing import Dict, List, Optional
-
 from datasets.arrow_dataset import Batch
-
 from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.torch.distributed import ParallelContext, ParallelMode
 
 try:
     from transformers.data.data_collator import _torch_collate_batch
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -29,6 +33,7 @@ class ProcessorForCausalLM(BaseProcessor):
             truncation=False,
             return_attention_mask=False,
             return_special_tokens_mask=False,
+            add_special_tokens=False,
             verbose=False,
         )["input_ids"]
 
@@ -66,18 +71,63 @@ class DataCollatorForCausalLM:
         self,
         tokenizer: ProcessorForCausalLM,
         pad_to_multiple_of: Optional[int] = None,
+        parallel_context: Optional[ParallelContext] = None,
     ):
         self.tokenizer = tokenizer._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
+        self.parallel_context = parallel_context
+        if parallel_context is not None:
+            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
+            self.local_world_size = parallel_context.get_world_size(
+                ParallelMode.SEQUENCE
+            )
 
     def __call__(self, examples):
-        examples = [example["input_ids"] for example in examples]
-        batch = {
-            "input_ids": _torch_collate_batch(
-                examples,
-                tokenizer=self.tokenizer,
-                pad_to_multiple_of=self.pad_to_multiple_of,
+        if self.parallel_context is None:
+            if self.pad_to_multiple_of is None:
+                examples = [example["input_ids"] for example in examples]
+                batch = {
+                    "input_ids": _torch_collate_batch(
+                        examples,
+                        tokenizer=self.tokenizer,
+                        pad_to_multiple_of=self.pad_to_multiple_of,
+                    )
+                }
+                batch["labels"] = batch["input_ids"].clone()
+                return batch
+            else:
+                if self.tokenizer.pad_token is None:
+                    logger.warning(
+                        "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying Padding."
+                    )
+
+                batch = self.tokenizer.pad(
+                    examples,
+                    return_tensors="pt",
+                    pad_to_multiple_of=self.pad_to_multiple_of,
+                )
+                labels = batch["input_ids"].clone()
+                labels[labels == self.tokenizer.pad_token_id] = -100
+                batch["labels"] = labels
+                return batch
+        else:
+            if self.tokenizer.pad_token is None:
+                logger.warning(
+                    "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying the SP."
+                )
+
+            batch = self.tokenizer.pad(
+                examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size
             )
-        }
-        batch["labels"] = batch["input_ids"].clone()
-        return batch
+            labels = batch["input_ids"].clone()
+            labels[labels == self.tokenizer.pad_token_id] = -100
+            batch["labels"] = labels
+
+            for key, value in batch.items():
+                value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
+
+                if not value.is_contiguous():
+                    value = value.contiguous()
+
+                batch[key] = value
+            return batch

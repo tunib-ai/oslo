@@ -185,7 +185,7 @@ class Binder(object):
         a, b = torch.cuda.get_device_capability(torch.cuda.current_device())
         return int(str(a) + str(b))
 
-    def bind(self):
+    def bind(self, verbose: bool = False):
         try:
             import ninja
             import pybind11
@@ -207,8 +207,8 @@ class Binder(object):
             extra_include_paths=self.includes(),
             extra_cflags=self.cxx_args(),
             extra_cuda_cflags=self.nvcc_args(),
+            verbose=verbose,
             extra_ldflags=self.strip_empty_entries(self.extra_ldflags()),
-            verbose=False,
         )
 
         return op_module
@@ -468,6 +468,15 @@ class FusedLambBinder(Binder):
 
     def sources(self):
         return ["fused_lamb.cu", "FusedLambBinder.cpp"]
+      
+
+class NgramRepeatBlockBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_ngram_repeat_block"
+
+    def sources(self):
+        return ["ngram_repeat_block_cuda_kernel.cu", "ngram_repeat_block_cuda.cpp"]
 
 
 class CPUAdamBinder(CPUBinder):
