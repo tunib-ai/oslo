@@ -8,6 +8,10 @@ from oslo.torch.jit._utils import _set_jit_fusion_options
 
 _SOFTMAX_KERNEL = None
 _ADAM_KERNEL = None
+_ADAGRAD_KERNEL = None
+_NOVOGRAD_KERNEL = None
+_SGD_KERNEL = None
+_LAMB_KERNEL = None
 _CPU_ADAM_KERNEL = None
 _CPU_ADAGRAD_KERNEL = None
 
@@ -45,6 +49,70 @@ def get_adam_kernel():
         )
 
     return _ADAM_KERNEL
+
+
+def get_adagrad_kernel():
+    global _ADAGRAD_KERNEL
+
+    try:
+        if _ADAGRAD_KERNEL is None:
+            _set_jit_fusion_options()
+            _ADAGRAD_KERNEL = FusedAdagradBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _ADAGRAD_KERNEL
+
+
+def get_novograd_kernel():
+    global _NOVOGRAD_KERNEL
+
+    try:
+        if _NOVOGRAD_KERNEL is None:
+            _set_jit_fusion_options()
+            _NOVOGRAD_KERNEL = FusedNovogradBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _NOVOGRAD_KERNEL
+
+
+def get_sgd_kernel():
+    global _SGD_KERNEL
+
+    try:
+        if _SGD_KERNEL is None:
+            _set_jit_fusion_options()
+            _SGD_KERNEL = FusedSgdBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _SGD_KERNEL
+
+
+def get_lamb_kernel():
+    global _LAMB_KERNEL
+
+    try:
+        if _LAMB_KERNEL is None:
+            _set_jit_fusion_options()
+            _LAMB_KERNEL = FusedLambBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _LAMB_KERNEL
 
 
 def get_cpu_adam_kernel():
@@ -355,6 +423,51 @@ class FusedAdamBinder(Binder):
             "multi_tensor_adam.cu",
             "FusedAdamBinder.cpp",
         ]
+
+
+class FusedAdagradBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_adagrad"
+
+    def sources(self):
+        return [
+            "multi_tensor_adagrad.cu",
+            "FusedAdagradBinder.cpp",
+        ]
+
+
+class FusedNovogradBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_novograd"
+
+    def sources(self):
+        return [
+            "multi_tensor_novograd.cu",
+            "FusedNovogradBinder.cpp",
+        ]
+
+
+class FusedSgdBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_sgd"
+
+    def sources(self):
+        return [
+            "multi_tensor_sgd.cu",
+            "FusedSgdBinder.cpp",
+        ]
+
+
+class FusedLambBinder(Binder):
+    @property
+    def name(self):
+        return "oslo_lamb"
+
+    def sources(self):
+        return ["fused_lamb.cu", "FusedLambBinder.cpp"]
 
 
 class CPUAdamBinder(CPUBinder):
