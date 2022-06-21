@@ -9,6 +9,7 @@ from oslo.torch.jit._utils import _set_jit_fusion_options
 _SOFTMAX_KERNEL = None
 _ADAM_KERNEL = None
 _CPU_ADAM_KERNEL = None
+_CPU_ADAGRAD_KERNEL = None
 
 TORCH_MAJOR = int(torch.__version__.split(".")[0])
 TORCH_MINOR = int(torch.__version__.split(".")[1])
@@ -60,6 +61,22 @@ def get_cpu_adam_kernel():
         )
 
     return _CPU_ADAM_KERNEL
+
+
+def get_cpu_adagrad_kernel():
+    global _CPU_ADAGRAD_KERNEL
+
+    try:
+        if _CPU_ADAGRAD_KERNEL is None:
+            _set_jit_fusion_options()
+            _CPU_ADAGRAD_KERNEL = CPUAdagradBinder().bind()
+    except Exception:
+        raise EnvironmentError(
+            "Failed compiling custom CUDA kernels. "
+            "please check your CUDA environment."
+        )
+
+    return _CPU_ADAGRAD_KERNEL
 
 
 DEFAULT_TORCH_EXTENSION_PATH = os.path.join(
@@ -356,3 +373,15 @@ class CPUAdamBinder(CPUBinder):
         if not self.is_rocm_pytorch():
             args += ["curand"]
         return args
+
+
+class CPUAdagradBinder(CPUBinder):
+    @property
+    def name(self):
+        return "oslo_cpu_adagrad"
+
+    def sources(self):
+        return [
+            "custom_cuda_kernel.cu",
+            "CPUAdagradBinder.cpp",
+        ]
