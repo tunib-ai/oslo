@@ -468,7 +468,7 @@ class FusedLambBinder(Binder):
 
     def sources(self):
         return ["fused_lamb.cu", "FusedLambBinder.cpp"]
-      
+
 
 class NgramRepeatBlockBinder(Binder):
     @property
