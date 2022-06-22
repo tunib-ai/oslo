@@ -57,7 +57,7 @@ class BertPreTrainedModel(PreTrainedModel, OsloModel):
 
     def _init_weights(self, module):
         """Initialize the weights"""
-        if isinstance(module, nn.Linear, onn.Linear):
+        if isinstance(module, (nn.Linear, onn.Linear)):
             # Slightly different from the TF version which uses truncated_normal for initialization
             # cf https://github.com/pytorch/pytorch/pull/5617
             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
@@ -294,7 +294,7 @@ class BertSelfAttention(nn.Module):
             use_triang_mask=False,
             softmax_in_fp32=False,
         ):
-            attention_scores = F._fused_scale_mask_softmax_cuda(
+            attention_probs = F._fused_scale_mask_softmax_cuda(
                 input=attention_scores,
                 scale=1.0,
                 use_triang_mask=False,
