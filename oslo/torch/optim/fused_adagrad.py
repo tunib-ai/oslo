@@ -57,9 +57,10 @@ class FusedAdagrad(torch.optim.Optimizer):
         self.adagrad_w_mode = 1 if adagrad_w_mode else 0
         self.set_grad_none = set_grad_none
 
+        fused_adagrad_cuda = get_adagrad_kernel()
         # Skip buffer
         self._dummy_overflow_buf = torch.cuda.IntTensor([0])
-        self.multi_tensor_adagrad = get_adagrad_kernel()
+        self.multi_tensor_adagrad = fused_adagrad_cuda.multi_tensor_adagrad
 
     def zero_grad(self):
         if self.set_grad_none:

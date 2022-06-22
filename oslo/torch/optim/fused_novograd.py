@@ -94,13 +94,13 @@ class FusedNovoGrad(torch.optim.Optimizer):
             init_zero=init_zero,
         )
         super(FusedNovoGrad, self).__init__(params, defaults)
+        fused_novogard_cuda = get_novograd_kernel()
         # Skip buffer
-
         # Creating the overflow buffer on the same device as the params tensors.
         self._dummy_overflow_buf = torch.tensor(
             [0], dtype=torch.int, device=self.param_groups[0]["params"][0].device
         )
-        self.multi_tensor_novograd = get_novograd_kernel()
+        self.multi_tensor_novograd = fused_novogard_cuda.multi_tensor_novograd
 
         self.moment_mode = 0 if reg_inside_moment else 1
         self.set_grad_none = set_grad_none

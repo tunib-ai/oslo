@@ -109,12 +109,13 @@ class FusedSGD(Optimizer):
         self.most_recent_scale = 1.0
         self.scale_set_by_backward = False
         self.set_grad_none = set_grad_none
+        fused_sgd_cuda = get_sgd_kernel()
 
         # Skip buffer
         self._dummy_overflow_buf = torch.tensor(
             [0], dtype=torch.int, device=self.param_groups[0]["params"][0].device
         )
-        self.multi_tensor_sgd = get_sgd_kernel()
+        self.multi_tensor_sgd = fused_sgd_cuda.multi_tensor_sgd
 
     def __setstate__(self, state):
         super(FusedSGD, self).__setstate__(state)

@@ -89,7 +89,7 @@ def get_sgd_kernel():
     try:
         if _SGD_KERNEL is None:
             _set_jit_fusion_options()
-            _SGD_KERNEL = FusedSgdBinder().bind()
+            _SGD_KERNEL = FusedSGDBinder().bind()
     except Exception:
         raise EnvironmentError(
             "Failed compiling custom CUDA kernels. "
@@ -449,7 +449,7 @@ class FusedNovogradBinder(Binder):
         ]
 
 
-class FusedSgdBinder(Binder):
+class FusedSGDBinder(Binder):
     @property
     def name(self):
         return "oslo_sgd"
@@ -457,7 +457,7 @@ class FusedSgdBinder(Binder):
     def sources(self):
         return [
             "multi_tensor_sgd.cu",
-            "FusedSgdBinder.cpp",
+            "FusedSGDBinder.cpp",
         ]
 
 
