@@ -69,7 +69,12 @@ class TestModel(nn.Module):
 
 # Class for Mapping information of Entire Model to expert parallelize
 class ExpertParallelMappingForTest(object):
-    __MAPPING__ = {"TestModel": [Front("fc1"), Behind("fc2")]}
+    __MAPPING__ = {
+        "TestModel": [
+            Front("fc1", enc_name="ffns", layer="ffns"),
+            Behind("fc2", enc_name="ffns", layer="ffns"),
+        ]
+    }
 
     def __init__(self):
         cache_mapping = {}
@@ -123,7 +128,8 @@ def run_test(rank, port):
     wrapper_ep = ExpertParallel(
         model_ep,
         parallel_context,
-        num_experts=num_experts,
+        num_enc_experts=num_experts,
+        num_dec_experts=num_experts,
         top_k=1,
         use_kernel_optim=False,
         use_residual=use_residual,
