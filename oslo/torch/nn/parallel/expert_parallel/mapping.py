@@ -10,9 +10,17 @@ class ExpertParallelInfo(object):
         reverse (bool): reversed param or not
     """
 
-    def __init__(self, *name, reverse: bool = False):
+    def __init__(
+        self, *name, reverse: bool = False, layer=None, enc_name=None, dec_name=None
+    ):
         self.name = name
+
         self.reverse = reverse
+
+        self.enc_name = enc_name
+        self.dec_name = dec_name
+
+        self.layer = layer
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -107,6 +115,12 @@ class ExpertParallelMapping(object):
 
         return None
 
+    def get_layer_info(self, model, param_name):
+        elem = self.search(model, param_name)
+
+        if elem is not None:
+            return elem.layer
+
     def is_reversed_param(self, model, param_name):
         """
         Check whether the parameter is reversed or not
@@ -119,6 +133,7 @@ class ExpertParallelMapping(object):
             bool: whether the param is reversed or not
         """
         elem = self.search(model, param_name)
+
         if elem is not None:
             return elem.reverse
 
@@ -136,7 +151,7 @@ class ExpertParallelMapping(object):
 
         elem = self.search(model, param_name)
         if elem is not None:
-            return isinstance(elem, Front)
+            return type(elem) is Front
 
     def is_behind_parallel(self, model, param_name):
         """
@@ -151,4 +166,4 @@ class ExpertParallelMapping(object):
         """
         elem = self.search(model, param_name)
         if elem is not None:
-            return isinstance(elem, Behind)
+            return type(elem) is Behind

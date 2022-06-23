@@ -1,5 +1,6 @@
 import copy
 import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -82,7 +83,8 @@ class ExpertParallel(ParallelWrapper):
         model: nn.Module,
         parallel_context: ParallelContext,
         use_kernel_optim=True,
-        num_experts: int = 0,
+        num_enc_experts=None,
+        num_dec_experts=None,
         top_k: int = 2,
         capacity_factor_train: float = 1.25,
         capacity_factor_eval: float = 2.0,
@@ -105,10 +107,6 @@ class ExpertParallel(ParallelWrapper):
 
         self.device = torch.cuda.current_device()
 
-        self.num_experts = (
-            num_experts if num_experts > 0 else self.ep_context.get_world_size()
-        )
-
         self.use_residual = use_residual
         if use_residual is None:
             self.use_residual = True if top_k == 1 else False
@@ -116,16 +114,6 @@ class ExpertParallel(ParallelWrapper):
         if noisy_policy is None:
             noisy_policy = "Jitter" if use_residual else "RSample"
 
-        self.router_args = {
-            "ep_context": self.ep_context,
-            "capacity_factor_train": capacity_factor_train,
-            "capacity_factor_eval": capacity_factor_eval,
-            "min_capacity": min_capacity,
-            "noisy_func": UniformNoiseSampler()
-            if noisy_policy == "Jitter"
-            else NormalNoiseSampler(num_experts),
-            "drop_tks": drop_tokens,
-        }
         self.router_cls = Top2Router
         self.top_k = top_k
         self.capacity_factor_train = capacity_factor_train
@@ -137,9 +125,6 @@ class ExpertParallel(ParallelWrapper):
 
         if top_k == 1:
             self.router_cls = Top1Router
-            self.router_args["select_policy"] = (
-                select_policy if select_policy is not None else "first"
-            )
 
         if is_huggingface_model(model):
             mapping = _ExpertParallelMappingForHuggingFace().get_mapping(model)
@@ -152,6 +137,16 @@ class ExpertParallel(ParallelWrapper):
         self.expert_parallel_mapping = ExpertParallelMapping(mapping)
 
         self.link_info = dict()
+
+        self.enc_layer_ids, self.dec_layer_ids = self._get_architecture_info()
+
+        self.num_experts = dict()
+        self.num_experts["enc"] = self._get_num_experts(
+            num_enc_experts, self.enc_layer_ids
+        )
+        self.num_experts["dec"] = self._get_num_experts(
+            num_dec_experts, self.dec_layer_ids
+        )
 
         self._parallelize()
 
@@ -194,6 +189,73 @@ class ExpertParallel(ParallelWrapper):
 
         return
 
+    def _get_num_experts(self, num_experts, layer_ids):
+        num_experts = (
+            self.ep_context.get_world_size() if num_experts is None else num_experts
+        )
+
+        if len(layer_ids) == 0:
+            return None
+
+        if type(num_experts) is int:
+            assert num_experts > 0, "The Number of Experts must be Positive."
+            num_experts = {cur_id: num_experts for cur_id in layer_ids}
+        elif type(num_experts) is dict:
+            assert (
+                num_experts.keys() != layer_ids
+            ), "The Keys of Experts Dictionary must be equal to the Set of Layer Ids"
+        else:
+            raise TypeError("num_enc_experts or num_dec_experts must be int or dict")
+
+        return num_experts
+
+    def _get_module_role(self, module_name):
+        elem = self.expert_parallel_mapping.search(self.model, module_name)
+        if elem is None:
+            return
+
+        if elem.enc_name is not None and elem.enc_name in module_name:
+            return "enc"
+
+        if elem.dec_name is not None and elem.dec_name in module_name:
+            return "dec"
+
+        return
+
+    def _get_architecture_info(self):
+        enc_layer_ids, dec_layer_ids = set(), set()
+        for module_name, module in self.model.named_modules():
+            role = self._get_module_role(module_name)
+            if role is None:
+                continue
+
+            if role == "enc":
+                enc_layer_ids.add(self._extract_layer_id(module_name))
+            elif role == "dec":
+                dec_layer_ids.add(self._extract_layer_id(module_name))
+            else:
+                raise ValueError(
+                    "The mapping information about Encoder/Decoder is wrong."
+                )
+
+        return enc_layer_ids, dec_layer_ids
+
+    def _extract_layer_id(self, module_name):
+        layer_info = self.expert_parallel_mapping.get_layer_info(
+            self.model, module_name
+        )
+
+        spl_modules = module_name.split(".")
+        spl_layer_info = layer_info.split(".")
+
+        layer_ids = list()
+
+        for cur_layer_info in spl_layer_info:
+            to_find = spl_modules.index(cur_layer_info)
+            layer_ids.append(int(spl_modules[to_find + 1]))
+
+        return tuple(layer_ids)
+
     def _extract_link_info_key(self, module_name):
         spl_modules = module_name.split(".")
 
@@ -209,9 +271,14 @@ class ExpertParallel(ParallelWrapper):
         if reversed:
             out_features, in_features = in_features, out_features
 
+        layer_id = self._extract_layer_id(module_name)
+        role = self._get_module_role(module_name)
+
+        num_experts = self.num_experts[role][layer_id]
+
         gate = TopKGate(
             in_features,
-            self.num_experts,
+            num_experts,
             self.top_k,
             self.capacity_factor_train,
             self.capacity_factor_eval,
@@ -226,17 +293,20 @@ class ExpertParallel(ParallelWrapper):
             expert_parallel_residual = copy.deepcopy(module)
             expert_parallel_residual_mix = nn.Linear(in_features, 2)
 
-        link_info_k = self._extract_link_info_key(module_name)
-        if link_info_k not in self.link_info:
-            self.link_info[link_info_k] = dict()
+        if layer_id not in self.link_info:
+            self.link_info[layer_id] = dict()
+        # link_info_k = self._extract_link_info_key(module_name)
+        # if link_info_k not in self.link_info:
+        #    self.link_info[link_info_k] = dict()
 
-        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
+        num_local_experts, ep_info = self.ep_context.get_info(num_experts)
         experts = Experts(module, num_local_experts)
 
         _update_module_arguments(
             module=module,
             ep_context=self.ep_context,
-            link_info=self.link_info[link_info_k],
+            # link_info=self.link_info[link_info_k],
+            link_info=self.link_info[layer_id],
             gate=gate,
             in_features=in_features,
             out_features=out_features,
@@ -249,85 +319,34 @@ class ExpertParallel(ParallelWrapper):
             expert_parallel_residual_mix=expert_parallel_residual_mix,
         )
 
-    def _wrap_front(self, module: nn.Module, module_name: str, reversed: bool):
-        out_features, in_features = module.weight.size()
-        if reversed:
-            out_features, in_features = in_features, out_features
-
-        expert_parallel_gate = FP32LinearGate(in_features, self.num_experts)
-        expert_parallel_router = self.router_cls(**self.router_args)
-
-        expert_parallel_residual, expert_parallel_residual_mix = None, None
-        if self.use_residual:
-            expert_parallel_residual = copy.deepcopy(module)
-            expert_parallel_residual_mix = nn.Linear(in_features, 2)
-
-        # Add Cur Module's Link Info
-        link_info_k = self._extract_link_info_key(module_name)
-        if link_info_k not in self.link_info:
-            self.link_info[link_info_k] = dict()
-
-        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
-        _update_module_arguments(
-            module=module,
-            ep_context=self.ep_context,
-            in_features=in_features,
-            out_features=out_features,
-            num_experts=self.num_experts,
-            expert_parallel_gate=expert_parallel_gate,
-            expert_parallel_router=expert_parallel_router,
-            use_residual=self.use_residual,
-            expert_parallel_residual=expert_parallel_residual,
-            expert_parallel_residual_mix=expert_parallel_residual_mix,
-            link_info=self.link_info[link_info_k],
-            num_local_experts=num_local_experts,
-            ep_info=ep_info,
-        )
-
-        std = math.sqrt(0.1 / in_features)
-        if hasattr(module, "weight") and module.weight is not None:
-            new_param = nn.Parameter(
-                torch.empty(
-                    num_local_experts, in_features, out_features, device=self.device
-                ).contiguous()
-            )
-            with seed(ParallelMode.TENSOR):
-                nn.init.trunc_normal_(new_param, std=std)
-            module.weight = new_param
-
-        if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(
-                torch.empty(num_local_experts, 1, out_features, device=self.device)
-            )
-            with seed(ParallelMode.TENSOR):
-                nn.init.trunc_normal_(new_param, std=std)
-            module.bias = new_param
-
-        for param in self.parameters():
-            param.__setattr__("ep_info", ep_info)
-
-        return module
-
     def _wrap_behind_ds(self, module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
         if reversed:
             out_features, in_features = in_features, out_features
 
+        layer_id = self._extract_layer_id(module_name)
+        role = self._get_module_role(module_name)
+
+        num_experts = self.num_experts[role][layer_id]
+
         expert_parallel_residual = None
         if self.use_residual:
             expert_parallel_residual = copy.deepcopy(module)
 
-        link_info_k = self._extract_link_info_key(module_name)
-        if link_info_k not in self.link_info:
-            self.link_info[link_info_k] = dict()
+        if layer_id not in self.link_info:
+            self.link_info[layer_id] = dict()
+        # link_info_k = self._extract_link_info_key(module_name)
+        # if link_info_k not in self.link_info:
+        #    self.link_info[link_info_k] = dict()
 
-        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
+        num_local_experts, ep_info = self.ep_context.get_info(num_experts)
         experts = Experts(module, num_local_experts)
 
         _update_module_arguments(
             module,
             ep_context=self.ep_context,
-            link_info=self.link_info[link_info_k],
+            link_info=self.link_info[layer_id],
+            # link_info=self.link_info[link_info_k],
             in_features=in_features,
             out_features=out_features,
             behind_experts=experts,
@@ -337,59 +356,6 @@ class ExpertParallel(ParallelWrapper):
             use_residual=self.use_residual,
             expert_parallel_residual=expert_parallel_residual,
         )
-
-    def _wrap_behind(self, module, module_name: str, reversed: bool):
-        out_features, in_features = module.weight.size()
-        if reversed:
-            out_features, in_features = in_features, out_features
-
-        expert_parallel_residual = None
-        if self.use_residual:
-            expert_parallel_residual = copy.deepcopy(module)
-
-        # Add Cur Module's Link Info
-        link_info_k = self._extract_link_info_key(module_name)
-        if link_info_k not in self.link_info:
-            self.link_info[link_info_k] = dict()
-
-        num_local_experts, ep_info = self.ep_context.get_info(self.num_experts)
-
-        _update_module_arguments(
-            module=module,
-            ep_context=self.ep_context,
-            in_features=in_features,
-            out_features=out_features,
-            num_experts=self.num_experts,
-            use_residual=self.use_residual,
-            expert_parallel_residual=expert_parallel_residual,
-            link_info=self.link_info[link_info_k],
-            num_local_experts=num_local_experts,
-            ep_info=ep_info,
-        )
-
-        std = math.sqrt(0.1 / in_features)
-        if hasattr(module, "weight") and module.weight is not None:
-            new_param = nn.Parameter(
-                torch.empty(
-                    num_local_experts, in_features, out_features, device=self.device
-                ).contiguous()
-            )
-            with seed(ParallelMode.TENSOR):
-                nn.init.trunc_normal_(new_param, std=std)
-            module.weight = new_param
-
-        if hasattr(module, "bias") and module.bias is not None:
-            new_param = nn.Parameter(
-                torch.empty(num_local_experts, 1, out_features, device=self.device)
-            )
-            with seed(ParallelMode.TENSOR):
-                nn.init.trunc_normal_(new_param, std=std)
-            module.bias = new_param
-
-        for param in self.parameters():
-            param.__setattr__("ep_info", ep_info)
-
-        return module
 
     def _get_ep_size_param_dict(self):
         ep_size_param_dict = dict()
