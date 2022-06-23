@@ -262,6 +262,7 @@ class BartAttention(nn.Module):
                 use_triang_mask=False,
                 softmax_in_fp32=False,
             ):
+                attention_mask = attention_mask[:, :, 0, :].unsqueeze(2).contiguous()
                 attn_weights = F._fused_scale_mask_softmax_cuda(
                     input=attn_weights,
                     scale=1.0,
