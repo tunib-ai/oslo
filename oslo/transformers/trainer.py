@@ -24,6 +24,7 @@ from torch.distributed.optim import DistributedOptimizer
 from torch.distributed import rpc
 from transformers import PreTrainedTokenizerBase, PreTrainedModel
 
+from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.nn.parallel.data_parallel import (
     DistributedDataParallel,
     ShardedDataParallel,
@@ -162,8 +163,7 @@ class Trainer:
             self.is_model_parallel = False
 
         self.parallel_context = None
-        self.tensor_parallel_mode = None
-
+        self.model_wrapper = None
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
         # 1. MP - since we are trying to fit a much bigger than 1 gpu model
@@ -174,9 +174,8 @@ class Trainer:
         self.place_model_on_device = args.place_model_on_device  # GPU에 올릴 것인지 말건지
         if (
             self.is_model_parallel
-            # or args.deepspeed
+            or args.oslo_init
             or ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
-            # TODO; or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
         ):
             self.place_model_on_device = False
 
@@ -193,9 +192,8 @@ class Trainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        # TODO - Task E: Create self._move_model_to_device
-        # if self.place_model_on_device:
-        #     self._move_model_to_device(model, args.device)
+        if self.place_model_on_device:
+            self._move_model_to_device(model, args.device)
 
         # Force n_gpu to 1 to avoid DataParallel as MP will manage the GPUs
         if self.is_model_parallel:
@@ -337,7 +335,9 @@ class Trainer:
         args = self.args
         self.is_in_train = True
 
-        # TODO move model to device
+        if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
+            self._move_model_to_device(self.model, args.device)
+
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
@@ -395,12 +395,9 @@ class Trainer:
                 f"args.max_steps must be set to a positive value if dataloader does not have a length, was {args.max_steps}"
             )
 
-        # delay_optimizer_creation = (
-        #     self.sharded_ddp is not None and self.sharded_ddp != ShardedDDPOption.SIMPLE
-        # )
 
         # TODO Debugoption
-        # TODO Shareded ddp engine, optimizer, lr_sheduler
+
 
         # if args.deepspeed:
         #     deepspeed_engine, optimizer, lr_scheduler = deepspeed_init(
@@ -413,14 +410,13 @@ class Trainer:
         #     self.optimizer = optimizer
         #     self.lr_scheduler = lr_scheduler
         if args.oslo_init:
-            self.parallel_context = init_oslo_features(self.args.oslo_config)
-
-        # TODO: delay_optimizer_creation
-        # elif not delay_optimizer_creation:
-        #     self.create_optimizer()
-        #     self.create_scheduler(num_training_steps=max_steps,
-        #                           optimizer=self.optimizer)
-        # shared ddp option
+            self.parallel_context, self.model_wrapper = init_oslo_features(self.args.oslo_config)
+        delay_optimizer_creation = (
+            self.args.oslo_config.data_parallel_size > 1 and self.model_wrapper != ShardedDDPOption.SIMPLE
+        )
+        if not delay_optimizer_creation:
+            self.create_optimizer()
+            self.create_scheduler(num_training_steps=max_steps, optimizer=self.optimizer)
 
         self.state = TrainerState()
         # self.state.is_hyper_param_search = trial is not None
@@ -428,7 +424,7 @@ class Trainer:
         # TODO gradient checkpointing ??
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
 
-        model = self._wrap_model(self.model_wrapped)
+        model = self._wrap_model(self.model_wrapper)
         if model is not self.model:
             self.model_wrapped = model
 
@@ -1535,16 +1531,10 @@ class Trainer:
         # if self.sharded_ddp == ShardedDDPOption.SIMPLE:
         #     self.optimizer.consolidate_state_dict()
 
-        if self.args.should_save and not self.deepspeed:
-            # deepspeed.save_checkpoint above saves model/optim/sched
+        if self.args.should_save:
             torch.save(
                 self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME)
             )
-            # with warnings.catch_warnings(record=True) as caught_warnings:
-            #     torch.save(
-            #         self.lr_scheduler.state_dict(),
-            #         os.path.join(output_dir, SCHEDULER_NAME),
-            #     )
             torch.save(
                 self.lr_scheduler.state_dict(),
                 os.path.join(output_dir, SCHEDULER_NAME),
@@ -1607,10 +1597,6 @@ class Trainer:
         if checkpoint is None:
             return
 
-        if self.deepspeed:
-            # deepspeed loads optimizer/lr_scheduler together with the model in deepspeed_init
-            return
-
         if os.path.isfile(os.path.join(checkpoint, OPTIMIZER_NAME)) and os.path.isfile(
             os.path.join(checkpoint, SCHEDULER_NAME)
         ):
@@ -1635,7 +1621,7 @@ class Trainer:
                 )
 
     def _get_learning_rate(self):
-        if self.deepspeed:
+        if self.args.oslo_init:
             # with deepspeed's fp16 and dynamic loss scale enabled the optimizer/scheduler steps may
             # not run for the first few dozen steps while loss scale is too large, and thus during
             # that time `get_last_lr` will fail if called during that warm up stage, so work around it:
@@ -1752,8 +1738,7 @@ class Trainer:
     #
     #     return model
     def _move_model_to_device(self, model, device):
-        model = model.to(device)
-        # Moving a model to an XLA device disconnects the tied weights, so we have to retie them.
+        model.to(device)
 
     def _remove_unused_columns(
         self, dataset: "datasets.Dataset", description: Optional[str] = None
@@ -1949,15 +1934,12 @@ class Trainer:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
         if self.args.gradient_accumulation_steps > 1 and not self.deepspeed:
+            # TODO check oslo gradient_accumulation_steps
             # deepspeed handles loss scaling by gradient_accumulation_steps in its `backward`
             loss = loss / self.args.gradient_accumulation_steps
 
-        if self.do_grad_scaling:
+        if self.do_grad_scaling:  # TODO check do_grad_scaling is ok with oslo parallel
             self.scaler.scale(loss).backward()
-        # TODO
-        # elif self.deepspeed:
-        #     # loss gets scaled under gradient_accumulation_steps in deepspeed
-        #     loss = self.deepspeed.backward(loss)
         else:
             loss.backward()
 
@@ -1975,11 +1957,6 @@ class Trainer:
             return type(data)(self._prepare_input(v) for v in data)
         elif isinstance(data, torch.Tensor):
             kwargs = dict(device=self.args.device)
-            # if self.deepspeed and data.dtype != torch.int64:
-            #     # NLP models inputs are int64 and those get adjusted to the right dtype of the
-            #     # embedding. Other models such as wav2vec2's inputs are already float and thus
-            #     # may need special handling to match the dtypes of the model
-            #     kwargs.update(dict(dtype=self.args.hf_deepspeed_config.dtype()))
             return data.to(**kwargs)
         return data
 
@@ -2038,42 +2015,30 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _wrap_model(self, model, training=True):
-
+    def _wrap_model(self, model_wrapper, training=True):
+        model = self.model
         if not training:
-            return model
+            return self.model
 
-        if unwrap_model(model) is not model:
-            return model
+        if unwrap_model(self.model) is not self.model:
+            return self.model
 
-        # if self.args.n_gpu > 1:
-        #     model = nn.DataParallel(model)
-
+        if self.args.n_gpu > 1:
+            model = nn.DataParallel(self.model)
 
         # Distributed training (should be after apex fp16 initialization)
         if self.parallel_context is not None:
-            if self.args.data_parallel_size > 1:
-                model = auto_wrap(model)
+            model = model_wrapper(self.model, self.parallel_context)
+            allocate_params(model, self.parallel_context)
 
         elif self.args.local_rank != -1:
             kwargs = {}
-            # if self.args.ddp_find_unused_parameters is not None:
-            #     kwargs[
-            #         "find_unused_parameters"] = self.args.ddp_find_unused_parameters
-            # elif isinstance(model, PreTrainedModel):
-            #     kwargs[
-            #         "find_unused_parameters"] = not model.is_gradient_checkpointing
-            # else:
-            #     kwargs["find_unused_parameters"] = True
-            # if self.args.ddp_bucket_cap_mb is not None:
-            #     kwargs["bucket_cap_mb"] = self.args.ddp_bucket_cap_mb
             model = DistributedDataParallel(
-                model,
+                self.model,
                 device_ids=[self.args.local_rank] if self.args._n_gpu != 0 else None,
                 output_device=self.args.local_rank if self.args._n_gpu != 0 else None,
                 **kwargs,
             )
-
         return model
 
     def log(self, logs: Dict[str, float]) -> None:
@@ -2115,32 +2080,6 @@ class Trainer:
 
             if self.args.should_save:
                 self._save(output_dir, state_dict=state_dict)
-        # elif self.deepspeed:
-        #
-        #     # this takes care of everything as long as we aren't under zero3
-        #     if self.args.should_save:
-        #         self._save(output_dir)
-        #
-        #     if is_deepspeed_zero3_enabled():
-        #         # It's too complicated to try to override different places where the weights dump gets
-        #         # saved, so since under zero3 the file is bogus, simply delete it. The user should
-        #         # either user deepspeed checkpoint to resume or to recover full weights use
-        #         # zero_to_fp32.py stored in the checkpoint.
-        #         if self.args.should_save:
-        #             file = os.path.join(output_dir, WEIGHTS_NAME)
-        #             if os.path.isfile(file):
-        #                 # logger.info(f"deepspeed zero3: removing {file}, see zero_to_fp32.py to recover weights")
-        #                 os.remove(file)
-        #
-        #         # now save the real model if stage3_gather_16bit_weights_on_model_save=True
-        #         # if false it will not be saved.
-        #         # This must be called on all ranks
-        #         if not self.deepspeed.save_16bit_model(output_dir, WEIGHTS_NAME):
-        #             logger.warning(
-        #                 "deepspeed.save_16bit_model didn't save the model, since stage3_gather_16bit_weights_on_model_save=false. "
-        #                 "Saving the full checkpoint instead, use zero_to_fp32.py to recover weights"
-        #             )
-        #             self.deepspeed.save_checkpoint(output_dir)
 
         elif self.args.should_save:
             self._save(output_dir)

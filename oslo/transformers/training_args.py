@@ -616,7 +616,8 @@ class TrainingArguments:
     oslo_init: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Enable oslo features and pass the path to deepspeed json config file (e.g. ds_config.json) or an already loaded json file as a dict"
+            "help":
+                "Enable oslo features and pass the path to deepspeed json config file (e.g. ds_config.json) or an already loaded json file as a dict"
         },
     )
     label_smoothing_factor: float = field(
@@ -829,7 +830,8 @@ class TrainingArguments:
 
             # will be used later by the Trainer
             self.oslo_config = OsloTrainerConfig(self.oslo_init)
-            self.oslo_config.trainer_config_process(self)
+            self.oslo_config.adjust_train_args(self)
+
 
     def __str__(self):
         self_as_dict = asdict(self)
