@@ -1,3 +1,6 @@
+from enum import Enum
+
+
 def dfs(node, bfs_dict=None):
     yield node
     if bfs_dict is not None:
@@ -19,3 +22,9 @@ def bfs(node, bfs_dict=None):
     for nodes in bfs_dict.values():
         for node in nodes:
             yield node
+
+
+class WorkerThreadState(Enum):
+    IDLE: str = "IDLE"
+    EXECUTING: str = "EXECUTING"
+    PENDING: str = "PENDING"
