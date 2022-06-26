@@ -30,13 +30,8 @@ from oslo.torch.nn.parallel.data_parallel import (
     FullyShardedDataParallel,
 )
 from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
-
-
-from oslo.torch.nn.modules.activation import MultiheadAttention
-from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.data_parallel.auto_wrap import enable_wrap, wrap, auto_wrap
-
-
+from .oslo_init import init_oslo_features
 from .data.data_collator import (
     DataCollator,
     DataCollatorWithPadding,
@@ -121,7 +116,6 @@ class Trainer:
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
-        # model_init: Callable[[], PreTrainedModel] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
@@ -132,7 +126,6 @@ class Trainer:
             [torch.Tensor, torch.Tensor], torch.Tensor
         ] = None,
     ):
-        # self.deepspeed = None  # temp
         if args is None:
             # No Arguments passed
             output_dir = "tmp_trainer"
@@ -168,21 +161,8 @@ class Trainer:
         else:
             self.is_model_parallel = False
 
-        self.parallel_mode = None
         self.parallel_context = None
         self.tensor_parallel_mode = None
-        if len(args.parallel_mode) > 0:
-            self.parallel_context = ParallelContext.from_torch(
-                data_parallel_size=args.data_parallel_size,
-                sequence_parallel_size=args.sequence_parallel_size,
-                expert_parallel_size=args.expert_parallel_size,
-                pipeline_parallel_size=args.pipeline_parallel_size,
-                tensor_parallel_size=args.tensor_parallel_size,
-                tensor_parallel_depth=args.tensor_parallel_depth,
-                tensor_parallel_mode=self.tensor_parallel_mode,
-                backend=args.parallel_backend,  # TODO self?
-                seed=args.parallel_seed,
-            )
 
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
@@ -358,7 +338,6 @@ class Trainer:
         self.is_in_train = True
 
         # TODO move model to device
-
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
@@ -366,9 +345,6 @@ class Trainer:
                 raise ValueError(
                     f"No valid checkpoint found in output directory ({args.output_dir})"
                 )
-
-        # if resume_from_checkpoint is not None:
-        #     self._load_from_checkpoint(resume_from_checkpoint)
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
@@ -436,6 +412,8 @@ class Trainer:
         #     self.deepspeed = deepspeed_engine
         #     self.optimizer = optimizer
         #     self.lr_scheduler = lr_scheduler
+        if args.oslo_init:
+            self.parallel_context = init_oslo_features(self.args.oslo_config)
 
         # TODO: delay_optimizer_creation
         # elif not delay_optimizer_creation:
@@ -1872,17 +1850,6 @@ class Trainer:
                 if _is_torch_generator_available:
                     return RandomSampler(self.train_dataset, generator=generator)
                 return RandomSampler(self.train_dataset)
-            # elif (self.args.parallel_mode in [
-            #         ParallelMode.TPU, ParallelMode.SAGEMAKER_MODEL_PARALLEL
-            # ] and not self.args.dataloader_drop_last):
-            #     # Use a loop for TPUs when drop_last is False to have all batches have the same size.
-            #     return DistributedSamplerWithLoop(
-            #         self.train_dataset,
-            #         batch_size=self.args.per_device_train_batch_size,
-            #         num_replicas=self.args.world_size,
-            #         rank=self.args.process_index,
-            #         seed=seed,
-            #     )
             else:
                 return DistributedSampler(
                     self.train_dataset,
