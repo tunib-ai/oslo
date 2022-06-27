@@ -1,6 +1,5 @@
 import copy
 import math
-from turtle import position
 import warnings
 from typing import Optional, Tuple, Union
 
@@ -371,7 +370,7 @@ class T5Attention(nn.Module):
                 position_bias = position_bias[:, :, -hidden_states.size(1) :, :]
 
         if position_bias is not None:
-            scores = scores + position_bias
+            scores = scores + position_bias.to(scores.dtype)
 
         if self.is_decoder:
             if F._is_fused_scale_mask_softmax_available(
