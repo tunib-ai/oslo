@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, Union
-
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
@@ -16,7 +16,6 @@ class Linear(nn.Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
     ):
@@ -24,14 +23,12 @@ class Linear(nn.Linear):
             in_features=in_features,
             out_features=out_features,
             bias=bias,
-            device=device,
+            device=torch.device(torch.cuda.current_device()),
             dtype=dtype,
         )
         self.skip_bias_add = skip_bias_add
 
-    def forward(
-        self, input: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         if not self.skip_bias_add:
             return F.linear(input, self.weight, self.bias)
         else:
@@ -85,11 +82,13 @@ class LazyLinear(LazyModuleMixin, Linear):
         in_features: int,
         out_features: int,
         bias: bool = True,
-        device: Optional[torch.device] = None,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
     ) -> None:
-        factory_kwargs = {"device": device, "dtype": dtype}
+        factory_kwargs = {
+            "device": torch.device(torch.cuda.current_device()),
+            "dtype": dtype,
+        }
         super().__init__(0, 0, False)
         self.in_features = in_features
         self.out_features = out_features
@@ -115,96 +114,115 @@ class LazyLinear(LazyModuleMixin, Linear):
             self.__class__ = self.cls_to_become
 
 
-class ColumnParallelLinear(Linear):
+class ColLinear1D(Linear):
     def __init__(
         self,
         in_features: int,
         out_features: int,
-        parallel_context: ParallelContext,
         bias: bool = True,
-        skip_bias_add: bool = False,
         dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
         gather_output: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
     ):
-        self.parallel_context = parallel_context
         self.gather_output = gather_output
+        self.parallel_context = parallel_context
         self.reversed = False
 
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
-            out_features % world_size == 0
-        ), "out_features must be divisible by world_size for tensor parallelism."
+            out_features % self.world_size == 0
+        ), "out_features must be divisible by world_size for ColLinear1D."
 
         super().__init__(
             in_features=in_features,
-            out_features=out_features // world_size,
+            out_features=out_features // self.world_size,
             skip_bias_add=skip_bias_add,
             bias=bias,
             dtype=dtype,
-            device=torch.device(torch.cuda.current_device()),
         )
 
-    def forward(
-        self, input: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        # to avoid circular import
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
+        )
+
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_gather_1d,
-            broadcast_1d,
+            all_gather_tensor_1d,
+            broadcast_tensor_1d,
         )
 
-        input = broadcast_1d(input, self.parallel_context)
-        outputs = torch.matmul(input, self.weight.t())
-
-        if self.gather_output:
-            outputs = all_gather_1d(outputs, self.parallel_context).clone()
+        input = broadcast_tensor_1d(input, self.parallel_context)
+        outputs = F.linear(input, self.weight)
 
         if self.bias is not None:
             if self.skip_bias_add:
                 return outputs, self.bias
             else:
-                return outputs + self.bias
+                outputs = outputs + self.bias
 
+        if self.gather_output:
+            outputs = all_gather_tensor_1d(
+                outputs,
+                dim=-1,
+                parallel_context=self.parallel_context,
+            )
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., : self.orig_num_classes]
         return outputs
 
 
-class RowParallelLinear(Linear):
+class RowLinear1D(Linear):
     def __init__(
         self,
         in_features: int,
         out_features: int,
-        parallel_context: ParallelContext,
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
+        parallel_input: bool = True,
+        parallel_context: Optional[ParallelContext] = None,
     ):
+        self.parallel_input = parallel_input
         self.parallel_context = parallel_context
         self.reversed = False
 
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
-            in_features % world_size == 0
-        ), "in_features must be divisible by world_size for tensor parallelism."
+            in_features % self.world_size == 0
+        ), "in_features must be divisible by world_size for RowLinear1D."
 
         super().__init__(
-            in_features=in_features // world_size,
+            in_features=in_features // self.world_size,
             out_features=out_features,
-            skip_bias_add=skip_bias_add,
             bias=bias,
             dtype=dtype,
-            device=torch.device(torch.cuda.current_device()),
+            skip_bias_add=skip_bias_add,
         )
 
-    def forward(
-        self, input: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        # to avoid circular import
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, parallel_input={self.parallel_input}"
+        )
+
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_1d,
+            all_reduce_tensor_1d,
+            scatter_tensor_1d,
         )
 
-        outputs = torch.matmul(input, self.weight.t())
-        outputs = all_reduce_1d(outputs, self.parallel_context)
+        if not self.parallel_input:
+            input = scatter_tensor_1d(
+                input,
+                dim=-1,
+                parallel_context=self.parallel_context,
+            )
+
+        outputs = F.linear(input, self.weight)
+        outputs = all_reduce_tensor_1d(outputs, self.parallel_context)
 
         if self.bias is not None:
             if self.skip_bias_add:
@@ -220,23 +238,41 @@ class Linear2D(Linear):
         self,
         in_features: int,
         out_features: int,
-        parallel_context: ParallelContext,
         bias: bool = True,
         dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
         gather_output: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
     ):
-        self.parallel_context = parallel_context
         self.gather_output = gather_output
+        self.parallel_context = parallel_context
+        self.reversed = False
         self.summa_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2D_COL
         )
         assert (
             in_features % self.summa_dim == 0
-        ), "in_features must be divisible by summa dim."
+        ), "in_features must be divisible by summa_dim for Linear2D."
         assert (
             out_features % (self.summa_dim**2) == 0
-        ), "out_features must be divisible by summa dim^2."
+        ), "out_features must be divisible by summa_dim^2 for Linear2D."
+
+        super().__init__(
+            in_features=in_features // self.summa_dim,
+            out_features=out_features // self.summa_dim,
+            bias=False,
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
+        if bias:
+            self.bias = Parameter(
+                torch.empty(
+                    out_features // (self.summa_dim**2),
+                    device=self.weight.device,
+                    dtype=dtype,
+                )
+            )
+            self.reset_parameters()
 
         self.row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         self.col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
@@ -254,27 +290,13 @@ class Linear2D(Linear):
             ParallelMode.PIPELINE
         )
 
-        super().__init__(
-            in_features=int(in_features // self.summa_dim),
-            out_features=int(out_features // self.summa_dim),
-            bias=False,
-            device=torch.device(torch.cuda.current_device()),
-            dtype=dtype,
-            skip_bias_add=skip_bias_add,
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
         )
-        if bias:
-            self.bias = Parameter(
-                torch.empty(
-                    self.out_features // self.summa_dim,
-                    device=self.weight.device,
-                    dtype=dtype,
-                )
-            )
-        super().reset_parameters()
 
-    def forward(
-        self, input: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
             Matmul_ABT_2D,
             add_bias_2d,
@@ -288,16 +310,16 @@ class Linear2D(Linear):
             input,
             self.weight,
             self.summa_dim,
-            self.parallel_context,
             out_shape,
             self.row_rank,
             self.col_rank,
-            ParallelMode.TENSOR_2D_ROW,
-            ParallelMode.TENSOR_2D_COL,
             self.data_parallel_rank,
             self.pipeline_parallel_rank,
             self.pipeline_parallel_size,
             self.tensor_parallel_size,
+            self.parallel_context,
+            ParallelMode.TENSOR_2D_ROW,
+            ParallelMode.TENSOR_2D_COL,
         )
 
         if self.bias is not None:
@@ -308,14 +330,14 @@ class Linear2D(Linear):
                     self.out_features,
                     self.row_rank,
                     self.col_rank,
-                    self.parallel_context,
-                    ParallelMode.TENSOR_2D_ROW,
-                    ParallelMode.TENSOR_2D_COL,
                     True,
                     self.data_parallel_rank,
                     self.pipeline_parallel_rank,
                     self.pipeline_parallel_size,
                     self.tensor_parallel_size,
+                    self.parallel_context,
+                    ParallelMode.TENSOR_2D_ROW,
+                    ParallelMode.TENSOR_2D_COL,
                 )
                 return outputs, bias
             else:
@@ -325,22 +347,30 @@ class Linear2D(Linear):
                     self.out_features,
                     self.row_rank,
                     self.col_rank,
-                    self.parallel_context,
-                    ParallelMode.TENSOR_2D_ROW,
-                    ParallelMode.TENSOR_2D_COL,
                     False,
                     self.data_parallel_rank,
                     self.pipeline_parallel_rank,
                     self.pipeline_parallel_size,
                     self.tensor_parallel_size,
+                    self.parallel_context,
+                    ParallelMode.TENSOR_2D_ROW,
+                    ParallelMode.TENSOR_2D_COL,
                 )
         if self.gather_output:
             outputs = all_gather_tensor_2d(
                 outputs,
-                dim=-1,
-                parallel_mode=ParallelMode.TENSOR_2D_COL,
+                dim=0,
                 parallel_context=self.parallel_context,
-            ).clone()
+                parallel_mode=ParallelMode.TENSOR_2D_COL,
+            )
+            outputs = all_gather_tensor_2d(
+                outputs,
+                dim=-1,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_2D_ROW,
+            )
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., : self.orig_num_classes]
         return outputs
 
 
@@ -349,22 +379,32 @@ class Linear2p5D(Linear):
         self,
         in_features: int,
         out_features: int,
-        parallel_context: ParallelContext,
         bias: bool = True,
-        dtype: torch.dtype = torch.float32,
+        dtype: Optional[torch.dtype] = None,
         skip_bias_add: bool = False,
+        gather_output: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
     ):
+        self.gather_output = gather_output
         self.parallel_context = parallel_context
+        self.reversed = False
         self.tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
-        assert self.tesseract_dim > 0, "TESSERACT_DIM must be larger than zero"
         assert (
             in_features % self.tesseract_dim == 0
-        ), "in_features must be divisible by tesseract dim."
+        ), "in_features must be divisible by tesseract_dim for Linear2p5D."
         assert (
             out_features % self.tesseract_dim == 0
-        ), "out_features must be divisible by tesseract dim."
+        ), "out_features must be divisible by tesseract_dim for Linear2p5D."
+
+        super().__init__(
+            in_features=in_features // self.tesseract_dim,
+            out_features=out_features // self.tesseract_dim,
+            bias=bias,
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
 
         self.row_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_2P5D_ROW
@@ -389,42 +429,36 @@ class Linear2p5D(Linear):
             ParallelMode.PIPELINE
         )
 
-        super().__init__(
-            in_features=int(in_features // self.tesseract_dim),
-            out_features=int(out_features // self.tesseract_dim),
-            bias=bias,
-            device=torch.device(torch.cuda.current_device()),
-            dtype=dtype,
-            skip_bias_add=skip_bias_add,
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, gather_output={self.gather_output}"
         )
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        # input: [m/dq, n/q, k/q]
-        # output: [m/dq, n/q, h/q]
+    def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
-            all_reduce,
-            Matmul_AB_2p5D,
             Matmul_ABT_2p5D,
             add_bias_2p5d,
+            all_gather_tensor_2p5d,
         )
 
         out_shape = input.shape[:-1] + (self.out_features,)
 
-        output = Matmul_ABT_2p5D.apply(
+        outputs = Matmul_ABT_2p5D.apply(
             input,
             self.weight,
             self.tesseract_dim,
-            self.parallel_context,
             out_shape,
             self.row_rank,
             self.col_rank,
             self.dep_rank,
-            ParallelMode.TENSOR_2P5D_ROW,
-            ParallelMode.TENSOR_2P5D_COL,
             self.data_parallel_rank,
             self.pipeline_parallel_rank,
             self.pipeline_parallel_size,
             self.tensor_parallel_size,
+            self.parallel_context,
+            ParallelMode.TENSOR_2P5D_ROW,
+            ParallelMode.TENSOR_2P5D_COL,
         )
 
         if self.bias is not None:
@@ -437,32 +471,127 @@ class Linear2p5D(Linear):
                     self.row_rank,
                     self.col_rank,
                     self.dep_rank,
-                    self.parallel_context,
-                    ParallelMode.TENSOR_2P5D_COL,
                     True,
                     self.data_parallel_rank,
                     self.pipeline_parallel_rank,
                     self.pipeline_parallel_size,
                     self.tensor_parallel_size,
+                    self.parallel_context,
+                    ParallelMode.TENSOR_2P5D_COL,
                 )
-                return output, bias
+                return outputs, bias
             else:
-                output = add_bias_2p5d(
-                    output,
+                outputs = add_bias_2p5d(
+                    outputs,
                     self.bias,
                     self.out_features,
                     self.tesseract_dim,
                     self.row_rank,
                     self.col_rank,
                     self.dep_rank,
-                    self.parallel_context,
-                    ParallelMode.TENSOR_2P5D_COL,
                     False,
                     self.data_parallel_rank,
                     self.pipeline_parallel_rank,
                     self.pipeline_parallel_size,
                     self.tensor_parallel_size,
+                    self.parallel_context,
+                    ParallelMode.TENSOR_2P5D_COL,
                 )
-                return output
-        else:
-            return output
+        if self.gather_output:
+            outputs = all_gather_tensor_2p5d(
+                outputs,
+                dim=-1,
+                parallel_context=self.parallel_context,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
+            )
+            outputs = all_gather_tensor_2p5d(
+                outputs,
+                dim=0,
+                parallel_context=self.parallel_context,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
+            )
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., : self.orig_num_classes]
+        return outputs
+
+
+class Linear3D(Linear):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        dtype: Optional[torch.dtype] = None,
+        skip_bias_add: bool = False,
+        gather_output: bool = False,
+        parallel_context: Optional[ParallelContext] = None,
+    ):
+        self.gather_output = gather_output
+        self.parallel_context = parallel_context
+        self.reversed = False
+        self.cubic_dim = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+
+        assert (
+            in_features % self.cubic_dim == 0
+        ), "in_features must be divisible by cubic_dim for Linear3D."
+        assert (
+            out_features % (self.cubic_dim**2) == 0
+        ), "out_features must be divisible by cubic_dim^2 for Linear3D."
+
+        super().__init__(
+            in_features=in_features // self.cubic_dim,
+            out_features=out_features // (self.cubic_dim**2),
+            bias=False,
+            dtype=dtype,
+            skip_bias_add=skip_bias_add,
+        )
+        if bias:
+            self.bias = Parameter(
+                torch.empty(
+                    out_features // self.cubic_dim,
+                    device=self.weight.device,
+                    dtype=dtype,
+                )
+            )
+            self.reset_parameters()
+
+    def forward(self, input: Tensor) -> Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+            Matmul_ABT_3D,
+            all_gather_tensor_3d,
+        )
+
+        outputs = Matmul_ABT_3D.apply(
+            input,
+            self.weight,
+            self.bias,
+            0,
+            0,
+            0,
+            self.parallel_context,
+            ParallelMode.TENSOR_3D_INPUT,
+            ParallelMode.TENSOR_3D_WEIGHT,
+            ParallelMode.TENSOR_3D_OUTPUT,
+        )
+        if self.gather_output:
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=-1,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_OUTPUT,
+            )
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=0,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_INPUT,
+            )
+            outputs = all_gather_tensor_3d(
+                outputs,
+                dim=0,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
+            )
+            if hasattr(self, "orig_num_classes"):
+                outputs = outputs[..., : self.orig_num_classes]
+        return outputs

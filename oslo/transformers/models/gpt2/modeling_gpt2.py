@@ -371,13 +371,14 @@ class GPT2MLP(nn.Module):
         self.c_fc = onn.Conv1D(intermediate_size, embed_dim, skip_bias_add=True)
         self.c_proj = onn.Conv1D(embed_dim, intermediate_size, skip_bias_add=True)
         self.act = onn.fused_bias_gelu
-        self.fused_bias_dropout = onn.FusedBiasDropout(config.resid_pdrop)
+        self.dropout = onn.FusedBiasDropout(config.resid_pdrop)
+
 
     def forward(self, hidden_states):
         hidden_states, bias = self.c_fc(hidden_states)
         hidden_states = self.act(hidden_states, bias)
         hidden_states, bias = self.c_proj(hidden_states)
-        hidden_states = self.fused_bias_dropout(hidden_states, bias)
+        hidden_states = self.dropout(hidden_states, bias)
         return hidden_states
 
 

@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import torch.nn as nn
-from typing import Optional
 from .functional import fused_scale_mask_softmax
-from oslo.torch._C import SoftmaxBinder, get_softmax_kernel
 
 
 class FusedScaleMaskSoftmax(nn.Module):
