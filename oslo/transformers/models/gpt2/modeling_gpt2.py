@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
-from oslo.torch import nn as onn
-from oslo.transformers.modeling_utils import OsloModel
+import oslo.torch.nn as onn
 import oslo.torch.nn.modules.functional as F
+from oslo.transformers.modeling_utils import OsloModel
 
 try:
     from transformers.modeling_utils import (
@@ -370,9 +370,8 @@ class GPT2MLP(nn.Module):
         embed_dim = config.hidden_size
         self.c_fc = onn.Conv1D(intermediate_size, embed_dim, skip_bias_add=True)
         self.c_proj = onn.Conv1D(embed_dim, intermediate_size, skip_bias_add=True)
-        self.act = onn.fused_bias_gelu
+        self.act = F.fused_bias_gelu
         self.dropout = onn.FusedBiasDropout(config.resid_pdrop)
-
 
     def forward(self, hidden_states):
         hidden_states, bias = self.c_fc(hidden_states)
