@@ -10,7 +10,7 @@ from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
-tp_size = 4
+tp_size = 8
 batch_size = 16
 model_name = "gpt2"
 
@@ -19,7 +19,7 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
-    tensor_parallel_mode=ParallelMode.TENSOR_2D,
+    tensor_parallel_mode=ParallelMode.TENSOR_3D,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -51,7 +51,7 @@ dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name=f"{model_name}_nprocs{tp_size}_tp2d_bs{batch_size}")
+    wandb.init(project="oslo", name=f"{model_name}_nprocs{tp_size}_tp3d_bs{batch_size}")
     cur = time.time()
 
 # 모니터링 생성 대기

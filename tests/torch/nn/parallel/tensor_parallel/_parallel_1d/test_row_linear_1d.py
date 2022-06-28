@@ -1,27 +1,33 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import RowLinear1D
 from _utils import split_1d
 
+tp_size = 4
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=4,
+    tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
 )
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
+
+batch_size = 2
+seq_len = 2
+input_dim = 4
+hidden_dim = 8
 world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
-input_ = torch.randn((4, 8)).cuda()
-target = torch.randn((4, 4)).cuda()
+input_ = torch.randn((batch_size, seq_len, input_dim)).cuda()
+target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-linear = torch.nn.Linear(8, 4).cuda()
+linear = torch.nn.Linear(input_dim, hidden_dim).cuda()
 w = deepcopy(linear.weight.data)
 b = deepcopy(linear.bias.data)
 
@@ -37,12 +43,10 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original next output: \n{out_update}\n")
 
-# split input_ into 0:[0], 1:[1], 2:[2], 3:[3]
-input_ = split_1d(parallel_context, input_, world_size, dim=-1)
-# split weight into 0:[0], 1:[1], 2:[2], 3:[3]
-w = split_1d(parallel_context, w, world_size, dim=1)
+input_ = split_1d(input_, world_size, dim=-1, parallel_context=parallel_context)
+w = split_1d(w, world_size, dim=-1, parallel_context=parallel_context)
 
-row_linear = RowLinear1D(8, 4, parallel_context=parallel_context)
+row_linear = RowLinear1D(input_dim, hidden_dim, parallel_context=parallel_context)
 row_linear.weight.data.copy_(w)
 row_linear.bias.data.copy_(b)
 

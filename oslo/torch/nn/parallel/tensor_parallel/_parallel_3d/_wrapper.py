@@ -5,18 +5,18 @@ import torch.nn as nn
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.embedding import (
-    VocabParallelEmbedding2D,
-    Embedding2D,
+    VocabParallelEmbedding3D,
+    Embedding3D,
     VocabUtility,
 )
 from oslo.torch.nn.modules.linear import (
-    Linear2D,
+    Linear3D,
 )
 from oslo.torch.nn.modules.layer_norm import (
-    LayerNorm2D,
+    LayerNorm3D,
 )
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
-    split_batch_2d,
+from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+    split_batch_3d,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -34,9 +34,9 @@ from oslo.transformers.mapping_utils import (
 from oslo.transformers.constants import BATCH_DIMENSIONS
 
 
-class _TensorParallel2D(ParallelWrapper):
+class _TensorParallel3D(ParallelWrapper):
     """
-    PyTorch module for 2D tensor parallelism
+    PyTorch module for 3D tensor parallelism
 
     Args:
         module (nn.Module): model object
@@ -67,13 +67,13 @@ class _TensorParallel2D(ParallelWrapper):
 
     def forward(self, *args, **kwargs):
         assert len(args) == 0, (
-            "2D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
+            "3D tensor parallel model only supports ``**kwargs`` input (keyword arguments). "
             "If you wrote code like ``model(input_ids, labels)``, "
             "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_2d(
+                key: split_batch_3d(
                     value,
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
@@ -97,13 +97,13 @@ class _TensorParallel2D(ParallelWrapper):
         for module in self.module.modules():
             for elem in self.tensor_parallel_mapping.update_attrs(self.module):
                 if hasattr(module, elem.name):
-                    summa_dim = self.parallel_context.get_world_size(
-                        ParallelMode.TENSOR_2D_COL
+                    cubic_dim = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_3D_INPUT
                     )
                     assert (
-                        getattr(module, elem.name) % summa_dim == 0
-                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by summa_dim ({summa_dim})."
-                    reduced_arg = getattr(module, elem.name) // summa_dim
+                        getattr(module, elem.name) % cubic_dim == 0
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by cubic_dim ({cubic_dim})."
+                    reduced_arg = getattr(module, elem.name) // cubic_dim
                     setattr(module, elem.name, reduced_arg)
 
     def _parallelize_embedding(self):
@@ -149,26 +149,39 @@ class _TensorParallel2D(ParallelWrapper):
                 )
 
     @staticmethod
-    def _deconstruct_combined_qkv(tensor, summa_dim, fusion_degree):
-        tensor = [
-            [
-                tensor[i][j * summa_dim + k]
-                for i in range(summa_dim)
-                for k in range(summa_dim)
+    def _deconstruct_combined_qkv(tensor, cubic_dim, fusion_degree, is_bias=False):
+        if is_bias:
+            tensor = [
+                [tensor[j * cubic_dim + k] for k in range(cubic_dim)]
+                for j in range(fusion_degree)
             ]
-            for j in range(fusion_degree)
-        ]
-        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
-        tensor = [
-            [tensor[i * summa_dim + j] for j in range(summa_dim)]
-            for i in range(summa_dim)
-        ]
+            tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+            tensor = [tensor[j] for j in range(cubic_dim)]
+        else:
+            tensor = [
+                [
+                    tensor[i][j * cubic_dim + k]
+                    for i in range(cubic_dim)
+                    for k in range(cubic_dim)
+                ]
+                for j in range(fusion_degree)
+            ]
+            tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+            tensor = [
+                [tensor[i * cubic_dim + j] for j in range(cubic_dim)]
+                for i in range(cubic_dim)
+            ]
         return tensor
 
     def _slice_embedding(self, module):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+        input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+        output_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_OUTPUT
+        )
+        weight_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_WEIGHT
+        )
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if module is self.module.get_input_embeddings():
             (
@@ -176,112 +189,128 @@ class _TensorParallel2D(ParallelWrapper):
                 vocab_end_index,
             ) = VocabUtility.vocab_range_from_global_vocab_size(
                 module.num_embeddings,
-                col_rank,
-                summa_dim,
+                input_rank,
+                cubic_dim,
             )
 
-            weight_list = module.weight.data.chunk(summa_dim, dim=1)
-            weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
+            weight_list = module.weight.data.chunk(cubic_dim, dim=1)
+            weight_list = [weight.chunk(cubic_dim, dim=0) for weight in weight_list]
+            weight_list = [
+                [weight.chunk(cubic_dim, dim=0) for weight in weights]
+                for weights in weight_list
+            ]
 
-            module.weight.data = weight_list[row_rank][col_rank].contiguous()
+            module.weight.data = weight_list[output_rank][input_rank][
+                weight_rank
+            ].contiguous()
 
             _update_module_arguments(
                 module=module,
                 vocab_start_index=vocab_start_index,
                 vocab_end_index=vocab_end_index,
                 parallel_context=self.parallel_context,
-                summa_dim=summa_dim,
+                cubic_dim=cubic_dim,
                 num_embeddings=module.weight.size()[0],
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
-            module.__class__ = VocabParallelEmbedding2D
+            module.__class__ = VocabParallelEmbedding3D
         else:
-            weight_list = module.weight.data.chunk(summa_dim, dim=1)
-            weight_list = [weight.chunk(summa_dim, dim=1) for weight in weight_list]
-            module.weight.data = weight_list[row_rank][col_rank].contiguous()
+            weight = module.weight.data.chunk(cubic_dim, dim=-1)
+            module.weight.data = weight[output_rank].contiguous()
 
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
-                summa_dim=summa_dim,
+                cubic_dim=cubic_dim,
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
-            module.__class__ = Embedding2D
+            module.__class__ = Embedding3D
 
         if hasattr(module.weight, "oslo_parallel"):
-            module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-            module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_INPUT] = input_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_OUTPUT] = output_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_WEIGHT] = weight_rank
         else:
             module.weight.oslo_parallel = {
-                ParallelMode.TENSOR_2D_ROW: row_rank,
-                ParallelMode.TENSOR_2D_COL: col_rank,
+                ParallelMode.TENSOR_3D_INPUT: input_rank,
+                ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
-        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-        pipeline_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.PIPELINE
+        input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+        output_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_OUTPUT
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
-        pipeline_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.PIPELINE
+        weight_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_WEIGHT
         )
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if reversed:
             module.weight.data = module.weight.data.t()
 
-        weight_list = module.weight.data.chunk(summa_dim, dim=1)
+        weight_list = module.weight.data.chunk(cubic_dim, dim=1)
         weight_list = [
-            weight.chunk(fusion_degree * summa_dim, dim=0) for weight in weight_list
+            weight.chunk(fusion_degree * cubic_dim, dim=0) for weight in weight_list
         ]
 
         if fusion_degree > 1:
             weight_list = self._deconstruct_combined_qkv(
                 weight_list,
-                summa_dim,
+                cubic_dim,
                 fusion_degree,
+                is_bias=False,
             )
+        weight_list = [
+            [weight.chunk(cubic_dim, dim=0) for weight in weights]
+            for weights in weight_list
+        ]
 
-        module.weight.data = weight_list[row_rank][col_rank].contiguous()
+        module.weight.data = weight_list[output_rank][input_rank][
+            weight_rank
+        ].contiguous()
 
         if hasattr(module.weight, "oslo_parallel"):
-            module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-            module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_INPUT] = input_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_OUTPUT] = output_rank
+            module.weight.oslo_parallel[ParallelMode.TENSOR_3D_WEIGHT] = weight_rank
         else:
             module.weight.oslo_parallel = {
-                ParallelMode.TENSOR_2D_ROW: row_rank,
-                ParallelMode.TENSOR_2D_COL: col_rank,
+                ParallelMode.TENSOR_3D_INPUT: input_rank,
+                ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
             }
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.data.chunk(summa_dim, dim=0)
-                bias_list = [
-                    bias.chunk(fusion_degree * summa_dim, dim=0) for bias in bias_list
-                ]
+                bias_list = module.bias.data.chunk(fusion_degree * cubic_dim, dim=0)
 
                 if fusion_degree > 1:
                     bias_list = self._deconstruct_combined_qkv(
                         bias_list,
-                        summa_dim,
+                        cubic_dim,
                         fusion_degree,
+                        is_bias=True,
                     )
 
-                module.bias.data = bias_list[row_rank][col_rank].contiguous()
+                module.bias.data = bias_list[input_rank].contiguous()
 
                 if hasattr(module.bias, "oslo_parallel"):
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_3D_INPUT] = input_rank
+                    module.bias.oslo_parallel[
+                        ParallelMode.TENSOR_3D_OUTPUT
+                    ] = output_rank
+                    module.bias.oslo_parallel[
+                        ParallelMode.TENSOR_3D_WEIGHT
+                    ] = weight_rank
                 else:
                     module.bias.oslo_parallel = {
-                        ParallelMode.TENSOR_2D_ROW: row_rank,
-                        ParallelMode.TENSOR_2D_COL: col_rank,
+                        ParallelMode.TENSOR_3D_INPUT: input_rank,
+                        ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                        ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
                     }
 
         _update_module_arguments(
@@ -289,13 +318,7 @@ class _TensorParallel2D(ParallelWrapper):
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
-            summa_dim=summa_dim,
-            row_rank=row_rank,
-            col_rank=col_rank,
-            data_parallel_rank=data_parallel_rank,
-            pipeline_parallel_rank=pipeline_parallel_rank,
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
+            cubic_dim=cubic_dim,
             reversed=reversed,
             fusion_degree=fusion_degree,
             skip_bias_add=module.skip_bias_add
@@ -305,67 +328,69 @@ class _TensorParallel2D(ParallelWrapper):
             orig_module=copy.deepcopy(module.__class__),
         )
 
-        module.__class__ = Linear2D
+        module.__class__ = Linear3D
 
     def _slice_layernorm(self, module):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
-        data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-        pipeline_parallel_rank = self.parallel_context.get_local_rank(
-            ParallelMode.PIPELINE
+        input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+        output_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_OUTPUT
         )
-        tensor_parallel_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
-        pipeline_parallel_size = self.parallel_context.get_world_size(
-            ParallelMode.PIPELINE
+        weight_rank = self.parallel_context.get_local_rank(
+            ParallelMode.TENSOR_3D_WEIGHT
         )
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
-                weight_list = module.weight.data.chunk(summa_dim, dim=0)
-                weight_list = [weight.chunk(summa_dim, dim=0) for weight in weight_list]
-                module.weight.data = weight_list[row_rank][col_rank].contiguous()
+                weight_list = module.weight.data.chunk(cubic_dim, dim=0)
+                module.weight.data = weight_list[output_rank].contiguous()
 
                 if hasattr(module.weight, "oslo_parallel"):
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                    module.weight.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                    module.weight.oslo_parallel[
+                        ParallelMode.TENSOR_3D_INPUT
+                    ] = input_rank
+                    module.weight.oslo_parallel[
+                        ParallelMode.TENSOR_3D_OUTPUT
+                    ] = output_rank
+                    module.weight.oslo_parallel[
+                        ParallelMode.TENSOR_3D_WEIGHT
+                    ] = weight_rank
                 else:
                     module.weight.oslo_parallel = {
-                        ParallelMode.TENSOR_2D_ROW: row_rank,
-                        ParallelMode.TENSOR_2D_COL: col_rank,
+                        ParallelMode.TENSOR_3D_INPUT: input_rank,
+                        ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                        ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
                     }
 
         if hasattr(module, "bias") and module.bias is not None:
             if module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(summa_dim, dim=0)
-                bias_list = [bias.chunk(summa_dim, dim=0) for bias in bias_list]
-                module.bias.data = bias_list[row_rank][col_rank].contiguous()
+                bias_list = module.bias.chunk(cubic_dim, dim=0)
+                module.bias.data = bias_list[input_rank].contiguous()
 
                 if hasattr(module.bias, "oslo_parallel"):
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
-                    module.bias.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                    module.bias.oslo_parallel[ParallelMode.TENSOR_3D_INPUT] = input_rank
+                    module.bias.oslo_parallel[
+                        ParallelMode.TENSOR_3D_OUTPUT
+                    ] = output_rank
+                    module.bias.oslo_parallel[
+                        ParallelMode.TENSOR_3D_WEIGHT
+                    ] = weight_rank
                 else:
                     module.bias.oslo_parallel = {
-                        ParallelMode.TENSOR_2D_ROW: row_rank,
-                        ParallelMode.TENSOR_2D_COL: col_rank,
+                        ParallelMode.TENSOR_3D_INPUT: input_rank,
+                        ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                        ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
                     }
 
         _update_module_arguments(
             module=module,
-            normalized_shape=module.weight.size()[0] * (summa_dim**2),
+            normalized_shape=module.weight.size()[0] * cubic_dim,
             partitioned_dim=module.weight.size()[0],
             parallel_context=self.parallel_context,
-            summa_dim=summa_dim,
-            row_rank=row_rank,
-            col_rank=col_rank,
-            data_parallel_rank=data_parallel_rank,
-            pipeline_parallel_rank=pipeline_parallel_rank,
-            tensor_parallel_size=tensor_parallel_size,
-            pipeline_parallel_size=pipeline_parallel_size,
+            cubic_dim=cubic_dim,
             orig_module=copy.deepcopy(module.__class__),
         )
-        module.__class__ = LayerNorm2D
+        module.__class__ = LayerNorm3D
 
     def _slice_head(self, module, reversed):
         if module.weight is not self.module.get_input_embeddings().weight:
@@ -380,36 +405,20 @@ class _TensorParallel2D(ParallelWrapper):
                 gather_output=not is_oslo_model(self.module),
             )
         else:
-            row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
-            col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+            cubic_dim = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR_3D_INPUT
+            )
 
-            data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
-            pipeline_parallel_rank = self.parallel_context.get_local_rank(
-                ParallelMode.PIPELINE
-            )
-            tensor_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.TENSOR
-            )
-            pipeline_parallel_size = self.parallel_context.get_world_size(
-                ParallelMode.PIPELINE
-            )
             _update_module_arguments(
                 module=module,
                 in_features=module.weight.size()[1],
                 out_features=module.weight.size()[0],
                 parallel_context=self.parallel_context,
-                summa_dim=summa_dim,
-                row_rank=row_rank,
-                col_rank=col_rank,
-                data_parallel_rank=data_parallel_rank,
-                pipeline_parallel_rank=pipeline_parallel_rank,
-                tensor_parallel_size=tensor_parallel_size,
-                pipeline_parallel_size=pipeline_parallel_size,
+                cubic_dim=cubic_dim,
                 reversed=reversed,
                 fusion_degree=1,
                 skip_bias_add=False,
                 gather_output=not is_oslo_model(self.module),
                 orig_module=copy.deepcopy(module.__class__),
             )
-        module.__class__ = Linear2D
+        module.__class__ = Linear3D
