@@ -55,31 +55,47 @@ SUPPORTED_FEATURES = {
     "backend": _type(str),
 }
 
+TENSOR_PARALLEL_MODE_TYPES = [
+    "tensor",
+    "tensor_1d",
+    "tensor_2d",
+    "tensor_2p5d",
+    "tensor_3d",
+]
 
-def _config_check(arg, user):
-    assert len(user) > 0, f"There are no arguments in dictionary."
 
-    if isinstance(user, dict):
-        for k in user:
+def _config_check(arg, user_config):
+    assert len(user_config) > 0, f"There are no arguments in dictionary."
+
+    if isinstance(user_config, dict):
+        for k in user_config:
             if isinstance(arg, dict):
                 assert k in arg, (
                     f"An argument ``{k}`` is not available. "
                     f"We only support the arguments like {list(arg.keys())}.")
             else:
-                raise Exception(f"``{k}: {user[k]} is not a valid set. "
+                raise Exception(f"``{k}: {user_config[k]} is not a valid set. "
                                 f"please check your configuration.``")
 
-            if isinstance(user[k], dict):
-                _config_check(arg[k], user[k])
+            if isinstance(user_config[k], dict):
+                _config_check(arg[k], user_config[k])
             else:
-                assert not isinstance(
-                    arg[k], dict), (f"``{k}: {user[k]} is not a valid set. "
-                                    f"please check your configuration.``")
+                assert not isinstance(arg[k], dict), (
+                    f"``{k}: {user_config[k]} is not a valid set. "
+                    f"please check your configuration.``")
 
-                check_result = arg[k](k, user[k])
+                check_result = arg[k](k, user_config[k])
                 assert check_result["check"], check_result["msg"]
     else:
         raise TypeError("configuration must be type of <class 'dict'>")
+
+
+def check_user_config(user_config):
+    _config_check(SUPPORTED_FEATURES, user_config)
+    assert user_config['model_parallelism'][
+        'tensor_parallel_mode'] in TENSOR_PARALLEL_MODE_TYPES, (
+            f"{user_config['model_parallelism']['tensor_parallel_mode']} is not valid type of tensor_parallel_mode. "
+            f"choose one of {', '.join(TENSOR_PARALLEL_MODE_TYPES)}")
 
 
 class OsloTrainerConfig:
@@ -93,7 +109,7 @@ class OsloTrainerConfig:
                 "distributed_data_parallel": _type(bool),
                 "data_parallel_size": _type(int),
                 "sequence_parallel_size": _type(int),
-            }
+            },
             "model_parallelism": {
                 "expert_parallel_size": _type(int),
                 "pipeline_parallel_size": _type(int),
@@ -109,7 +125,7 @@ class OsloTrainerConfig:
             "kernel_fusion": {
                 "memory_efficient_fusion": _type(bool),
                 "custom_cuda_kernels": _type(list),
-            }
+            },
             "lazy_initialization": _type(bool),
             "backend": _type(str),
 
@@ -140,9 +156,13 @@ class OsloTrainerConfig:
         else:
             raise ValueError(
                 "expecting either a path to a oslo config file or a dict")
-        _config_check(SUPPORTED_FEATURES, config)
+
+        check_user_config(config)
         self._set_config(config)
         self.config = config
+
+    def __repr__(self):
+        return self.config.__repr__()
 
     def _set_config(self, config: dict):
         for k, v in config.items():
@@ -195,7 +215,7 @@ def init_oslo_features(oslo_init_config: OsloTrainerConfig):
         pipeline_parallel_size=cfg.pipeline_parallel_size,
         tensor_parallel_size=cfg.tensor_parallel_size,
         tensor_parallel_depth=cfg.tensor_parallel_depth,
-        tensor_parallel_mode=cfg.tensor_parallel_mode,  # TODO tensor_parallel_mode needs more complicated config from user
+        tensor_parallel_mode=cfg.tensor_parallel_mode,
         backend=cfg.parallel_backend,
         seed=cfg.parallel_seed,
     )

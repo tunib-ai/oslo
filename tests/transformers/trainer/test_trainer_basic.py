@@ -1,6 +1,8 @@
 from transformers import BertTokenizer, BertForSequenceClassification, Trainer
 import torch
 from datasets import load_dataset
+from oslo.transformers.training_args import TrainingArguments as ota
+from oslo.transformers.trainer import Trainer as OTrainer
 
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -13,9 +15,6 @@ batch_size = 16
 datasets = load_dataset("squad")
 train_dataset = datasets['train']
 valid_dataset = datasets['validation']
-
-from oslo.transformers.training_args import TrainingArguments as ota
-from oslo.transformers.trainer import Trainer as OTrainer
 
 args = ota(
     output_dir="output",

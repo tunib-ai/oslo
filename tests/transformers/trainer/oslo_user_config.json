@@ -1,0 +1,23 @@
+{
+    "data_parallelism": {
+        "distributed_data_parallel": false,
+        "data_parallel_size": 1,
+        "sequence_parallel_size": 1
+    },
+    "model_parallelism": {
+        "expert_parallel_size": 1,
+        "pipeline_parallel_size": 1,
+        "tensor_parallel_size": 1,
+        "tensor_parallel_depth": 1,
+        "tensor_parallel_mode": "tensor_1d"
+    },
+    "activation_checkpointing": {
+        "partitioned_checkpointing": false,
+        "contiguous_checkpointing": false
+    },
+    "kernel_fusion": {
+        "memory_efficient_fusion": false
+    },
+    "lazy_initialization": false,
+    "backend": "nccl"
+}

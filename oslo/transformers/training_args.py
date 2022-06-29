@@ -288,8 +288,8 @@ class TrainingArguments:
 
             If a string is passed, it will be split on space. If a bool is passed, it will be converted to an empty
             list for `False` and `["simple"]` for `True`.
-        oslo_init (`str` or `dict`):
-            The value is either the location of DeepSpeed json config file (e.g.,`ds_config.json`) or an already loaded json file as a `dict`"
+        oslo_user_config (`str` or `dict`):
+            The value is either the location of oslo parallel json config file (e.g.,`ds_config.json`) or an already loaded json file as a `dict`"
         label_smoothing_factor (`float`, *optional*, defaults to 0.0):
             The label smoothing factor to use. Zero means no label smoothing, otherwise the underlying onehot-encoded
             labels are changed from 0s and 1s to `label_smoothing_factor/num_labels` and `1 - label_smoothing_factor +
@@ -613,11 +613,11 @@ class TrainingArguments:
                 "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    oslo_init: Optional[str] = field(
+    oslo_user_config: Optional[str] = field(
         default=None,
         metadata={
             "help":
-                "Enable oslo features and pass the path to deepspeed json config file (e.g. ds_config.json) or an already loaded json file as a dict"
+                "Enable oslo features and pass the path to json config file (e.g. ds_config.json) or an already loaded json file as a dict"
         },
     )
     label_smoothing_factor: float = field(
@@ -824,14 +824,12 @@ class TrainingArguments:
         # TODO debug option
         # if isinstance(self.debug, str):
         #     self.debug = [DebugOption(s) for s in self.debug.split()]
-
-        if self.oslo_init:
+        if self.oslo_user_config:
             from oslo.transformers.oslo_init import OsloTrainerConfig
 
             # will be used later by the Trainer
-            self.oslo_config = OsloTrainerConfig(self.oslo_init)
+            self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
             self.oslo_config.adjust_train_args(self)
-
 
     def __str__(self):
         self_as_dict = asdict(self)
