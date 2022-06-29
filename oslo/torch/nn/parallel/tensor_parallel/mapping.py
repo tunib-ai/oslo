@@ -10,12 +10,20 @@ class TensorParallelInfo(object):
         combined_qkv (bool): combined qkv or not
         parallel (bool): parallelizable param or not
         reverse (bool): reversed param or not
+        gather_output (bool): gather output or not
     """
 
-    def __init__(self, *name, combined_qkv: bool = False, reverse: bool = False):
+    def __init__(
+        self,
+        *name,
+        combined_qkv: bool = False,
+        reversed: bool = False,
+        gather_output: bool = False,
+    ):
         self.name = name
         self.combined_qkv = combined_qkv
-        self.reverse = reverse
+        self.reversed = reversed
+        self.gather_output = gather_output
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -185,7 +193,7 @@ class TensorParallelMapping(object):
             return bigger // smaller
         return 1
 
-    def is_reversed_param(self, model, param_name):
+    def is_reversed(self, model, param_name):
         """
         Check whether the parameter is reversed or not
 
@@ -198,7 +206,22 @@ class TensorParallelMapping(object):
         """
         elem = self.search(model, param_name)
         if elem is not None:
-            return elem.reverse
+            return elem.reversed
+
+    def is_gather_output(self, model, param_name):
+        """
+        Check whether the param is gather output or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            param_name (str): name of parameter
+
+        Returns:
+            bool: whether the param is combined qkv or not
+        """
+        elem = self.search(model, param_name)
+        if elem is not None:
+            return elem.gather_output
 
     def is_column_parallel(self, model, param_name):
         """

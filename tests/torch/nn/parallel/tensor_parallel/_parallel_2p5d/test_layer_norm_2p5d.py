@@ -2,16 +2,18 @@ from copy import deepcopy
 import torch
 import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn import LayerNorm2D
-from _utils import split_2d, split_layernorm_2d, split_bias_2d, gather_2d
+from oslo.torch.nn import LayerNorm2p5D
+from _utils import split_2p5d, split_layernorm_2p5d, split_bias_2p5d, gather_2p5d
 
-tp_size = 4
+tp_size = 8
+tp_depth = 2
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
-    tensor_parallel_mode=ParallelMode.TENSOR_2D,
+    tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
+    tensor_parallel_depth=tp_depth,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -20,7 +22,7 @@ torch.manual_seed(0)
 batch_size = 2
 seq_len = 2
 hidden_dim = 8
-summa_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+tesseract_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 input_ = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 
@@ -45,25 +47,26 @@ if parallel_context.get_global_rank() == 0:
 
 dist.barrier()
 
-input_ = split_2d(input_, summa_dim, parallel_context=parallel_context)
-target = split_2d(target, summa_dim, parallel_context=parallel_context)
-w = split_layernorm_2d(w, summa_dim, parallel_context=parallel_context)
-b = split_bias_2d(b, summa_dim, parallel_context=parallel_context)
+input_ = split_2p5d(input_, tesseract_dim, parallel_context=parallel_context)
+target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
 
-layernorm_2d = LayerNorm2D(hidden_dim, parallel_context=parallel_context)
-layernorm_2d.weight.data.copy_(w)
-layernorm_2d.bias.data.copy_(b)
+w = split_layernorm_2p5d(w, tesseract_dim, parallel_context=parallel_context)
+b = split_bias_2p5d(b, tesseract_dim, parallel_context=parallel_context)
 
-pout = layernorm_2d(input_)
-optimizer = torch.optim.Adam(layernorm_2d.parameters(), lr=1e-3)
+layernorm_2p5d = LayerNorm2p5D(hidden_dim, parallel_context=parallel_context)
+layernorm_2p5d.weight.data.copy_(w)
+layernorm_2p5d.bias.data.copy_(b)
+
+pout = layernorm_2p5d(input_)
+optimizer = torch.optim.Adam(layernorm_2p5d.parameters(), lr=1e-3)
 logits = torch.nn.MSELoss()(pout, target)
 logits.backward()
 optimizer.step()
 
-pout_update = layernorm_2d(input_)
+pout_update = layernorm_2p5d(input_)
 
-pout = gather_2d(pout, summa_dim, parallel_context=parallel_context)
-pout_update = gather_2d(pout_update, summa_dim, parallel_context=parallel_context)
+pout = gather_2p5d(pout, tesseract_dim, parallel_context=parallel_context)
+pout_update = gather_2p5d(pout_update, tesseract_dim, parallel_context=parallel_context)
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

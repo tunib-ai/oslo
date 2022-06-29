@@ -3,6 +3,7 @@ from oslo.torch.nn.modules.dropout import (
     FusedBiasDropout,
 )
 from oslo.torch.nn.modules.embedding import (
+    Embedding1D,
     Embedding2D,
     Embedding2p5D,
     Embedding3D,
@@ -26,21 +27,23 @@ from oslo.torch.nn.modules.functional import (
     fused_rms_norm,
 )
 from oslo.torch.nn.modules.layer_norm import (
+    LayerNorm1D,
     LayerNorm2D,
     LayerNorm2p5D,
+    LayerNorm3D,
     FusedLayerNorm,
     MixedFusedLayerNorm,
     MixedFusedRMSNorm,
     FusedRMSNorm,
 )
 from oslo.torch.nn.modules.linear import (
-    ColumnParallelLinear,
+    ColLinear1D,
     LazyLinear,
     Linear,
     Linear2D,
     Linear2p5D,
     Linear3D,
-    RowParallelLinear,
+    RowLinear1D,
 )
 
 

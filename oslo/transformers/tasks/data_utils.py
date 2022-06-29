@@ -88,10 +88,10 @@ def train_tokenizer(
     min_frequency: int,
     corpora_dir: str,
     corpus_type: CorpusType,
+    sampling_ratio: float,
     save_dir: Optional[str] = None,
     additional_special_tokens: Optional[List[str]] = None,
     batch_size: int = 1000,
-    sampling_ratio: float = 0.1,
 ):
     if save_dir is None:
         corpora_name = corpora_dir.split("/")[-1]

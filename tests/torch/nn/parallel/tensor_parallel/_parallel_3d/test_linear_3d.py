@@ -1,14 +1,16 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-from copy import deepcopy
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear3D
+from _utils import split_input_3d, split_weight_3d, split_bias_3d, gather_output_3d
 
+tp_size = 8
 
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=8,
+    tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_3D,
 )
 
@@ -43,39 +45,42 @@ if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
     print(f"original update output: \n{out_update}\n")
 
-input_ = torch.chunk(input_, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-input_ = torch.chunk(input_, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-input_ = torch.chunk(input_, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
-target = torch.chunk(target, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-target = torch.chunk(target, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-target = torch.chunk(target, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
+input_ = split_input_3d(input_, cubic_dim, parallel_context=parallel_context)
+ptarget = split_input_3d(target, cubic_dim, parallel_context=parallel_context)
 
-w = torch.chunk(w, cubic_dim, dim=-1)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_OUTPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
-w = torch.chunk(w, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-]
-b = torch.chunk(b, cubic_dim, dim=0)[
-    parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-]
+w = split_weight_3d(w, cubic_dim, parallel_context=parallel_context)
+b = split_bias_3d(b, cubic_dim, parallel_context=parallel_context)
 
 linear_3d = Linear3D(input_dim, hidden_dim, parallel_context=parallel_context)
+linear_3d.weight.data.copy_(w)
+linear_3d.bias.data.copy_(b)
+
+pout = linear_3d(input_)
+optimizer = torch.optim.Adam(linear_3d.parameters(), lr=1e-3)
+logits = torch.nn.MSELoss()(pout, ptarget)
+logits.backward()
+optimizer.step()
+
+pout_update = linear_3d(input_)
+
+pout = gather_output_3d(pout, cubic_dim, parallel_context=parallel_context)
+pout_update = gather_output_3d(
+    pout_update, cubic_dim, parallel_context=parallel_context
+)
+
+if parallel_context.get_global_rank() == 0:
+    print(f"parallel output: \n{pout}\n")
+    print(f"parallel update output: \n{pout_update}\n")
+
+if parallel_context.get_global_rank() == 0:
+    sse = torch.sum((out - pout) ** 2).item()
+    sse_update = torch.sum((out_update - pout_update) ** 2).item()
+    print(f"output sse: \n{sse}\n")
+    print(f"next output sse: \n{sse_update}\n")
+
+linear_3d = Linear3D(
+    input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context
+)
 linear_3d.weight.data.copy_(w)
 linear_3d.bias.data.copy_(b)
 
@@ -87,56 +92,12 @@ optimizer.step()
 
 pout_update = linear_3d(input_)
 
-pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_list,
-    pout.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
-)
-pout = torch.cat(pout_list, dim=-1)
-pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_list,
-    pout.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
-)
-pout = torch.cat(pout_list, dim=0)
-pout_list = [torch.zeros_like(pout) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_list,
-    pout.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_WEIGHT),
-)
-pout = torch.cat(pout_list, dim=0)
-
-pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_update_list,
-    pout_update.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
-)
-pout_update = torch.cat(pout_update_list, dim=-1)
-pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_update_list,
-    pout_update.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
-)
-pout_update = torch.cat(pout_update_list, dim=0)
-pout_update_list = [torch.zeros_like(pout_update) for _ in range(cubic_dim)]
-dist.all_gather(
-    pout_update_list,
-    pout_update.contiguous(),
-    parallel_context.get_group(ParallelMode.TENSOR_3D_WEIGHT),
-)
-pout_update = torch.cat(pout_update_list, dim=0)
-
 if parallel_context.get_global_rank() == 0:
-    print(f"parallel output: \n{pout}\n")
-    print(f"parallel update output: \n{pout_update}\n")
+    print(f"parallel output (gather_output=True): \n{pout}\n")
+    print(f"parallel update output (gather_output=True): \n{pout_update}\n")
 
 if parallel_context.get_global_rank() == 0:
     sse = torch.sum((out - pout) ** 2).item()
     sse_update = torch.sum((out_update - pout_update) ** 2).item()
-    print(f"output sse: \n{sse}\n")
-    print(f"next output sse: \n{sse_update}\n")
+    print(f"output sse (gather_output=True): \n{sse}\n")
+    print(f"next output sse (gather_output=True): \n{sse_update}\n")
