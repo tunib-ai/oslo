@@ -6,20 +6,17 @@ import warnings
 from enum import Enum
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
-from pathlib import Path
 
-from .trainer_utils import EvaluationStrategy, IntervalStrategy, ShardedDDPOption
+from .trainer_utils import EvaluationStrategy, IntervalStrategy
 
 import torch
 import torch.distributed as dist
 from .utils import (
-    ExplicitEnum,
     cached_property,
     logging,
     is_torch_tf32_available,
     is_torch_bf16_available,
 )
-from oslo.torch.distributed import ParallelMode
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -178,8 +175,6 @@ class TrainingArguments:
 
             This should not be activated when the different nodes use the same storage as the files will be saved with
             the same names for each node.
-        no_cuda (`bool`, *optional*, defaults to `False`):
-            Whether to not use CUDA even when it is available or not.
         seed (`int`, *optional*, defaults to 42):
             Random seed that will be set at the beginning of training. To ensure reproducibility across runs, use the
             [`~Trainer.model_init`] function to instantiate the model if it has some randomly initialized parameters.
@@ -315,7 +310,6 @@ class TrainingArguments:
             Column name for precomputed lengths. If the column exists, grouping by length will use these values rather
             than computing them on train startup. Ignored unless `group_by_length` is `True` and the dataset is an
             instance of `Dataset`.
-        # TODO report to "tensorboard"` and `"wandb"
         # report_to (`str` or `List[str]`, *optional*, defaults to `"all"`):
         #     The list of integrations to report the results and logs to. Supported platforms are `"azure_ml"`,
         #     `"comet_ml"`, `"mlflow"`, `"tensorboard"` and `"wandb"`. Use `"all"` to report to all integrations
@@ -473,7 +467,7 @@ class TrainingArguments:
         default=500,
         metadata={"help": "Save checkpoint every X updates steps."})
     save_total_limit: Optional[int] = field(
-        default=None,
+        default=10,
         metadata={
             "help": (
                 "Limit the total amount of checkpoints. "
@@ -488,9 +482,6 @@ class TrainingArguments:
                 "When doing multi-node distributed training, whether to save models and checkpoints on each node, or only on the main one"
         },
     )
-    no_cuda: bool = field(
-        default=False,
-        metadata={"help": "Do not use CUDA even when it is available"})
     seed: int = field(
         default=42,
         metadata={
@@ -873,31 +864,12 @@ class TrainingArguments:
                 "torch.distributed process group is initialized, but local_rank == -1. "
                 "In order to use Torch DDP, launch your script with `python -m torch.distributed.launch"
             )
-        if self.no_cuda:
-            device = torch.device("cpu")
-            self._n_gpu = 0
-            if self.local_rank != -1 and not torch.distributed.is_initialized():
-                # Initializes distributed backend for cpu
-                if self.xpu_backend not in ("mpi", "ccl"):
-                    raise ValueError(
-                        "CPU distributed training backend is not properly set. "
-                        "Please set '--xpu_backend' to either 'mpi' or 'ccl'.")
-                torch.distributed.init_process_group(backend=self.xpu_backend)
 
+        if not torch.cuda.is_available():
+            raise RuntimeError("No GPU resource is available to use OSLO")
         elif self.local_rank == -1:
-            # if n_gpu is > 1 we'll use nn.DataParallel.
-            # If you only want to use a specific subset of GPUs use `CUDA_VISIBLE_DEVICES=0`
-            # Explicitly set CUDA to the first (index 0) CUDA device, otherwise `set_device` will
-            # trigger an error that a device index is missing. Index 0 takes into account the
-            # GPUs available in the environment, so `CUDA_VISIBLE_DEVICES=1,2` with `cuda:0`
-            # will use the first GPU in that env, i.e. GPU#1
-            device = torch.device(
-                "cuda:0" if torch.cuda.is_available() else "cpu")
-            # Sometimes the line in the postinit has not been run before we end up here, so just checking we're not at
-            # the default value.
-            self._n_gpu = torch.cuda.device_count()
+            device = torch.device("cuda:0")
         else:
-            # Here, we'll use torch.distributed.
             # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
             if not torch.distributed.is_initialized():
                 torch.distributed.init_process_group(backend="nccl")

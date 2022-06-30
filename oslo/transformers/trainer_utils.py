@@ -17,26 +17,6 @@ PREFIX_CHECKPOINT_DIR = "checkpoint"
 _re_checkpoint = re.compile(r"^" + PREFIX_CHECKPOINT_DIR + r"\-(\d+)$")
 
 
-class ShardedDDPOption(ExplicitEnum):
-    # TODO change to fit oslo
-    SIMPLE = "simple"
-    ZERO_DP_2 = "zero_dp_2"
-    ZERO_DP_3 = "zero_dp_3"
-    OFFLOAD = "offload"
-    AUTO_WRAP = "auto_wrap"
-
-
-# class ParallelOption(ExplicitEnum):
-#     DATA_PARALLEL = "dp"
-#     MODEL_PARALLEL = "mp"
-#
-#
-# class DataParallelOption(ExplicitEnum):
-#     DistributedDP = "ddp"
-#     SequenceDP = "sp"
-#     ShardedDDP = "sddp"
-
-
 def get_last_checkpoint(folder):
     content = os.listdir(folder)
     checkpoints = [
