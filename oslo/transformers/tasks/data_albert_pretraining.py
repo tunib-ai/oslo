@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import random
+import warnings
 import torch
 from datasets.arrow_dataset import Batch
 
@@ -8,6 +9,10 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 
 try:
     from transformers import DataCollatorForLanguageModeling
+    from transformers import (
+        AlbertTokenizer,
+        AlbertTokenizerFast,
+    )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
@@ -15,6 +20,12 @@ except ImportError:
 class ProcessorForAlbertPretraining(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
+
+        if not isinstance(self._tokenizer, (AlbertTokenizer, AlbertTokenizerFast)):
+            warnings.warn(
+                "ProcessorForAlbertPretraining is only suitable for AlbertTokenizer-like tokenizers."
+            )
+
         self._chunk_size = max_length - 3
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
@@ -61,11 +72,19 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
+        self.pad_token_id = self.tokenizer.pad_token_id
+        self.pad_token_type_id = self.tokenizer.pad_token_type_id
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
+            )
+            self.pad_to_multiple_of = self.local_world_size
+
+        if not isinstance(processor, ProcessorForAlbertPretraining):
+            warnings.warn(
+                "DataCollatorForAlbertPretraining is suitable for ProcessorForAlbertPretraining."
             )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -79,41 +98,10 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
 
-        if self.parallel_context is None:
-            return batch
-        else:
+        if self.parallel_context is not None:
             for key, value in batch.items():
-                if value.dim() < 2:
+                if key == "sentence_order_label":
                     continue
-
-                batch_size, seq_length = value.size()
-
-                if seq_length % self.local_world_size != 0:
-                    required_length = (
-                        (seq_length // self.local_world_size) + 1
-                    ) * self.local_world_size
-                    difference = required_length - seq_length
-
-                    if key == "labels":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=-100, dtype=value.dtype
-                        )
-                    elif key == "token_type_ids":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=1, dtype=value.dtype
-                        )
-                    elif key == "attention_mask":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=0, dtype=value.dtype
-                        )
-                    else:
-                        pads = torch.full(
-                            [batch_size, difference],
-                            fill_value=self.tokenizer.pad_token_id,
-                            dtype=value.dtype,
-                        )
-
-                    value = torch.cat([value, pads], axis=1)
 
                 value = value.chunk(
                     self.local_world_size,
@@ -125,7 +113,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
 
                 batch[key] = value
 
-            return batch
+        return batch
 
     def _prepare_sop_from_examples(
         self, examples: List[Dict[str, Any]]

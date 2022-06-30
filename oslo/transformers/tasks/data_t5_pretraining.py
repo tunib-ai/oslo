@@ -143,6 +143,11 @@ class DataCollatorForT5Pretraining:
             )
             self.pad_token_id = self.tokenizer.pad_token_id
 
+        if not isinstance(processor, ProcessorForT5Pretraining):
+            warnings.warn(
+                "DataCollatorForT5Pretraining is only suitable for ProcessorForT5Pretraining."
+            )
+
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
         # convert list to dict and tensorize input
@@ -195,16 +200,11 @@ class DataCollatorForT5Pretraining:
                     ) * self.local_world_size
                     difference = required_length - seq_length
 
-                    if key == "labels":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=-100, dtype=value.dtype
-                        )
-                    else:
-                        pads = torch.full(
-                            [batch_size, difference],
-                            fill_value=self.pad_token_id,
-                            dtype=value.dtype,
-                        )
+                    pads = torch.full(
+                        [batch_size, difference],
+                        fill_value=self.pad_token_id,
+                        dtype=value.dtype,
+                    )
 
                     value = torch.cat([value, pads], axis=1)
 
@@ -222,7 +222,7 @@ class DataCollatorForT5Pretraining:
                 (batch["input_ids"] != self.pad_token_id)
                 .clone()
                 .detach()
-                .to(torch.int64)
+                .to(torch.uint8)
             )
 
         return batch

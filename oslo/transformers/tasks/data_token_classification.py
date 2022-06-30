@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional, Union
 import logging
+import warnings
 import torch
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
@@ -20,7 +21,7 @@ class ProcessorForTokenClassification(BaseProcessor):
     def __init__(
         self,
         model_name_or_path: str,
-        max_length: Optional[int] = None,
+        max_length: int,
         dataset: Union[Dataset, DatasetDict] = None,
     ) -> None:
         super().__init__(model_name_or_path, max_length)
@@ -161,13 +162,13 @@ class DataCollatorForTokenClassification:
 
     def __init__(
         self,
-        tokenizer: ProcessorForTokenClassification,
+        processor: ProcessorForTokenClassification,
         padding: Union[bool, str, PaddingStrategy] = "longest",
         pad_to_multiple_of: Optional[int] = None,
         label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.tokenizer = tokenizer._tokenizer
+        self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
         self.padding = padding
@@ -177,39 +178,29 @@ class DataCollatorForTokenClassification:
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
 
-    def __call__(self, features):
-        label_name = "label" if "label" in features[0].keys() else "labels"
-        labels = (
-            [feature[label_name] for feature in features]
-            if label_name in features[0].keys()
-            else None
-        )
+        if not isinstance(processor, ProcessorForTokenClassification):
+            warnings.warn(
+                "DataCollatorForTokenClassification is suitable for ProcessorForTokenClassification."
+            )
 
         if self.tokenizer.pad_token is None:
             logger.warning(
                 "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
             )
 
-        if self.parallel_context is None:
-            batch = self.tokenizer.pad(
-                features,
-                padding=self.padding,
-                pad_to_multiple_of=self.pad_to_multiple_of,
-                # Conversion to tensors will fail if we have labels as they are not of the same length yet.
-                return_tensors="pt" if labels is None else None,
-            )
-        else:
-            batch = self.tokenizer.pad(
-                features,
-                padding=self.padding,
-                pad_to_multiple_of=self.local_world_size,
-                # Conversion to tensors will fail if we have labels as they are not of the same length yet.
-                return_tensors="pt" if labels is None else None,
-            )
+    def __call__(self, features):
+        label_name = "labels"
+        labels = [feature[label_name] for feature in features]
 
-        if labels is None:
-            return batch
+        batch = self.tokenizer.pad(
+            features,
+            padding=self.padding,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            # Conversion to tensors will fail if we have labels as they are not of the same length yet.
+            return_tensors="pt" if labels is None else None,
+        )
 
         sequence_length = torch.tensor(batch["input_ids"]).shape[1]
         padding_side = self.tokenizer.padding_side
@@ -226,7 +217,6 @@ class DataCollatorForTokenClassification:
 
         if self.parallel_context is None:
             batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
-            return batch
         else:
             for key, value in batch.items():
                 value = torch.tensor(value, dtype=torch.int64)
@@ -236,4 +226,4 @@ class DataCollatorForTokenClassification:
                     value = value.contiguous()
 
                 batch[key] = value
-            return batch
+        return batch

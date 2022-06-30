@@ -86,40 +86,28 @@ class DataCollatorForBartPretraining:
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
+
+        if not isinstance(processor, ProcessorForBartPretraining):
+            warnings.warn(
+                "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
+            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)
 
-        if self.parallel_context is None:
-            batch = self.tokenizer.pad(
-                examples,
-                return_tensors="pt",
-                pad_to_multiple_of=self.pad_to_multiple_of,
-            )
-            if self.pad_to_multiple_of:
-                batch_size, label_seq_length = batch["labels"].size()
-                if label_seq_length % self.pad_to_multiple_of != 0:
-                    label_required_length = (
-                        (label_seq_length // self.pad_to_multiple_of) + 1
-                    ) * self.pad_to_multiple_of
+        batch = self.tokenizer.pad(
+            examples,
+            return_tensors="pt",
+            pad_to_multiple_of=self.pad_to_multiple_of,
+        )
 
-                    difference = label_required_length - label_seq_length
-                    label_pads = torch.full(
-                        (batch_size, difference),
-                        fill_value=self.pad_token_id,
-                        dtype=batch["labels"].dtype,
-                    )
-                    batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
-        else:
-            batch = self.tokenizer.pad(
-                examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size
-            )
-
+        if self.pad_to_multiple_of is not None:
             batch_size, label_seq_length = batch["labels"].size()
-            if label_seq_length % self.local_world_size != 0:
+            if label_seq_length % self.pad_to_multiple_of != 0:
                 label_required_length = (
-                    (label_seq_length // self.local_world_size) + 1
-                ) * self.local_world_size
+                    (label_seq_length // self.pad_to_multiple_of) + 1
+                ) * self.pad_to_multiple_of
 
                 difference = label_required_length - label_seq_length
                 label_pads = torch.full(
@@ -129,6 +117,7 @@ class DataCollatorForBartPretraining:
                 )
                 batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
 
+        if self.parallel_context is not None:
             for key, value in batch.items():
                 value = value.chunk(
                     self.local_world_size,
