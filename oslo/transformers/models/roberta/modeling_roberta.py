@@ -348,8 +348,8 @@ class RobertaSelfAttention(nn.Module):
                 # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
                 attention_scores = attention_scores + attention_mask
 
-                # Normalize the attention scores to probabilities.
-                attention_probs = nn.functional.softmax(attention_scores, dim=-1)
+            # Normalize the attention scores to probabilities.
+            attention_probs = nn.functional.softmax(attention_scores, dim=-1)
 
         # This is actually dropping out entire tokens to attend to, which might
         # seem a bit unusual, but is taken from the original Transformer paper.
@@ -459,7 +459,7 @@ class RobertaIntermediate(nn.Module):
         self.dense = onn.Linear(
             config.hidden_size, config.intermediate_size, skip_bias_add=True
         )
-        self.intermediate_act_fn = onn.fused_bias_gelu
+        self.intermediate_act_fn = F.fused_bias_gelu
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
         hidden_states, bias = self.dense(hidden_states)
