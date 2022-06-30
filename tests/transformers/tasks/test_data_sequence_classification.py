@@ -23,7 +23,7 @@ class TestDataSequenceClassification(TestDataBinarization):
         model_name,
         parallel_context=None,
     ):
-        self.processor = ProcessorForSequenceClassification(model_name)
+        self.processor = ProcessorForSequenceClassification(model_name, max_length=128)
         self.data_collator = DataCollatorForSequenceClassification(self.processor)
         self.sp_data_collator = DataCollatorForSequenceClassification(
             self.processor, parallel_context=parallel_context
