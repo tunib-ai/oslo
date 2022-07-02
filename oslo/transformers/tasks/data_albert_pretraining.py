@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Optional
 import random
 import warnings
-import torch
+import logging
 from datasets.arrow_dataset import Batch
 
 from oslo.transformers.tasks.data_base import BaseProcessor
@@ -15,6 +15,8 @@ try:
     )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForAlbertPretraining(BaseProcessor):
@@ -69,6 +71,14 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if self.mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        if not isinstance(processor, ProcessorForAlbertPretraining):
+            warnings.warn(
+                "DataCollatorForAlbertPretraining is suitable for ProcessorForAlbertPretraining."
+            )
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
@@ -81,11 +91,6 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
-
-        if not isinstance(processor, ProcessorForAlbertPretraining):
-            warnings.warn(
-                "DataCollatorForAlbertPretraining is suitable for ProcessorForAlbertPretraining."
-            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_sop_from_examples(examples)

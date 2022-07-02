@@ -1,5 +1,4 @@
 import logging
-import torch
 import warnings
 from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
@@ -11,8 +10,8 @@ try:
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
-
 logger = logging.getLogger(__name__)
+logging.captureWarnings(True)
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -74,6 +73,16 @@ class DataCollatorForCausalLM:
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if not isinstance(processor, ProcessorForCausalLM):
+            warnings.warn(
+                "DataCollatorForCausalLM is suitable for ProcessorForCausalLM."
+            )
+
+        if self.tokenizer.pad_token is None:
+            warnings.warn(
+                "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying padding."
+            )
+
         self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.parallel_context = parallel_context
@@ -83,16 +92,6 @@ class DataCollatorForCausalLM:
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
-
-        if not isinstance(processor, ProcessorForCausalLM):
-            warnings.warn(
-                "DataCollatorForCausalLM is suitable for ProcessorForCausalLM."
-            )
-
-        if self.tokenizer.pad_token is None:
-            logger.warning(
-                "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying padding."
-            )
 
     def __call__(self, examples):
         examples = [example["input_ids"] for example in examples]

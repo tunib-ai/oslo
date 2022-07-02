@@ -1,20 +1,20 @@
-import torch
 import warnings
-from typing import Dict, List, Optional, Union, Any
+import logging
+from typing import Dict, List, Optional, Any
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
 try:
     from transformers import DataCollatorForLanguageModeling
-    from transformers.tokenization_utils import BatchEncoding
-    from transformers.data.data_collator import _torch_collate_batch
     from transformers import (
         RobertaTokenizer,
         RobertaTokenizerFast,
     )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForRobertaPretraining(BaseProcessor):
@@ -89,6 +89,14 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
+        if self.mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        if not isinstance(processor, ProcessorForRobertaPretraining):
+            warnings.warn(
+                "DataCollatorForRobertaPretraining is suitable for ProcessorForRobertaPretraining."
+            )
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
@@ -100,12 +108,7 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
             )
             self.pad_to_multiple_of = self.local_world_size
 
-        if not isinstance(processor, ProcessorForRobertaPretraining):
-            warnings.warn(
-                "DataCollatorForRobertaPretraining is suitable for ProcessorForRobertaPretraining."
-            )
-
-    def __call__(self, examples: List[Union[Any, Dict[str, Any]]]) -> Dict[str, Any]:
+    def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = self.tokenizer.pad(
             examples,
             return_tensors="pt",

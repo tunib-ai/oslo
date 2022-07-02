@@ -13,8 +13,8 @@ try:
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
-
 logger = logging.getLogger(__name__)
+logging.captureWarnings(True)
 
 
 class ProcessorForTokenClassification(BaseProcessor):
@@ -168,6 +168,16 @@ class DataCollatorForTokenClassification:
         label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if not isinstance(processor, ProcessorForTokenClassification):
+            warnings.warn(
+                "DataCollatorForTokenClassification is suitable for ProcessorForTokenClassification."
+            )
+
+        if self.tokenizer.pad_token is None:
+            warnings.warn(
+                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
+            )
+
         self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
@@ -179,16 +189,6 @@ class DataCollatorForTokenClassification:
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
-
-        if not isinstance(processor, ProcessorForTokenClassification):
-            warnings.warn(
-                "DataCollatorForTokenClassification is suitable for ProcessorForTokenClassification."
-            )
-
-        if self.tokenizer.pad_token is None:
-            logger.warning(
-                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
-            )
 
     def __call__(self, features):
         label_name = "labels"

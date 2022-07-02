@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import random
 import warnings
+import logging
 import torch
 from datasets.arrow_dataset import Batch
 
@@ -15,6 +16,8 @@ try:
     )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForBertPretraining(BaseProcessor):
@@ -69,6 +72,14 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if self.mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        if not isinstance(processor, ProcessorForBertPretraining):
+            warnings.warn(
+                "DataCollatorForBertPretraining is suitable for ProcessorForBertPretraining."
+            )
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
@@ -81,11 +92,6 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
-
-        if not isinstance(processor, ProcessorForBertPretraining):
-            warnings.warn(
-                "DataCollatorForBertPretraining is suitable for ProcessorForBertPretraining."
-            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_wwm_and_sop_from_examples(examples)

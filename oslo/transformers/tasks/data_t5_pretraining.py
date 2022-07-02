@@ -1,4 +1,5 @@
 import warnings
+import logging
 from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
@@ -15,6 +16,8 @@ try:
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
+logging.captureWarnings(True)
+
 
 class ProcessorForT5Pretraining(BaseProcessor):
     def __init__(
@@ -25,6 +28,8 @@ class ProcessorForT5Pretraining(BaseProcessor):
         mean_noise_span_length: float = 3.0,
     ) -> None:
         super().__init__(model_name_or_path, max_length)
+        if self.mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
 
         if not isinstance(self._tokenizer, (T5Tokenizer, T5TokenizerFast)):
             warnings.warn(
@@ -130,6 +135,11 @@ class DataCollatorForT5Pretraining:
         processor: ProcessorForT5Pretraining,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if not isinstance(processor, ProcessorForT5Pretraining):
+            warnings.warn(
+                "DataCollatorForT5Pretraining is only suitable for ProcessorForT5Pretraining."
+            )
+
         self.tokenizer = processor._tokenizer
         self.noise_density = processor.mlm_probability
         self.mean_noise_span_length = processor.mean_noise_span_length
@@ -142,11 +152,6 @@ class DataCollatorForT5Pretraining:
                 ParallelMode.SEQUENCE
             )
             self.pad_token_id = self.tokenizer.pad_token_id
-
-        if not isinstance(processor, ProcessorForT5Pretraining):
-            warnings.warn(
-                "DataCollatorForT5Pretraining is only suitable for ProcessorForT5Pretraining."
-            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, torch.tensor]:
 
