@@ -77,13 +77,12 @@ class DataCollatorForBartPretraining:
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        if self.mlm_probability >= 1.0:
+        if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
-        if not isinstance(processor, ProcessorForBartPretraining):
-            warnings.warn(
-                "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
-            )
+        assert isinstance(
+            processor, ProcessorForBartPretraining
+        ), "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
@@ -98,6 +97,11 @@ class DataCollatorForBartPretraining:
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
+
+        self.get_start_indices = {
+            max_idx: np.random.choice(max_idx, size=(max_idx,), replace=False).tolist()
+            for max_idx in range(processor._chunk_size, 0, -1)
+        }
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)
@@ -183,22 +187,24 @@ class DataCollatorForBartPretraining:
 
             for noise_span_length in noise_span_lengths:
                 max_idx = len(temp_ids) - noise_span_length + 1
-                start_idx = np.random.randint(0, max_idx)
-                num_mask_check = 0
-                while self.mask_token_id in temp_ids[
-                    start_idx : start_idx + noise_span_length
-                ] and num_mask_check < int(1.1 * length):
-                    start_idx = np.random.randint(0, max_idx)
-                    num_mask_check += 1
-
-                if num_mask_check == int(1.1 * length):
-                    continue
-
-                temp_ids = (
-                    temp_ids[:start_idx]
-                    + [self.mask_token_id]
-                    + temp_ids[start_idx + noise_span_length :]
-                )
+                start_indice = self.get_start_indices[max_idx]
+                for start_idx in start_indice:
+                    if (
+                        self.mask_token_id
+                        in temp_ids[start_idx : start_idx + noise_span_length]
+                    ):
+                        continue
+                    else:
+                        temp_ids = (
+                            temp_ids[:start_idx]
+                            + [self.mask_token_id]
+                            + temp_ids[start_idx + noise_span_length :]
+                        )
+                        # Rotate
+                        self.get_start_indices[max_idx] = [
+                            start_indice[-1]
+                        ] + start_indice[:-1]
+                        break
 
         input_ids = temp_ids
 
