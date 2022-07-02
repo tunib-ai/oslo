@@ -13,64 +13,62 @@ from oslo.torch.nn.parallel.expert_parallel.expert_parallel import ExpertParalle
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.expert_parallel.mapping import Front, Behind
 
+from init_utils import TestFFNBlock, fix_seed, sequence_dataloader
+
 torch.set_printoptions(threshold=10_000)
+
+total_samples = 2
 
 batch_size = 2
 sent_len = 4
 
-in_features = 2
+hidden_dim = 2
+in_features = hidden_dim
 out_features = 4
-n_layers = 2
+n_layers = 1
 
 world_size = 2
-num_experts = 2
+num_experts = world_size
 top_k = 1
 
 use_residual = False
 
 
-# Class for Feed Forward Network
-class TestFFNBlock(nn.Module):
-    def __init__(self, in_features, out_features):
+class TestMoE(torch.nn.Module):
+    def __init__(self, ffns):
         super().__init__()
 
-        self.fc1 = nn.Linear(in_features, out_features)
-        self.act = nn.GELU()
-        self.drop_out = nn.Dropout()
-        self.fc2 = nn.Linear(out_features, in_features)
+        self.ffns = nn.ModuleList(ffns)
 
-    def forward(self, inp):
-        front_out = self.fc1(inp)
-        inter = self.drop_out(self.act(front_out))
-        behind_out = self.fc2(inter)
-
-        return behind_out
-
-
-# Class for Entire Model
-class TestModel(nn.Module):
-    def __init__(self, in_features, out_features, n_layers):
-        super().__init__()
-
-        self.n_layers = n_layers
-        self.in_features = in_features
-        self.out_features = out_features
-
-        self.ffns = nn.ModuleList(
-            [TestFFNBlock(in_features, out_features) for i in range(n_layers)]
-        )
-
-    def forward(self, inp):
-        out = inp
-        for cur_block in self.ffns:
-            out = cur_block(out)
+    def forward(self, x):
+        out = x
+        for cur_layer in self.ffns:
+            out = cur_layer(out)
         return out
+
+
+class SimpleMoEModel(torch.nn.Module):
+    def __init__(self, linear, moe):
+        super().__init__()
+
+        self.linear = linear
+        self.moe = moe
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+
+    def forward(self, x, y):
+        linear_out = self.linear(x)
+        moe_out = self.moe(linear_out)
+
+        resid_out = x + moe_out
+        sent_emb = resid_out.mean(1)
+
+        return self.cross_entropy_loss(sent_emb, y)
 
 
 # Class for Mapping information of Entire Model to expert parallelize
 class ExpertParallelMappingForTest(object):
     __MAPPING__ = {
-        "TestModel": [
+        "TestMoE": [
             Front("fc1", enc_name="ffns", layer="ffns"),
             Behind("fc2", enc_name="ffns", layer="ffns"),
         ]
@@ -116,43 +114,36 @@ def run_test(rank, port):
         tensor_parallel_size=1,
         expert_parallel_size=world_size,
     )
+    fix_seed(rank)
 
-    # 3. Create Model to expert-parallelize
-    model_ep = TestModel(in_features, out_features, n_layers)
-    print(f"Rank # {rank} : {model_ep}")
-
-    # 4. Create Mapping Information used for expert-parallelization
+    linear = torch.nn.Linear(in_features, in_features)
+    # ffn_linear1 = torch.nn.Linear(in_features, out_features).to(rank)
+    # ffn_linear2 = torch.nn.Linear(out_features, in_features).to(rank)
+    # print(f'ffn_linear1.weight : {ffn_linear1.weight}')
+    # print(f'ffn_linear2.weight : {ffn_linear2.weight}')
+    ffns = [TestFFNBlock(in_features, out_features) for i in range(n_layers)]
+    # for cur in ffns:
+    #    cur.fc1 = ffn_linear1
+    #    cur.fc2 = ffn_linear2
+    moe = TestMoE(ffns)
     mapping = ExpertParallelMappingForTest()
-
-    # 5. Wrap Model
-    wrapper_ep = ExpertParallel(
-        model_ep,
+    moe = ExpertParallel(
+        moe,
         parallel_context,
         num_enc_experts=num_experts,
-        num_dec_experts=num_experts,
-        top_k=1,
+        top_k=top_k,
         use_kernel_optim=False,
         use_residual=use_residual,
         mapping=mapping,
     )
-    # wrapper_ep.to(wrapper_ep.device)
-    # wrapper_ep._sync_ep_model_param()
 
-    # 6. Print the result of wrapping
-    print(f"Worker #{rank} : {wrapper_ep.device}")
-    print(wrapper_ep)
-    print("=" * 89)
+    model_ep = SimpleMoEModel(linear, moe).to(rank)
 
-    for param_name, module in wrapper_ep.named_parameters():
-        if wrapper_ep.expert_parallel_mapping.is_front_parallel(
-            wrapper_ep.model, param_name
-        ) or wrapper_ep.expert_parallel_mapping.is_behind_parallel(
-            wrapper_ep.model, param_name
-        ):
-            print(
-                f"Worker #{rank} - param_name : {param_name}, param_size : {module.size()}"
-            )
-            print(f"Worker #{rank} - param  : {module}")
+    for param_name, module in model_ep.named_parameters():
+        print(
+            f"Worker #{rank} - param_name : {param_name}, param_size : {module.size()}"
+        )
+        print(f"Worker #{rank} - param  : {module}")
 
     return
 

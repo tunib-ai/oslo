@@ -13,65 +13,66 @@ from oslo.torch.nn.parallel.expert_parallel.expert_parallel import ExpertParalle
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.expert_parallel.mapping import Front, Behind
 
+from fwd_utils import TestFFNBlock, fix_seed, sequence_dataloader
+
 torch.set_printoptions(threshold=10_000)
+
+total_samples = 50
 
 batch_size = 2
 sent_len = 4
 
-in_features = 2
+hidden_dim = 2
+in_features = hidden_dim
 out_features = 4
-n_layers = 2
+n_layers = 1
 
 world_size = 2
 num_experts = world_size
 top_k = 1
 
-use_residual = False
+use_residual = True
 
 
-# Class for Feed Forward Network
-class TestFFNBlock(nn.Module):
-    def __init__(self, in_features, out_features):
+class TestMoE(torch.nn.Module):
+    def __init__(self, ffns):
         super().__init__()
 
-        self.fc1 = nn.Linear(in_features, out_features)
-        self.act = nn.GELU()
-        self.drop_out = nn.Dropout()
-        self.fc2 = nn.Linear(out_features, in_features)
+        self.ffns = torch.nn.ModuleList(ffns)
 
-    def forward(self, inp):
-        front_out = self.fc1(inp)
-        # inter = self.drop_out(self.act(front_out))
-        inter = self.act(front_out)
-        behind_out = self.fc2(inter)
-        behind_out = self.drop_out(behind_out)
-
-        return behind_out
-
-
-# Class for Entire Model
-class TestModel(nn.Module):
-    def __init__(self, in_features, out_features, n_layers):
-        super().__init__()
-
-        self.n_layers = n_layers
-        self.in_features = in_features
-        self.out_features = out_features
-
-        self.ffns = nn.ModuleList(
-            [TestFFNBlock(in_features, out_features) for i in range(n_layers)]
-        )
-
-    def forward(self, inp):
-        out = inp
-        for cur_block in self.ffns:
-            out = cur_block(out)
+    def forward(self, x):
+        out = x
+        for cur_layer in self.ffns:
+            out = cur_layer(out)
         return out
+
+
+class SimpleMoEModel(torch.nn.Module):
+    def __init__(self, linear, moe):
+        super().__init__()
+
+        self.linear = linear
+        self.moe = moe
+        self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
+
+    def forward(self, x, y):
+        linear_out = self.linear(x)
+        moe_out = self.moe(linear_out)
+
+        resid_out = x + moe_out
+        sent_emb = resid_out.mean(1)
+
+        return self.cross_entropy_loss(sent_emb, y)
 
 
 # Class for Mapping information of Entire Model to expert parallelize
 class ExpertParallelMappingForTest(object):
-    __MAPPING__ = {"TestModel": [Front("fc1"), Behind("fc2")]}
+    __MAPPING__ = {
+        "TestMoE": [
+            Front("fc1", enc_name="ffns", layer="ffns"),
+            Behind("fc2", enc_name="ffns", layer="ffns"),
+        ]
+    }
 
     def __init__(self):
         cache_mapping = {}
@@ -113,36 +114,43 @@ def run_test(rank, port):
         tensor_parallel_size=1,
         expert_parallel_size=world_size,
     )
+    fix_seed(rank)
 
-    # 3. Create Model to expert-parallelize
-    model_ep = TestModel(in_features, out_features, n_layers)
+    linear = torch.nn.Linear(in_features, in_features)
 
-    # 4. Create Mapping Information used for expert-parallelization
     mapping = ExpertParallelMappingForTest()
-
-    # 5. Wrap Model
-    wrapper_ep = ExpertParallel(
-        model_ep,
+    ffns = [TestFFNBlock(in_features, out_features) for i in range(n_layers)]
+    moe = TestMoE(ffns)
+    moe = ExpertParallel(
+        moe,
         parallel_context,
-        num_experts=num_experts,
-        top_k=1,
+        num_enc_experts=num_experts,
+        top_k=top_k,
         use_kernel_optim=False,
         use_residual=use_residual,
         mapping=mapping,
+        use_rts=False,
     )
 
+    model_ep = SimpleMoEModel(linear, moe).to(rank)
+
     # 6. Forward Propagation
-    token_inp = torch.randn(sent_len, batch_size, in_features).to(f"cuda:{rank}")
-    output = wrapper_ep(token_inp)
-    print(f"Worker #{rank}'s Output : {output}")
+    optimizer = torch.optim.AdamW(params=model_ep.parameters())
 
-    pred = output.transpose(0, 1)[:, 0].squeeze()
-    print(f"pred : {pred}")
+    data_loader = sequence_dataloader(
+        batch_size,
+        total_samples,
+        hidden_dim=hidden_dim,
+        device=rank,
+        seq_len=sent_len,
+        dtype=torch.float32,
+    )
 
-    crit = nn.CrossEntropyLoss()
-    target = torch.FloatTensor([0, 1, 0, 1]).to(f"cuda:{rank}").view(batch_size, -1)
-    loss = crit(pred, target)
-    loss.backward()
+    for n, batch in enumerate(data_loader):
+        loss = model_ep(batch[0], batch[1])
+        print(f"Worker # {rank} Instance #{n} loss : {loss}")
+        loss.backward()
+        optimizer.step()
 
     return
 

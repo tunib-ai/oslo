@@ -20,18 +20,9 @@ from oslo.torch.nn.parallel.expert_parallel.mapping import ExpertParallelMapping
 
 from oslo.torch.nn.parallel.expert_parallel.experts import Experts
 from oslo.torch.nn.parallel.expert_parallel.layers import (
-    Top1Router,
-    Top2Router,
-    FP32LinearGate,
-    TopKGate,
-)
-from oslo.torch.nn.parallel.expert_parallel.layers import (
-    ExpertParallelFrontBlock,
     ExpertParallelFrontBlockDS,
-)
-from oslo.torch.nn.parallel.expert_parallel.layers import (
-    ExpertParallelBehindBlock,
     ExpertParallelBehindBlockDS,
+    TopKGate,
 )
 
 from oslo.torch.nn.parallel.expert_parallel._ops import OSLO_EP_KERNEL_FLAG
@@ -86,8 +77,8 @@ class ExpertParallel(ParallelWrapper):
         num_enc_experts=None,
         num_dec_experts=None,
         top_k: int = 2,
-        capacity_factor_train: float = 1.25,
-        capacity_factor_eval: float = 2.0,
+        capacity_factor_train: float = 1.0,
+        capacity_factor_eval: float = 1.0,
         min_capacity: int = 4,
         select_policy: str = "first",
         noisy_policy: str = None,
@@ -114,7 +105,6 @@ class ExpertParallel(ParallelWrapper):
         if noisy_policy is None:
             noisy_policy = "Jitter" if use_residual else "RSample"
 
-        self.router_cls = Top2Router
         self.top_k = top_k
         self.capacity_factor_train = capacity_factor_train
         self.capacity_factor_eval = capacity_factor_eval
@@ -122,9 +112,6 @@ class ExpertParallel(ParallelWrapper):
         self.noisy_policy = noisy_policy
         self.use_rts = use_rts
         self.drop_tokens = drop_tokens
-
-        if top_k == 1:
-            self.router_cls = Top1Router
 
         if is_huggingface_model(model):
             mapping = _ExpertParallelMappingForHuggingFace().get_mapping(model)
@@ -157,7 +144,7 @@ class ExpertParallel(ParallelWrapper):
     def _parallelize(self):
         self._parallelize_module()
         self.to(self.device)
-        self._sync_ep_model_param()
+        # self._sync_ep_model_param()
 
     def _parallelize_module(self):
         to_parallelize = [
@@ -172,7 +159,6 @@ class ExpertParallel(ParallelWrapper):
                         self.model, module_name
                     ),
                 )
-                # module.__class__ = ExpertParallelFrontBlock
                 module.__class__ = ExpertParallelFrontBlockDS
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
@@ -184,7 +170,6 @@ class ExpertParallel(ParallelWrapper):
                         self.model, module_name
                     ),
                 )
-                # module.__class__ = ExpertParallelBehindBlock
                 module.__class__ = ExpertParallelBehindBlockDS
 
         return
