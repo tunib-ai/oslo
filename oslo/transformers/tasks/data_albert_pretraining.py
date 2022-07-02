@@ -74,10 +74,9 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
-        if not isinstance(processor, ProcessorForAlbertPretraining):
-            warnings.warn(
-                "DataCollatorForAlbertPretraining is suitable for ProcessorForAlbertPretraining."
-            )
+        assert isinstance(
+            processor, ProcessorForAlbertPretraining
+        ), "DataCollatorForAlbertPretraining is only suitable for ProcessorForAlbertPretraining."
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability

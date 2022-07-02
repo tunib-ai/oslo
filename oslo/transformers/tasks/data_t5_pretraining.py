@@ -135,10 +135,9 @@ class DataCollatorForT5Pretraining:
         processor: ProcessorForT5Pretraining,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        if not isinstance(processor, ProcessorForT5Pretraining):
-            warnings.warn(
-                "DataCollatorForT5Pretraining is only suitable for ProcessorForT5Pretraining."
-            )
+        assert isinstance(
+            processor, ProcessorForT5Pretraining
+        ), "DataCollatorForT5Pretraining is only suitable for ProcessorForT5Pretraining."
 
         self.tokenizer = processor._tokenizer
         self.noise_density = processor.mlm_probability

@@ -75,10 +75,9 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
-        if not isinstance(processor, ProcessorForBertPretraining):
-            warnings.warn(
-                "DataCollatorForBertPretraining is suitable for ProcessorForBertPretraining."
-            )
+        assert isinstance(
+            processor, ProcessorForBertPretraining
+        ), "DataCollatorForBertPretraining is only suitable for ProcessorForBertPretraining."
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability

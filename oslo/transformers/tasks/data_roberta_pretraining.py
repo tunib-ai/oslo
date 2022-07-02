@@ -23,7 +23,7 @@ class ProcessorForRobertaPretraining(BaseProcessor):
 
         if not isinstance(self._tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
             warnings.warn(
-                "ProcessorForRobertaPretraining is only suitable for RobertaTokenizer-like tokenizers."
+                "ProcessorForRobertaPretraining is suitable for RobertaTokenizer-like tokenizers."
             )
 
         self._chunk_size = max_length - 2
