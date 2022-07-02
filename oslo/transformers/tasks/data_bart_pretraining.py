@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from typing import Any, Dict, List, Optional
 import warnings
+import logging
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -14,6 +15,8 @@ try:
     )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForBartPretraining(BaseProcessor):
@@ -74,6 +77,14 @@ class DataCollatorForBartPretraining:
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if self.mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        if not isinstance(processor, ProcessorForBartPretraining):
+            warnings.warn(
+                "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
+            )
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.possion_lambda = possion_lambda
@@ -87,11 +98,6 @@ class DataCollatorForBartPretraining:
                 ParallelMode.SEQUENCE
             )
             self.pad_to_multiple_of = self.local_world_size
-
-        if not isinstance(processor, ProcessorForBartPretraining):
-            warnings.warn(
-                "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
-            )
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)
@@ -167,6 +173,7 @@ class DataCollatorForBartPretraining:
 
             difference = sum(segment_lengths) - num_noise_tokens
             segment_lengths[-1] = segment_lengths[-1] - difference
+            segment_lengths.sort(reverse=True)
             return segment_lengths
 
         temp_ids = input_ids
@@ -176,12 +183,17 @@ class DataCollatorForBartPretraining:
 
             for noise_span_length in noise_span_lengths:
                 max_idx = len(temp_ids) - noise_span_length + 1
-                start_idx = np.random.choice(max_idx)
-                while (
-                    self.mask_token_id
-                    in temp_ids[start_idx : start_idx + noise_span_length]
-                ):
-                    start_idx = np.random.choice(max_idx)
+                start_idx = np.random.randint(0, max_idx)
+                num_mask_check = 0
+                while self.mask_token_id in temp_ids[
+                    start_idx : start_idx + noise_span_length
+                ] and num_mask_check < int(1.1 * length):
+                    start_idx = np.random.randint(0, max_idx)
+                    num_mask_check += 1
+
+                if num_mask_check == int(1.1 * length):
+                    continue
+
                 temp_ids = (
                     temp_ids[:start_idx]
                     + [self.mask_token_id]
