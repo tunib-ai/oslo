@@ -71,7 +71,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        if self.mlm_probability >= 1.0:
+        if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
         if not isinstance(processor, ProcessorForAlbertPretraining):
