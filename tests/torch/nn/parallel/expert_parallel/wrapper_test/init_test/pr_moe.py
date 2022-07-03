@@ -16,7 +16,7 @@ import deepspeed
 from deepspeed.utils import groups
 from deepspeed.moe.layer import MoE
 
-from fwd_utils import TestFFNBlock, fix_seed, sequence_dataloader
+from init_utils import TestFFNBlock, fix_seed, sequence_dataloader
 
 torch.set_printoptions(threshold=10_000)
 
@@ -38,19 +38,21 @@ ep_size = world_size
 use_residual = True
 
 
-class SimpleMoEModel(torch.nn.Module):
-    def __init__(self, linear, moe):
+class SimplePRMoEModel(torch.nn.Module):
+    def __init__(self, linear, moe1, moe2):
         super().__init__()
 
         self.linear = linear
-        self.moe = moe
+        self.moe1 = moe1
+        self.moe2 = moe2
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss()
 
     def forward(self, x, y):
         linear_out = self.linear(x)
-        moe_out, _, _ = self.moe(linear_out)
+        moe_out, _, _ = self.moe1(linear_out)
+        moe_out, _, _ = self.moe2(moe_out)
 
-        resid_out = x + moe_out
+        resid_out = linear_out + moe_out
         sent_emb = resid_out.mean(1)
 
         return self.cross_entropy_loss(sent_emb, y)
@@ -69,34 +71,37 @@ def run_test(rank, port):
     fix_seed(rank)
 
     linear = torch.nn.Linear(in_features, in_features)
-    ffn = TestFFNBlock(in_features, out_features)
-    moe = MoE(
+    ffn1 = TestFFNBlock(in_features, out_features)
+    ffn2 = TestFFNBlock(in_features, out_features)
+    coef1 = torch.nn.Linear(in_features, in_features)
+    coef2 = torch.nn.Linear(in_features, in_features)
+    moe1 = MoE(
         in_features,
-        expert=ffn,
+        expert=ffn1,
         ep_size=ep_size,
         use_residual=use_residual,
         num_experts=num_experts,
         k=top_k,
         use_rts=False,
     )
-    model = SimpleMoEModel(linear, moe).to(rank)
-
-    optimizer = torch.optim.AdamW(params=model.parameters())
-
-    data_loader = sequence_dataloader(
-        batch_size,
-        total_samples,
-        hidden_dim=hidden_dim,
-        device=rank,
-        seq_len=sent_len,
-        dtype=torch.float32,
+    moe2 = MoE(
+        in_features,
+        expert=ffn2,
+        ep_size=ep_size,
+        use_residual=use_residual,
+        num_experts=num_experts * 2,
+        k=top_k,
+        use_rts=False,
     )
+    moe1.coefficient = coef1
+    moe2.coefficient = coef2
+    model = SimplePRMoEModel(linear, moe1, moe2).to(rank)
 
-    for n, batch in enumerate(data_loader):
-        loss = model(batch[0], batch[1])
-        print(f"Worker # {rank} Instance #{n} loss : {loss}")
-        loss.backward()
-        optimizer.step()
+    for param_name, module in model.named_parameters():
+        print(
+            f"Worker #{rank} - param_name : {param_name}, param_size : {module.size()}"
+        )
+        print(f"Worker #{rank} - param  : {module}")
 
 
 def test_expert_parallel_block():
