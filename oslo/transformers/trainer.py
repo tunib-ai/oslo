@@ -20,8 +20,6 @@ from packaging import version
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
-from torch.distributed.optim import DistributedOptimizer
-from torch.distributed import rpc
 from transformers import PreTrainedTokenizerBase, PreTrainedModel, PretrainedConfig, __version__
 
 
@@ -155,7 +153,7 @@ class Trainer:
             self.is_model_parallel = False
 
         self.parallel_context = None
-        self.model_wrapper = None
+        self.model_wrappers = []
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
         # 1. MP - since we are trying to fit a much bigger than 1 gpu model
@@ -254,7 +252,7 @@ class Trainer:
                 self.use_amp = True
                 self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
                 self.do_grad_scaling = True
-                if args.parallel_mode is not None:
+                if self.parallel_context is not None:
                     self.scaler = ShardedGradScaler(self.parallel_context)
                 else:
                     self.scaler = torch.cuda.amp.GradScaler()
@@ -355,8 +353,9 @@ class Trainer:
 
         if args.oslo_user_config:
             self.parallel_context, self.model_wrapper = init_oslo_features(self.args.oslo_config)
+
         delay_optimizer_creation = (
-            self.args.oslo_config.data_parallel_size > 1 and self.model_wrapper != DistributedDataParallel)
+            self.args.oslo_config.data_parallel_size > 1 and DistributedDataParallel not in self.model_wrapper)
         if not delay_optimizer_creation:
             self.create_optimizer()
             self.create_scheduler(num_training_steps=max_steps,
@@ -1871,7 +1870,7 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _wrap_model(self, model_wrapper, training=True):
+    def _wrap_model(self, model_wrappers: List, training: bool=True):
         model = self.model
         if not training:
             return self.model
@@ -1881,7 +1880,8 @@ class Trainer:
 
         # Distributed training (should be after apex fp16 initialization)
         if self.parallel_context is not None:
-            model = model_wrapper(self.model, self.parallel_context)
+            for wrapper in model_wrappers:
+                model = wrapper(self.model, self.parallel_context)
             allocate_params(model, self.parallel_context)
         return model
 

@@ -3,21 +3,21 @@ import json
 import logging
 from copy import deepcopy
 import torch
+from typing import List
 
-from oslo.torch.distributed import ParallelContext
-from oslo.torch.nn.parallel.pipeline_parallel.pipeline_parallel import (
-    PipelineParallel,)
-from oslo.torch.nn.parallel.data_parallel.distributed_data_parallel import (
-    DistributedDataParallel,)
-from oslo.torch.nn.parallel.data_parallel.fully_sharded_data_parallel import (
-    FullyShardedDataParallel,)
-from oslo.torch.nn.parallel.data_parallel.sharded_data_parallel import (
-    ShardedDataParallel,)
+from oslo.torch.distributed import ParallelContext, ParallelMode
+
 from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
     SequenceDataParallel,)
 
-from oslo.torch.nn.parallel.tensor_parallel.tensor_parallel import (
-    TensorParallel,)
+
+from oslo.torch.nn.parallel import (
+    PipelineParallel,
+    TensorParallel,
+    ShardedDataParallel,
+    FullyShardedDataParallel,
+    DistributedDataParallel,
+)
 
 
 def _type(_type):
@@ -31,6 +31,7 @@ def _type(_type):
 
 SUPPORTED_FEATURES = {
     "data_parallelism": {
+        "dp_stage": _type(str),
         "distributed_data_parallel": _type(bool),
         "data_parallel_size": _type(int),
         "sequence_parallel_size": _type(int),
@@ -55,14 +56,12 @@ SUPPORTED_FEATURES = {
     "backend": _type(str),
 }
 
-TENSOR_PARALLEL_MODE_TYPES = [
-    "tensor",
-    "tensor_1d",
-    "tensor_2d",
-    "tensor_2p5d",
-    "tensor_3d",
-]
-
+TENSOR_PARALLEL_MODE_TYPES = {
+    "1d": ParallelMode.TENSOR_1D,
+    "2d": ParallelMode.TENSOR_2D,
+    "2.5d": ParallelMode.TENSOR_2P5D,
+    "3d": ParallelMode.TENSOR_3D,
+}
 
 def _config_check(arg, user_config):
     assert len(user_config) > 0, f"There are no arguments in dictionary."
@@ -93,9 +92,9 @@ def _config_check(arg, user_config):
 def check_user_config(user_config):
     _config_check(SUPPORTED_FEATURES, user_config)
     assert user_config['model_parallelism'][
-        'tensor_parallel_mode'] in TENSOR_PARALLEL_MODE_TYPES, (
+        'tensor_parallel_mode'] in TENSOR_PARALLEL_MODE_TYPES.keys(), (
             f"{user_config['model_parallelism']['tensor_parallel_mode']} is not valid type of tensor_parallel_mode. "
-            f"choose one of {', '.join(TENSOR_PARALLEL_MODE_TYPES)}")
+            f"choose one of {', '.join(TENSOR_PARALLEL_MODE_TYPES.keys())}")
 
 
 class OsloTrainerConfig:
@@ -106,6 +105,7 @@ class OsloTrainerConfig:
     json file or dictionary form should be like the following:
         {
             "data_parallelism": {
+                "stage": _type(str),
                 "distributed_data_parallel": _type(bool),
                 "data_parallel_size": _type(int),
                 "sequence_parallel_size": _type(int),
@@ -158,6 +158,13 @@ class OsloTrainerConfig:
                 "expecting either a path to a oslo config file or a dict")
 
         check_user_config(config)
+
+        # check user config tensor_parallel_mode
+        user_tp_mode = config['model_parallelism']['tensor_parallel_mode']
+        config['model_parallelism'][
+            'tensor_parallel_mode'] = TENSOR_PARALLEL_MODE_TYPES[user_tp_mode]
+        # check user config data_parallel dp_stage
+
         self._set_config(config)
         self.config = config
 
@@ -192,7 +199,7 @@ class OsloTrainerConfig:
             args.train_batch_size = train_batch_size
 
 
-def init_oslo_features(oslo_init_config: OsloTrainerConfig):
+def init_oslo_features(oslo_init_config: OsloTrainerConfig) -> (ParallelContext, List):
     """
     Init OSLO features with json or dict configuration user passed.
     ParallelContext or other effective features should be defined on this function
@@ -220,15 +227,18 @@ def init_oslo_features(oslo_init_config: OsloTrainerConfig):
         seed=cfg.parallel_seed,
     )
 
-    # TODO set ModuleWrapper (e.g. TensorParallel, PipelineParallel)
-    model_wrapper = None
-    if cfg.data_parallel_size > 1:
-        model_wrapper = FullyShardedDataParallel
-    if cfg.sequence_parallel_size > 1:
-        model_wrapper = SequenceDataParallel
+    if cfg.tensor_parallel_size > 1 and cfg.sequence_parallel_size > 1:
+        raise AttributeError(
+            "TensorParallel and SequenceParallel can't not be used at the same time. Modify oslo config to avoid wrong parallel setting"
+        )
+    model_wrapper = []
     if cfg.tensor_parallel_size > 1:
-        model_wrapper = TensorParallel
+        model_wrapper.append(TensorParallel)
+    if cfg.sequence_parallel_size > 1:
+        model_wrapper.append(SequenceDataParallel)
     if cfg.pipeline_parallel_size > 1:
-        model_wrapper = PipelineParallel
+        model_wrapper.append(PipelineParallel)
+    if cfg.data_parallel_size > 1:
+        model_wrapper.append(FullyShardedDataParallel)  # TODO set zero stage
 
     return parallel_context, model_wrapper
