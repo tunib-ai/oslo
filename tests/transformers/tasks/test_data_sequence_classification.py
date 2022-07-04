@@ -11,11 +11,6 @@ try:
 except ImportError:
     print("You have to install 'datasets' to test data_sequence_classification.py")
 
-# export PYTHONPATH="${PYTHONPATH}:/Users/gimmaru/oslo"
-
-
-# parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-
 
 class TestDataSequenceClassification(TestDataBinarization):
     def __init__(
@@ -23,7 +18,7 @@ class TestDataSequenceClassification(TestDataBinarization):
         model_name,
         parallel_context=None,
     ):
-        self.processor = ProcessorForSequenceClassification(model_name)
+        self.processor = ProcessorForSequenceClassification(model_name, max_length=128)
         self.data_collator = DataCollatorForSequenceClassification(self.processor)
         self.sp_data_collator = DataCollatorForSequenceClassification(
             self.processor, parallel_context=parallel_context

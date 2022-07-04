@@ -1,5 +1,5 @@
 import logging
-import torch
+import warnings
 from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
@@ -10,8 +10,8 @@ try:
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
-
 logger = logging.getLogger(__name__)
+logging.captureWarnings(True)
 
 
 class ProcessorForCausalLM(BaseProcessor):
@@ -69,11 +69,21 @@ class DataCollatorForCausalLM:
 
     def __init__(
         self,
-        tokenizer: ProcessorForCausalLM,
+        processor: ProcessorForCausalLM,
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.tokenizer = tokenizer._tokenizer
+        if not isinstance(processor, ProcessorForCausalLM):
+            warnings.warn(
+                "DataCollatorForCausalLM is suitable for ProcessorForCausalLM."
+            )
+
+        if self.tokenizer.pad_token is None:
+            warnings.warn(
+                "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying padding."
+            )
+
+        self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.parallel_context = parallel_context
         if parallel_context is not None:
@@ -81,48 +91,23 @@ class DataCollatorForCausalLM:
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
 
     def __call__(self, examples):
-        if self.parallel_context is None:
-            if self.pad_to_multiple_of is None:
-                examples = [example["input_ids"] for example in examples]
-                batch = {
-                    "input_ids": _torch_collate_batch(
-                        examples,
-                        tokenizer=self.tokenizer,
-                        pad_to_multiple_of=self.pad_to_multiple_of,
-                    )
-                }
-                batch["labels"] = batch["input_ids"].clone()
-                return batch
-            else:
-                if self.tokenizer.pad_token is None:
-                    logger.warning(
-                        "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying Padding."
-                    )
-
-                batch = self.tokenizer.pad(
-                    examples,
-                    return_tensors="pt",
-                    pad_to_multiple_of=self.pad_to_multiple_of,
-                )
-                labels = batch["input_ids"].clone()
-                labels[labels == self.tokenizer.pad_token_id] = -100
-                batch["labels"] = labels
-                return batch
-        else:
-            if self.tokenizer.pad_token is None:
-                logger.warning(
-                    "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying the SP."
-                )
-
-            batch = self.tokenizer.pad(
-                examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size
+        examples = [example["input_ids"] for example in examples]
+        batch = {
+            "input_ids": _torch_collate_batch(
+                examples,
+                tokenizer=self.tokenizer,
+                pad_to_multiple_of=self.pad_to_multiple_of,
             )
-            labels = batch["input_ids"].clone()
-            labels[labels == self.tokenizer.pad_token_id] = -100
-            batch["labels"] = labels
+        }
+        batch["labels"] = batch["input_ids"].clone()
 
+        if self.pad_to_multiple_of is not None:
+            batch["labels"][batch["labels"] == self.tokenizer.pad_token_id] = -100
+
+        if self.parallel_context is not None:
             for key, value in batch.items():
                 value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
 
@@ -130,4 +115,5 @@ class DataCollatorForCausalLM:
                     value = value.contiguous()
 
                 batch[key] = value
-            return batch
+
+        return batch

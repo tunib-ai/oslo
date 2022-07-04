@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 import logging
+import warnings
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -9,8 +10,8 @@ try:
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
-
 logger = logging.getLogger(__name__)
+logging.captureWarnings(True)
 
 
 class ProcessorForSequenceClassification(BaseProcessor):
@@ -45,12 +46,22 @@ class DataCollatorForSequenceClassification:
 
     def __init__(
         self,
-        tokenizer: ProcessorForSequenceClassification,
+        processor: ProcessorForSequenceClassification,
         pad_to_multiple_of: Optional[int] = None,
         padding: PaddingStrategy = "longest",
         parallel_context: Optional[ParallelContext] = None,
     ):
-        self.tokenizer = tokenizer._tokenizer
+        if not isinstance(processor, ProcessorForSequenceClassification):
+            warnings.warn(
+                "DataCollatorForSequenceClassification is suitable for ProcessorForSequenceClassification."
+            )
+
+        if self.tokenizer.pad_token is None:
+            warnings.warn(
+                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
+            )
+
+        self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.padding = padding
         self.parallel_context = parallel_context
@@ -59,28 +70,17 @@ class DataCollatorForSequenceClassification:
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        if self.tokenizer.pad_token is None:
-            logger.warning(
-                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
-            )
+        batch = self.tokenizer.pad(
+            features,
+            padding=self.padding,
+            pad_to_multiple_of=self.pad_to_multiple_of,
+            return_tensors="pt",
+        )
 
-        if self.parallel_context is None:
-            batch = self.tokenizer.pad(
-                features,
-                padding=self.padding,
-                pad_to_multiple_of=self.pad_to_multiple_of,
-                return_tensors="pt",
-            )
-        else:
-            batch = self.tokenizer.pad(
-                features,
-                padding=self.padding,
-                pad_to_multiple_of=self.local_world_size,
-                return_tensors="pt",
-            )
-
+        if self.parallel_context is not None:
             for key, value in batch.items():
                 if value.dim() < 2:
                     continue

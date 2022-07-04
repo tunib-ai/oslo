@@ -74,19 +74,19 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jinok2im>
-            <img src=https://avatars.githubusercontent.com/u/42664793?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jinok Kim/>
+        <a href=https://github.com/cozytk>
+            <img src=https://avatars.githubusercontent.com/u/59143479?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Taekyun Kim/>
             <br />
-            <sub style="font-size:14px"><b>Jinok Kim</b></sub>
+            <sub style="font-size:14px"><b>Taekyun Kim</b></sub>
         </a>
     </td>
 </tr>
 <tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/cozytk>
-            <img src=https://avatars.githubusercontent.com/u/59143479?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Taekyun Kim/>
+        <a href=https://github.com/jinok2im>
+            <img src=https://avatars.githubusercontent.com/u/42664793?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jinok Kim/>
             <br />
-            <sub style="font-size:14px"><b>Taekyun Kim</b></sub>
+            <sub style="font-size:14px"><b>Jinok Kim</b></sub>
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
@@ -134,17 +134,17 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
-        <a href=https://github.com/jayten-jeon>
-            <img src=https://avatars.githubusercontent.com/u/57934461?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jayten/>
-            <br />
-            <sub style="font-size:14px"><b>Jayten</b></sub>
-        </a>
-    </td>
-    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/reniew>
             <img src=https://avatars.githubusercontent.com/u/32028135?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=JungHyun Cho/>
             <br />
             <sub style="font-size:14px"><b>JungHyun Cho</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/jayten-jeon>
+            <img src=https://avatars.githubusercontent.com/u/57934461?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Jayten/>
+            <br />
+            <sub style="font-size:14px"><b>Jayten</b></sub>
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
