@@ -352,10 +352,10 @@ class Trainer:
             )
 
         if args.oslo_user_config:
-            self.parallel_context, self.model_wrapper = init_oslo_features(self.args.oslo_config)
+            self.parallel_context, self.model_wrappers = init_oslo_features(self.args.oslo_config)
 
-        delay_optimizer_creation = (
-            self.args.oslo_config.data_parallel_size > 1 and DistributedDataParallel not in self.model_wrapper)
+        delay_optimizer_creation = (self.args.oslo_user_config and
+            self.args.oslo_config.data_parallel_size > 1 and DistributedDataParallel not in self.model_wrappers)
         if not delay_optimizer_creation:
             self.create_optimizer()
             self.create_scheduler(num_training_steps=max_steps,
@@ -366,7 +366,7 @@ class Trainer:
         # TODO gradient checkpointing
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
 
-        model = self._wrap_model(self.model_wrapper)
+        model = self._wrap_model(self.model_wrappers)
         if model is not self.model:
             self.model_wrapped = model
 
@@ -1297,7 +1297,7 @@ class Trainer:
         self.save_model(output_dir, _internal_call=True)
 
         # TODO check it work
-        if self.model_wrapper == DistributedDataParallel:
+        if DistributedDataParallel in self.model_wrappers:
             self.optimizer.consolidate_state_dict()
 
         if self.args.should_save:

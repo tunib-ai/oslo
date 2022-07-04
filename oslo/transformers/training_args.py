@@ -869,6 +869,7 @@ class TrainingArguments:
             raise RuntimeError("No GPU resource is available to use OSLO")
         elif self.local_rank == -1:
             device = torch.device("cuda:0")
+            self._n_gpu = torch.cuda.device_count()
         else:
             # Initializes the distributed backend which will take care of synchronizing nodes/GPUs
             if not torch.distributed.is_initialized():
