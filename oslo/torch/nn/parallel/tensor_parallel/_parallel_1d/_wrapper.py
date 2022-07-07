@@ -47,7 +47,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         mapping: dict = None,
         module_args: dict = None
     ):
-        super().__init__()
+        super().__init__(module, parallel_context)
         self.module = module
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
@@ -447,13 +447,18 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
     def _gather_row_linear(self, module):
         self._gather_linear(module, dim=1)
 
-    # TODO: fix
     @staticmethod
     def _reconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
-        last_dim = tensor.size()[dim-1]
-        reshaped_w = tensor.view(fusion_degree * world_size, -1)
-        # print(f"tensor.size: {tensor.size()}, reshaped_w.size: {reshaped_w.size()}")
+        if dim == 0:
+            reshaped_w = tensor
+        else:
+            reshaped_w = tensor.permute(
+                dim, *range(0, dim), *range(dim+1, tensor.dim()))
+        reshaped_w = reshaped_w.view(world_size, fusion_degree, -1)
         recon_w = torch.cat([
-            reshaped_w[i * fusion_degree: (i+1) * fusion_degree]
-            for i in range(world_size)], 1).view(-1, last_dim).contiguous()
+            reshaped_w[i]
+            for i in range(world_size)], 1)
+        recon_w = recon_w.view(recon_w.size()[0] * world_size, recon_w.size()[1]//world_size).contiguous()
+        if dim == 0:
+            recon_w = recon_w.permute(1, 0)
         return recon_w

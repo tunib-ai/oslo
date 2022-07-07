@@ -42,6 +42,7 @@ if parallel_context.get_global_rank() == 0:
     print(chunked_w.size())
     print(linear_1d.weight.data.size())
 linear_1d.weight.data = chunked_w
+linear_1d.bias.data = chunked_b
 
 recon_chunked_w = gather_1d(parallel_context, linear_1d.weight.data, world_size, dim)
 recon_chunked_b = gather_1d(parallel_context, linear_1d.bias.data, world_size, 0)
