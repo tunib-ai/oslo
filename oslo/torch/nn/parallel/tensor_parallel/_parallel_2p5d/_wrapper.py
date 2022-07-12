@@ -462,9 +462,10 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
 
     @torch.no_grad()
     def deparallelize(self):
+        # must deparallelize linear first than embedding
         self._deparallelize_linear()
-        self._deparallelize_embedding()
         self._deparallelize_layernorm()
+        self._deparallelize_embedding()
         self._rollback_mp_arguments()
 
     def _rollback_mp_arguments(self):
@@ -481,6 +482,8 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         for param_name, module in self.module.named_modules():
             if module.__class__ == VocabParallelEmbedding2p5D:
                 self._gather_embedding(module)
+            if module.__class__ == Embedding2p5D:
+                self._gather_embedding(module)
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
@@ -495,14 +498,18 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
     def _gather_embedding(self, module):
         tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
         if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
-            w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim, col_first=True)
+            w = module.weight.data
+
+            # if module is shared with linear, then skip this loop
+            if module.embedding_dim == module.weight.size()[0]:
+                w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim, col_first=True)
 
             assert hasattr(
                 self.module, "orig_vocab_size"
             ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
             orig_vocab_size = self.module.orig_vocab_size
 
-            module.weight.data = w[:, :orig_vocab_size]
+            module.weight.data = w[:orig_vocab_size, :]
 
             _update_module_arguments(
                 module=module,
@@ -521,7 +528,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=None,
-                embedding_dim = module.weight.size()[1]
+                embedding_dim=module.weight.size()[1]
             )
         module.__class__ = nn.Embedding
 
@@ -533,18 +540,17 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
 
         w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
-        # print(f"w shape: {w.shape}\nweight shape: {module.weight.data.shape}")
         if fusion_degree > 1:
             w = self._reconstruct_combined_qkv(w, tesseract_dim, fusion_degree, False)
         if is_reversed:
-            w = module.weight.data.t()
+            w = w.t()
         module.weight.data = w
 
         if hasattr(module, "bias") and module.bias is not None:
-            # if slice_bias is True and module.bias.dim() >= 1:
             b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
             if fusion_degree > 1:
                 b = self._reconstruct_combined_qkv(b, tesseract_dim, fusion_degree, True)
+                b = b.view(b.size()[1:])
             module.bias.data = b
 
         _update_module_arguments(
@@ -611,7 +617,6 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         last_dim = tensor.size()[-1]
         if is_bias is False:
             reshaped_w = tensor.view(tesseract_dim*fusion_degree, -1, last_dim)
-            # print(f"tensor.size: {tensor.size()}, reshaped_w.size: {reshaped_w.size()}")
             recon_w = torch.cat([
                 reshaped_w[i * fusion_degree: (i+1) * fusion_degree]
                 for i in range(tesseract_dim)], 1).view(-1, last_dim).contiguous()
@@ -631,179 +636,3 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
         tensor = [tensor[j] for j in range(tessearct_dim)]
         return tensor
-
-    # @torch.no_grad()
-    # def save_parallelized(
-    #         self,
-    #         new_module,
-    #         save_directory: Union[str, os.PathLike],
-    #         save_config: bool = True,
-    #         state_dict: Optional[dict] = None,
-    #         save_function: Callable = torch.save,
-    #         merge_checkpoints: bool = False,
-    #         mapping: Optional[dict] = None,
-    #         **kwargs,
-    # ):
-    #     logger = getLogger("Tensor2p5D")
-    #     PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
-    #
-    #     if (
-    #             self.parallel_context.get_world_size(ParallelMode.TENSOR) == 1
-    #             and self.parallel_context.get_world_size(ParallelMode.PIPELINE) == 1
-    #     ):
-    #         if dist.get_rank() == 0:
-    #             self.save_pretrained(
-    #                 save_directory=save_directory,
-    #                 save_config=save_config,
-    #                 state_dict=state_dict,
-    #                 save_function=save_function,
-    #                 **kwargs,
-    #             )
-    #         dist.barrier()
-    #         return None
-    #
-    #     if merge_checkpoints:
-    #         model_to_save = self.__class__(
-    #             module=new_module,
-    #             parallel_context=self.parallel_context,
-    #             mapping=mapping,
-    #             module_args=self.config
-    #         ).eval()
-    #
-    #         if state_dict is None:
-    #             state_dict = self.state_dict()
-    #
-    #         model_to_save.load_state_dict(state_dict)
-    #         allocate_params(model_to_save, self.parallel_context)
-    #
-    #         if self.parallel_context.get_world_size(ParallelMode.TENSOR) > 1:
-    #             model_to_save.deparallelize()
-    #
-    #         if dist.get_rank() == 0:
-    #             if is_huggingface_model(model_to_save.module):
-    #                 model_to_save.module.save_pretrained(
-    #                     save_directory=save_directory,
-    #                     save_config=save_config,
-    #                     save_function=save_function,
-    #                     **kwargs,
-    #                 )
-    #             else:
-    #                 if save_config:
-    #                     with open(os.path.join(save_directory, "config.json"), "w") as f:
-    #                         json.dump(self.config, f)
-    #                 save_function(
-    #                     model_to_save,
-    #                     os.path.join(save_directory, "pytorch_model.bin"),
-    #                 )
-    #         del model_to_save
-    #
-    #         dist.barrier()
-    #         return None
-    #
-    #     if os.path.isfile(save_directory):
-    #         logger.error(
-    #             f"Provided path ({save_directory}) should be a directory, not a file"
-    #         )
-    #         return
-    #
-    #     os.makedirs(save_directory, exist_ok=True)
-    #
-    #     # Only save the model itself if we are using distributed training
-    #     model_to_save = unwrap_parallel(self)
-    #
-    #     # save the string version of dtype to the config, e.g. convert torch.float32 => "float32"
-    #     # we currently don't use this setting automatically, but may start to use with v5
-    #     dtype = get_parameter_dtype(model_to_save)
-    #     model_to_save.config.torch_dtype = str(dtype).split(".")[1]
-    #
-    #     # Attach architecture to the config
-    #     model_to_save.config.architectures = [model_to_save.__class__.__name__]
-    #
-    #     # Save the config
-    #     if save_config:
-    #         model_to_save.config.save_pretrained(save_directory)
-    #
-    #     # Save the model
-    #     if state_dict is None:
-    #         state_dict = model_to_save.state_dict()
-    #
-    #     # Handle the case where some state_dict keys shouldn't be saved
-    #     if getattr(self, "_keys_to_ignore_on_save", None) is not None:
-    #         state_dict = {
-    #             k: v for k, v in state_dict.items() if k not in self._keys_to_ignore_on_save
-    #         }
-    #
-    #     # If we save using the predefined names, we can load using `from_pretrained`
-    #     weights_name = PARALLELIZED_WEIGHTS_NAME
-    #     weights_name = weights_name.replace(
-    #         "tp_0", f"tp_{self.parallel_context.get_local_rank(ParallelMode.TENSOR)}"
-    #     )
-    #     weights_name = weights_name.replace(
-    #         "pp_0", f"pp_{self.parallel_context.get_local_rank(ParallelMode.PIPELINE)}"
-    #     )
-    #
-    #     output_model_file = os.path.join(save_directory, weights_name)
-    #
-    #     if self.parallel_context.get_world_size(ParallelMode.DATA) > 1:
-    #         if self.parallel_context.get_local_rank(ParallelMode.DATA) == 0:
-    #             save_function(state_dict, output_model_file)
-    #     else:
-    #         save_function(state_dict, output_model_file)
-    #
-    #     dist.barrier()
-    #     logger.info(f"Model weights saved in {output_model_file}")
-    #
-    # def from_parallelized(self, path):
-    #     """
-    #     Example:
-    #     >>> model = AnyModel()
-    #     >>> model = TensorParallel(model, ...)
-    #     >>> model.from_parallelized(path)
-    #     """
-    #     PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
-    #     parallelized_model_path = path
-    #
-    #     file_names = {
-    #         os.path.join(
-    #             parallelized_model_path,
-    #             PARALLELIZED_WEIGHTS_NAME.replace("tp_0", f"tp_{tp}").replace(
-    #                 "pp_0", f"pp_{pp}"
-    #             ),
-    #         )
-    #         for tp in range(self.parallel_context.get_world_size(ParallelMode.TENSOR))
-    #         for pp in range(self.parallel_context.get_world_size(ParallelMode.PIPELINE))
-    #     }
-    #
-    #     if os.path.isdir(parallelized_model_path):
-    #         if all(os.path.isfile(file_name) for file_name in file_names):
-    #             state_dict = torch.load(
-    #                 os.path.join(
-    #                     parallelized_model_path,
-    #                     PARALLELIZED_WEIGHTS_NAME.replace(
-    #                         "tp_0",
-    #                         f"tp_{self.parallel_context.get_local_rank(ParallelMode.TENSOR)}",
-    #                     ).replace(
-    #                         "pp_0",
-    #                         f"pp_{self.parallel_context.get_local_rank(ParallelMode.PIPELINE)}",
-    #                     ),
-    #                 )
-    #             )
-    #
-    #             if getattr(self, "_keys_to_ignore_on_save", None) is not None:
-    #                 state_dict = {
-    #                     k: v
-    #                     for k, v in state_dict.items()
-    #                     if k not in self._keys_to_ignore_on_save
-    #                 }
-    #
-    #             self.load_state_dict(state_dict=state_dict, strict=False)
-    #
-    #         else:
-    #             raise FileNotFoundError(
-    #                 f"all the {file_names} are necessary. "
-    #                 f"but some of them do not exist. Please check your checkpoint files."
-    #             )
-    #     else:
-    #         raise NotADirectoryError(
-    #             f"directory named {parallelized_model_path} is not valid. "
-    #         )

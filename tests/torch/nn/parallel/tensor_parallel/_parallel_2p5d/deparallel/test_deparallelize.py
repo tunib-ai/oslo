@@ -78,13 +78,13 @@ if dist.get_rank() == 0:
     cur = time.time()
 
 # 저장
-wrapper_tp.save_parallelized('test/', merge_checkpoints=False)
+wrapper_tp.save_parallelized('test/', merge_checkpoints=True)
 
 # 모니터링 생성 대기
 dist.barrier()
 
 # 로드
-model_gathered = GPT2LMHeadModel(GPT2Config.from_pretrained("test/")).cuda()
+model_gathered = GPT2LMHeadModel.from_pretrained("test/").cuda()
 optimizer_gathered = Adam(model_gathered.parameters(), lr=3e-5)
 
 dist.barrier()
