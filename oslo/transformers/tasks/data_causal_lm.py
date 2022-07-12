@@ -78,7 +78,7 @@ class DataCollatorForCausalLM:
                 "DataCollatorForCausalLM is suitable for ProcessorForCausalLM."
             )
 
-        if self.tokenizer.pad_token is None:
+        if processor._tokenizer.pad_token is None:
             warnings.warn(
                 "If pad token doesn't exist in the processor._tokenizer, it can be a problem when applying padding."
             )

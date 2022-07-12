@@ -62,6 +62,7 @@ class ProcessorForTokenClassification(BaseProcessor):
         """
 
         self.label_names = self.get_label_names(dataset)
+        self.label_map = self.get_label_map(self.label_names)
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
@@ -164,6 +165,7 @@ class DataCollatorForTokenClassification:
         self,
         processor: ProcessorForTokenClassification,
         padding: Union[bool, str, PaddingStrategy] = "longest",
+        padding_side: str = "right",
         pad_to_multiple_of: Optional[int] = None,
         label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
@@ -173,12 +175,13 @@ class DataCollatorForTokenClassification:
                 "DataCollatorForTokenClassification is suitable for ProcessorForTokenClassification."
             )
 
-        if self.tokenizer.pad_token is None:
+        if processor._tokenizer.pad_token is None:
             warnings.warn(
                 "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
             )
 
         self.tokenizer = processor._tokenizer
+        self.padding_side = padding_side
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
         self.padding = padding
@@ -201,10 +204,8 @@ class DataCollatorForTokenClassification:
             # Conversion to tensors will fail if we have labels as they are not of the same length yet.
             return_tensors="pt" if labels is None else None,
         )
-
         sequence_length = torch.tensor(batch["input_ids"]).shape[1]
-        padding_side = self.tokenizer.padding_side
-        if padding_side == "right":
+        if self.padding_side == "right":
             batch[label_name] = [
                 list(label) + [self.label_pad_token_id] * (sequence_length - len(label))
                 for label in labels
@@ -215,9 +216,8 @@ class DataCollatorForTokenClassification:
                 for label in labels
             ]
 
-        if self.parallel_context is None:
-            batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
-        else:
+        batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
+        if self.parallel_context is not None:
             for key, value in batch.items():
                 value = torch.tensor(value, dtype=torch.int64)
                 value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
