@@ -28,7 +28,7 @@ class ProcessorForT5Pretraining(BaseProcessor):
         mean_noise_span_length: float = 3.0,
     ) -> None:
         super().__init__(model_name_or_path, max_length)
-        if self.mlm_probability >= 1.0:
+        if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
         if not isinstance(self._tokenizer, (T5Tokenizer, T5TokenizerFast)):
@@ -191,27 +191,32 @@ class DataCollatorForT5Pretraining:
                 f" {self.target_length}."
             )
 
-        if self.parallel_context is None:
-            batch = {key: torch.from_numpy(value) for key, value in batch.items()}
-        else:
+        batch = {key: torch.from_numpy(value) for key, value in batch.items()}
+
+        if self.parallel_context is not None:
+            batch = self.pad_to_multiple_of(self.local_world_size, batch)
+            batch["attention_mask"] = torch.where(
+                batch["input_ids"] == self.pad_token_id,
+                0,
+                torch.ones_like(batch["input_ids"]),
+            )
+
+            # decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id.
+            # See T5 docs for more information
+            shifted_labels = batch["labels"].new_zeros(batch["labels"].shape)
+            shifted_labels[..., 1:] = batch["labels"][..., :-1].clone()
+            shifted_labels[..., 0] = self.pad_token_id  # decoder_start_token_id
+
+            batch["decoder_attention_mask"] = torch.where(
+                shifted_labels == -100,
+                0,
+                torch.ones_like(shifted_labels),
+            )
+            batch["decoder_input_ids"] = torch.masked_fill(
+                shifted_labels == -100, self.pad_token_id
+            )
+
             for key, value in batch.items():
-                value = torch.from_numpy(value)
-                batch_size, seq_length = value.size()
-
-                if seq_length % self.local_world_size != 0:
-                    required_length = (
-                        (seq_length // self.local_world_size) + 1
-                    ) * self.local_world_size
-                    difference = required_length - seq_length
-
-                    pads = torch.full(
-                        [batch_size, difference],
-                        fill_value=self.pad_token_id,
-                        dtype=value.dtype,
-                    )
-
-                    value = torch.cat([value, pads], axis=1)
-
                 value = value.chunk(
                     self.local_world_size,
                     dim=1,
@@ -221,13 +226,6 @@ class DataCollatorForT5Pretraining:
                     value = value.contiguous()
 
                 batch[key] = value
-
-            batch["attention_mask"] = (
-                (batch["input_ids"] != self.pad_token_id)
-                .clone()
-                .detach()
-                .to(torch.uint8)
-            )
 
         return batch
 
@@ -333,3 +331,36 @@ class DataCollatorForT5Pretraining:
         is_noise = np.equal(span_num % 2, 1)
 
         return is_noise[:orig_length]
+
+    def pad_to_multiple_of(
+        self, pad_to_multiple_of: int, batch: Dict[str, torch.Tensor]
+    ):
+        for key, value in batch.items():
+            assert (
+                value.dim() == 2
+            ), f"{key} values must be 2-dimensional. ({key} value.dim(): {value.dim()})"
+
+            batch_size, seq_length = value.size()
+
+            if seq_length % pad_to_multiple_of != 0:
+                required_length = (
+                    (seq_length // pad_to_multiple_of) + 1
+                ) * pad_to_multiple_of
+                difference = required_length - seq_length
+
+                if key == "labels":
+                    pads = torch.full(
+                        [batch_size, difference],
+                        fill_value=-100,
+                        dtype=value.dtype,
+                    )
+                else:
+                    pads = torch.full(
+                        [batch_size, difference],
+                        fill_value=self.pad_token_id,
+                        dtype=value.dtype,
+                    )
+
+                batch[key] = torch.cat([value, pads], axis=1)
+
+        return batch

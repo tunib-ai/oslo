@@ -7,6 +7,7 @@ import logging
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.transformers.models.bart.modeling_bart import shift_tokens_right
 
 try:
     from transformers import (
@@ -74,6 +75,7 @@ class DataCollatorForBartPretraining:
         processor: ProcessorForBartPretraining,
         mlm_probability: float = 0.15,
         possion_lambda: float = 3.0,
+        permute_sentence: bool = True,
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
@@ -87,8 +89,10 @@ class DataCollatorForBartPretraining:
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.possion_lambda = possion_lambda
+        self.permute_sentence = permute_sentence
         self.pad_to_multiple_of = pad_to_multiple_of
         self.pad_token_id = self.tokenizer.pad_token_id
+        self.decoder_start_token_id = self.tokenizer.eos_token_id
         self.mask_token_id = processor._tokenizer.mask_token_id
         self.parallel_context = parallel_context
         if parallel_context is not None:
@@ -122,12 +126,22 @@ class DataCollatorForBartPretraining:
                 difference = label_required_length - label_seq_length
                 label_pads = torch.full(
                     (batch_size, difference),
-                    fill_value=self.pad_token_id,
+                    fill_value=-100,
                     dtype=batch["labels"].dtype,
                 )
-                batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
+                batch["labels"] = torch.cat([batch["labels"], label_pads], axis=-1)
 
         if self.parallel_context is not None:
+            # decoder_input_ids must be created in the data collator for SP learning.
+            batch["decoder_input_ids"] = shift_tokens_right(
+                batch["labels"], self.pad_token_id, self.decoder_start_token_id
+            )
+            batch["decoder_attention_mask"] = torch.where(
+                batch["decoder_input_ids"] == self.pad_token_id,
+                0,
+                torch.ones_like(batch["decoder_input_ids"]),
+            )
+
             for key, value in batch.items():
                 value = value.chunk(
                     self.local_world_size,
@@ -150,7 +164,8 @@ class DataCollatorForBartPretraining:
             labels = chunk_ids[:]
 
             chunk_ids = self.text_infilling(chunk_ids)
-            chunk_ids = self.sentence_permutation(chunk_ids)
+            if self.permute_sentence:
+                chunk_ids = self.sentence_permutation(chunk_ids)
 
             chunk_ids = self.tokenizer.build_inputs_with_special_tokens(chunk_ids)
             labels = self.tokenizer.build_inputs_with_special_tokens(labels)[1:]
@@ -187,8 +202,8 @@ class DataCollatorForBartPretraining:
 
             for noise_span_length in noise_span_lengths:
                 max_idx = len(temp_ids) - noise_span_length + 1
-                start_indice = self.get_start_indices[max_idx]
-                for start_idx in start_indice:
+                start_indices = self.get_start_indices[max_idx]
+                for start_idx in start_indices:
                     if (
                         self.mask_token_id
                         in temp_ids[start_idx : start_idx + noise_span_length]
@@ -202,8 +217,8 @@ class DataCollatorForBartPretraining:
                         )
                         # Rotate
                         self.get_start_indices[max_idx] = [
-                            start_indice[-1]
-                        ] + start_indice[:-1]
+                            start_indices[-1]
+                        ] + start_indices[:-1]
                         break
 
         input_ids = temp_ids
