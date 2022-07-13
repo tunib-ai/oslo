@@ -7,10 +7,6 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 
 try:
     from transformers import DataCollatorForLanguageModeling
-    from transformers import (
-        RobertaTokenizer,
-        RobertaTokenizerFast,
-    )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
@@ -20,13 +16,17 @@ logging.captureWarnings(True)
 class ProcessorForRobertaPretraining(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
-
-        if not isinstance(self._tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
-            warnings.warn(
-                "ProcessorForRobertaPretraining is suitable for RobertaTokenizer-like tokenizers."
-            )
+        assert (
+            self._tokenizer.eos_token_id is not None
+            or self._tokenizer.sep_token_id is not None
+        ), "The 'eos token' or 'sep token' must be defined."
 
         self._chunk_size = max_length - 2
+        self.sep_text_id = (
+            self._tokenizer.eos_token_id
+            if self._tokenizer.eos_token_id is not None
+            else self._tokenizer.sep_token_id
+        )
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
@@ -47,7 +47,7 @@ class ProcessorForRobertaPretraining(BaseProcessor):
         )["input_ids"]
 
         for input_ids in list_of_input_ids:
-            input_ids += [self._tokenizer.eos_token_id]
+            input_ids += [self.sep_text_id]
             self._buffer.extend(input_ids)
 
             while len(self._buffer) >= self._chunk_size:
