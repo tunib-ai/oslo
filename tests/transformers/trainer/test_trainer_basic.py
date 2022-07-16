@@ -1,8 +1,12 @@
-from transformers import BertTokenizer, BertForSequenceClassification, Trainer
+from transformers import BertTokenizer, BertForSequenceClassification
 import torch
-from datasets import load_dataset
-from oslo.transformers.training_args import TrainingArguments as ota
+from dataset import load_dataset
+from oslo.transformers.training_args import TrainingArguments as OTA
 from oslo.transformers.trainer import Trainer as OTrainer
+from oslo.transformers.tasks.data_sequence_classification import (
+    ProcessorForSequenceClassification,
+    DataCollatorForSequenceClassification,
+)
 
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
@@ -12,11 +16,26 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
     optimizer=optim, T_0=1)
 
 batch_size = 16
-datasets = load_dataset("squad")
-train_dataset = datasets['train']
-valid_dataset = datasets['validation']
+dataset = load_dataset("glue", 'cola')
 
-args = ota(
+dataset = dataset.rename_column("sentence", "text")
+dataset = dataset.rename_column("label", "labels")
+
+processor = ProcessorForSequenceClassification("bert-base-uncased", 512)
+if processor._tokenizer.pad_token is None:
+    processor._tokenizer.pad_token = processor._tokenizer.eos_token
+
+processed_dataset = dataset.map(
+    processor, batched=True, remove_columns=dataset["train"].column_names
+)
+processed_dataset.cleanup_cache_files()
+train_dataset = processed_dataset["train"]
+valid_dataset = processed_dataset["validation"]
+
+data_collator = DataCollatorForSequenceClassification(processor)
+
+
+args = OTA(
     output_dir="output",
     evaluation_strategy="steps",
     eval_steps=500,
@@ -33,6 +52,7 @@ trainer = OTrainer(
     optimizers=(optim, scheduler),
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
+    data_collator=data_collator,
 )
 
 trainer.train()

@@ -161,7 +161,7 @@ class Trainer:
         #    and we only use deepspeed for training at the moment
         # 3. full bf16 or fp16 eval - since the model needs to be cast to the right dtype first
         # 4. Sharded DDP - same as MP
-        self.place_model_on_device = args.place_model_on_device  # GPU에 올릴 것인지 말건지
+        self.place_model_on_device = True
         if (self.is_model_parallel or args.oslo_user_config or
             ((args.fp16_full_eval or args.bf16_full_eval) and
              not args.do_train)):

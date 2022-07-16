@@ -971,21 +971,12 @@ class TrainingArguments:
         return log_level_main_node if self.should_log else log_level_replica_node
 
     @property
-    def place_model_on_device(self):
-        """
-        Can be subclassed and overridden for some specific integrations.
-        """
-        # return not is_sagemaker_mp_enabled()
-        pass
-
-    @property
     def _no_sync_in_gradient_accumulation(self):
         """
         TODO
         Whether or not to use no_sync for the gradients when doing gradient accumulation.
         """
-        # return not (self.deepspeed or is_sagemaker_dp_enabled() or is_sagemaker_mp_enabled())
-        pass
+        return not self.oslo_user_config
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):
