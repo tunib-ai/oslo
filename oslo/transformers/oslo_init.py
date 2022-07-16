@@ -31,7 +31,7 @@ def _type(_type):
 
 SUPPORTED_FEATURES = {
     "data_parallelism": {
-        "dp_stage": _type(str),
+        "zero_stage": _type(str),
         "distributed_data_parallel": _type(bool),
         "data_parallel_size": _type(int),
         "sequence_parallel_size": _type(int),
@@ -105,7 +105,7 @@ class OsloTrainerConfig:
     json file or dictionary form should be like the following:
         {
             "data_parallelism": {
-                "stage": _type(str),
+                "zero_stage": _type(str),
                 "distributed_data_parallel": _type(bool),
                 "data_parallel_size": _type(int),
                 "sequence_parallel_size": _type(int),
@@ -239,6 +239,16 @@ def init_oslo_features(oslo_init_config: OsloTrainerConfig) -> (ParallelContext,
     if cfg.pipeline_parallel_size > 1:
         model_wrapper.append(PipelineParallel)
     if cfg.data_parallel_size > 1:
-        model_wrapper.append(FullyShardedDataParallel)  # TODO set zero stage
+        if hasattr(cfg, 'zero_stage'):
+            if cfg.zero_stage == '2':
+                model_wrapper.append(ShardedDataParallel)
+            elif cfg.zero_stage == '3':
+                model_wrapper.append(FullyShardedDataParallel)
+            else:
+                raise AttributeError(
+                    "OSLO supports zero stage 1&2 and 3 that are respectively ShardedDataParallel and FullyShardedDataParallel."
+                )
+        else:
+            model_wrapper.append(DistributedDataParallel)
 
     return parallel_context, model_wrapper

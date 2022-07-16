@@ -1,5 +1,6 @@
 {
     "data_parallelism": {
+        "zero_stage": "2",
         "distributed_data_parallel": false,
         "data_parallel_size": 1,
         "sequence_parallel_size": 1
