@@ -31,8 +31,7 @@ def _type(_type):
 
 SUPPORTED_FEATURES = {
     "data_parallelism": {
-        "zero_stage": _type(str),
-        "distributed_data_parallel": _type(bool),
+        "stage": _type(str),
         "data_parallel_size": _type(int),
         "sequence_parallel_size": _type(int),
     },
@@ -62,6 +61,7 @@ TENSOR_PARALLEL_MODE_TYPES = {
     "2.5d": ParallelMode.TENSOR_2P5D,
     "3d": ParallelMode.TENSOR_3D,
 }
+
 
 def _config_check(arg, user_config):
     assert len(user_config) > 0, f"There are no arguments in dictionary."
@@ -105,8 +105,7 @@ class OsloTrainerConfig:
     json file or dictionary form should be like the following:
         {
             "data_parallelism": {
-                "zero_stage": _type(str),
-                "distributed_data_parallel": _type(bool),
+                "stage": _type(str),
                 "data_parallel_size": _type(int),
                 "sequence_parallel_size": _type(int),
             },
@@ -145,6 +144,7 @@ class OsloTrainerConfig:
 
     def __init__(self, config_file_or_dict):
         self._dtype = None
+        self.train_batch_size = None
 
         if isinstance(config_file_or_dict, dict):
             # Don't modify user's data should they want to reuse it (e.g. in tests), because once we
@@ -193,10 +193,8 @@ class OsloTrainerConfig:
         return self._dtype
 
     def adjust_train_args(self, args):
-        train_batch_size = args.world_size * args.per_device_train_batch_size * args.gradient_accumulation_steps
-        # TODO check train_batch_size,
-        if args.train_batch_size != train_batch_size:
-            args.train_batch_size = train_batch_size
+        self.train_batch_size = args.world_size * args.per_device_train_batch_size * args.gradient_accumulation_steps
+        # if args.train_batch_size != train_batch_size:
 
 
 def init_oslo_features(oslo_init_config: OsloTrainerConfig) -> (ParallelContext, List):
@@ -239,16 +237,19 @@ def init_oslo_features(oslo_init_config: OsloTrainerConfig) -> (ParallelContext,
     if cfg.pipeline_parallel_size > 1:
         model_wrapper.append(PipelineParallel)
     if cfg.data_parallel_size > 1:
-        if hasattr(cfg, 'zero_stage'):
-            if cfg.zero_stage == '2':
+        if hasattr(cfg, 'stage'):
+            if cfg.stage == 'zero2':
                 model_wrapper.append(ShardedDataParallel)
-            elif cfg.zero_stage == '3':
+            elif cfg.stage == 'zero3':
                 model_wrapper.append(FullyShardedDataParallel)
+            elif cfg.stage == 'ddp':
+                model_wrapper.append(DistributedDataParallel)
             else:
                 raise AttributeError(
                     "OSLO supports zero stage 1&2 and 3 that are respectively ShardedDataParallel and FullyShardedDataParallel."
                 )
         else:
+            logging.warning("No delivered stage for data_parallelism, default mode DistributedDataParallel is set")
             model_wrapper.append(DistributedDataParallel)
 
     return parallel_context, model_wrapper

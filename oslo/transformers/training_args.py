@@ -7,7 +7,7 @@ from enum import Enum
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
-from .trainer_utils import EvaluationStrategy, IntervalStrategy
+from .trainer_utils import IntervalStrategy
 
 import torch
 import torch.distributed as dist
@@ -358,7 +358,7 @@ class TrainingArguments:
     do_predict: bool = field(
         default=False, metadata={"help": "Whether to run predictions on the test set."}
     )
-    evaluation_strategy: IntervalStrategy = field(
+    evaluation_strategy: Optional[str, IntervalStrategy] = field(
         default="no",
         metadata={"help": "The evaluation strategy to use."},
     )
@@ -438,7 +438,7 @@ class TrainingArguments:
     logging_dir: Optional[str] = field(
         default=None, metadata={"help": "Tensorboard log dir."}
     )
-    logging_strategy: IntervalStrategy = field(
+    logging_strategy: Optional[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The logging strategy to use."},
     )
@@ -451,7 +451,7 @@ class TrainingArguments:
     logging_nan_inf_filter: bool = field(
         default=True, metadata={"help": "Filter nan and inf losses for logging."}
     )
-    save_strategy: IntervalStrategy = field(
+    save_strategy: Optional[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The checkpoint save strategy to use."},
     )
@@ -579,7 +579,7 @@ class TrainingArguments:
             "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    oslo_user_config: Optional[str] = field(
+    oslo_user_config: Optional[str, dict] = field(
         default=None,
         metadata={
             "help": "Enable oslo features and pass the path to json config file (e.g. ds_config.json) or an already loaded json file as a dict"
@@ -676,14 +676,6 @@ class TrainingArguments:
 
         # if self.disable_tqdm is None:
         #     self.disable_tqdm = logger.getEffectiveLevel() > logging.WARN
-
-        if isinstance(self.evaluation_strategy, EvaluationStrategy):
-            warnings.warn(
-                "using `EvaluationStrategy` for `evaluation_strategy` is deprecated and will be removed in version 5 of 🤗 Transformers. Use `IntervalStrategy` instead",
-                FutureWarning,
-            )
-            # Go back to the underlying string or we won't be able to instantiate `IntervalStrategy` on it.
-            self.evaluation_strategy = self.evaluation_strategy.value
 
         self.evaluation_strategy = IntervalStrategy(self.evaluation_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)
@@ -807,7 +799,8 @@ class TrainingArguments:
         """
         The actual batch size for training (may differ from `per_gpu_train_batch_size` in distributed training).
         """
-
+        if self.oslo_config and isinstance(self.oslo_config.train_batch_size, int):
+            return self.oslo_config.train_batch_size
         per_device_batch_size = self.per_device_train_batch_size
         train_batch_size = per_device_batch_size * max(1, self.n_gpu)
         return train_batch_size
