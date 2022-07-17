@@ -21,6 +21,12 @@ def bfs(node, bfs_dict=None):
             yield node
 
 
+def post_order_traverse(node):
+    for child in node.children:
+        yield from post_order_traverse(child)
+    yield node
+
+
 def is_iterable(data):
     try:
         iter(data)

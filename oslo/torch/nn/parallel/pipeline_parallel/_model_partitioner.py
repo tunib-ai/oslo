@@ -9,7 +9,7 @@ from oslo.torch.distributed import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._cost_estimator import (
     PartitioningCostEstimator,
 )
-from oslo.torch.nn.parallel.pipeline_parallel._utils import bfs, dfs
+from oslo.torch.nn.parallel.pipeline_parallel._utils import bfs, post_order_traverse
 
 
 class ModelPartitioner(object):
@@ -55,6 +55,9 @@ class ModelPartitioner(object):
         else:
             setattr(element, "oslo_pp_parent_rank", node.parent.device)
 
+        # TODO; tmp work
+        setattr(element, "oslo_pp_attr_set", True)
+
     def partition(self):
         # 1. construct tree
         self.root_node = Node(
@@ -79,13 +82,14 @@ class ModelPartitioner(object):
         self._tree_partitioning()
 
         # 4. set device to parameters and buffers
-        for node in dfs(self.root_node):
-            if all([not hasattr(child, "device") for child in node.children]):
-                module = node.modules[0]
-                self._set_attribute(module, node)
-                for param in node.parameters:
+        for node in post_order_traverse(self.root_node):
+            module = node.modules[0]
+            self._set_attribute(module, node)
+            for param in node.parameters:
+                if not hasattr(param, "oslo_pp_attr_set"):
                     self._set_attribute(param, node)
-                for buffer in module.buffers():
+            for buffer in module.buffers():
+                if not hasattr(buffer, "oslo_pp_attr_set"):
                     self._set_attribute(buffer, node)
 
     @staticmethod
