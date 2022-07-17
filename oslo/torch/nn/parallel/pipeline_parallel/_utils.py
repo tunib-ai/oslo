@@ -19,3 +19,12 @@ def bfs(node, bfs_dict=None):
     for nodes in bfs_dict.values():
         for node in nodes:
             yield node
+
+
+def is_iterable(data):
+    try:
+        iter(data)
+    except TypeError:
+        return False
+    else:
+        return True

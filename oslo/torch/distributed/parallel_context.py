@@ -5,7 +5,7 @@ from typing import List, Optional
 import numpy as np
 import torch
 import torch.distributed as dist
-
+from torch.distributed import rpc
 from oslo.torch.distributed._initializers.initializer_data import (
     DataParallelGroupInitializer,
 )
@@ -440,9 +440,13 @@ class ParallelContext(object):
         self.data_parallel_size = data_parallel_size
         self.sequence_parallel_size = sequence_parallel_size
         self.expert_parallel_size = expert_parallel_size
-        self.pipeline_parallel_size = pipeline_parallel_size
         self.tensor_parallel_size = tensor_parallel_size
         self.tensor_parallel_mode = tensor_parallel_mode
+        self.pipeline_parallel_size = pipeline_parallel_size
+        self.pipeline_worker_map = {
+            pp_rank: f"PP_WORKER_{pp_rank}"
+            for pp_rank in range(self.pipeline_parallel_size)
+        }
 
         # tensor parallel depth for 2.5d parallelism
         self.tensor_parallel_depth = tensor_parallel_depth
@@ -458,7 +462,8 @@ class ParallelContext(object):
 
         self.set_seed(seed)
         self.seed = seed
-        self._make_ranks_to_devices()
+        self.make_ranks_to_devices()
+        self.init_pipeline_rpc_workers()
 
     # sanity check
     @staticmethod
@@ -747,6 +752,9 @@ class ParallelContext(object):
         self._check_parallel_mode(parallel_mode)
         self._ranks_in_group[parallel_mode] = ranks
 
+    def get_pipeline_rpc_worker_name(self, rank):
+        return self.pipeline_worker_map[rank]
+
     # init distributed groups
     def init_global_dist(
         self,
@@ -856,7 +864,15 @@ class ParallelContext(object):
             else:
                 self._register_dist(**initializer_result)
 
-    def _make_ranks_to_devices(self):
+    def init_pipeline_rpc_workers(self):
+        if self.pipeline_parallel_size > 1:
+            rank = self.get_local_rank(ParallelMode.PIPELINE)
+            world_size = self.get_world_size(ParallelMode.PIPELINE)
+            rpc.init_rpc(
+                name=self.pipeline_worker_map[rank], rank=rank, world_size=world_size
+            )
+
+    def make_ranks_to_devices(self):
         rank_tensor = torch.zeros(len(self._local_ranks), dtype=torch.long).cuda()
 
         for idx, local_rank in enumerate(self._local_ranks.values()):
