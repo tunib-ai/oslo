@@ -1,9 +1,6 @@
-import argparse
 import torch
-import time
 import numpy as np
 import pytest
-import copy
 
 from oslo.torch.optim import FusedAdam
 

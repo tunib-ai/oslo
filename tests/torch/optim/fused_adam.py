@@ -1,12 +1,9 @@
 import unittest
-import os
 import random
 
-import math
 import torch
 from oslo.torch.optim import FusedAdam
 from itertools import product
-from torch.optim import Optimizer
 
 
 class TestFusedOptimizer(unittest.TestCase):
