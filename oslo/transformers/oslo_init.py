@@ -127,7 +127,7 @@ class OsloTrainerConfig:
             },
             "lazy_initialization": _type(bool),
             "backend": _type(str),
-
+            "seed": _type(int)
         }
 
     Args:
@@ -221,8 +221,8 @@ def init_oslo_features(oslo_init_config: OsloTrainerConfig) -> (ParallelContext,
         tensor_parallel_size=cfg.tensor_parallel_size,
         tensor_parallel_depth=cfg.tensor_parallel_depth,
         tensor_parallel_mode=cfg.tensor_parallel_mode,
-        backend=cfg.parallel_backend,
-        seed=cfg.parallel_seed,
+        backend=cfg.backend,
+        seed=cfg.seed,
     )
 
     if cfg.tensor_parallel_size > 1 and cfg.sequence_parallel_size > 1:

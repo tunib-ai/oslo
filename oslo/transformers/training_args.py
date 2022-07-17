@@ -2,13 +2,9 @@ import contextlib
 import json
 import math
 import os
-import warnings
 from enum import Enum
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
-
-from .trainer_utils import IntervalStrategy
-
+from typing import Any, Dict, List, Optional, Union
 import torch
 import torch.distributed as dist
 from .utils import (
@@ -17,6 +13,7 @@ from .utils import (
     is_torch_tf32_available,
     is_torch_bf16_available,
 )
+from .trainer_utils import IntervalStrategy
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -438,7 +435,7 @@ class TrainingArguments:
     logging_dir: Optional[str] = field(
         default=None, metadata={"help": "Tensorboard log dir."}
     )
-    logging_strategy: Optional[str, IntervalStrategy] = field(
+    logging_strategy: Union[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The logging strategy to use."},
     )
@@ -774,12 +771,14 @@ class TrainingArguments:
         # TODO debug option
         # if isinstance(self.debug, str):
         #     self.debug = [DebugOption(s) for s in self.debug.split()]
+        self.oslo_config, self.parallel_context, self.model_wrappers = None, None, None
         if self.oslo_user_config:
             from oslo.transformers.oslo_init import OsloTrainerConfig
-
+            from .oslo_init import init_oslo_features
             # will be used later by the Trainer
             self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
             self.oslo_config.adjust_train_args(self)
+            self.parallel_context, self.model_wrappers = init_oslo_features(self.oslo_config)
 
     def __str__(self):
         self_as_dict = asdict(self)

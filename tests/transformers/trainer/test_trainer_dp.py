@@ -71,6 +71,7 @@ args = TrainingArguments(
 )
 
 trainer = Trainer(
+    args=args,
     model=model,
     tokenizer=tokenizer,
     optimizers=(optim, scheduler),

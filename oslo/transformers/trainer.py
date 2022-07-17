@@ -28,7 +28,6 @@ from oslo.torch.nn.parallel.data_parallel.distributed_data_parallel import (
     DistributedDataParallel,
 )
 from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
-from .oslo_init import init_oslo_features
 from .data.data_collator import (
     DataCollator,
     DataCollatorWithPadding,
@@ -145,7 +144,7 @@ class Trainer:
         logging.set_verbosity(log_level)
 
         # force device and distributed setup init explicitly
-        args._setup_devices
+        #args._setup_devices
         if (hasattr(model, "is_parallelizable") and model.is_parallelizable and
                 model.model_parallel):
             self.is_model_parallel = True
@@ -154,6 +153,9 @@ class Trainer:
 
         self.parallel_context = None
         self.model_wrappers = []
+        if args.oslo_user_config:
+            self.parallel_context, self.model_wrappers = args.parallel_context, args.model_wrappers
+
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
         # 1. MP - since we are trying to fit a much bigger than 1 gpu model
@@ -350,9 +352,6 @@ class Trainer:
             raise ValueError(
                 f"args.max_steps must be set to a positive value if dataloader does not have a length, was {args.max_steps}"
             )
-
-        if args.oslo_user_config:
-            self.parallel_context, self.model_wrappers = init_oslo_features(self.args.oslo_config)
 
         delay_optimizer_creation = (self.args.oslo_user_config and
             self.args.oslo_config.data_parallel_size > 1 and DistributedDataParallel not in self.model_wrappers)
