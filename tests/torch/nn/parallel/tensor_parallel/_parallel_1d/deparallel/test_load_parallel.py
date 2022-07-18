@@ -30,8 +30,8 @@ def bw(tensors):
     return tensors.backward()
 
 
-tp_size = 8
-tp_depth = 2
+tp_size = 4
+tp_depth = 1
 
 model_name = "gpt2"
 mkwargs = {
@@ -43,7 +43,7 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
-    tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
+    tensor_parallel_mode=ParallelMode.TENSOR_1D,
     tensor_parallel_depth=tp_depth,
 )
 
@@ -74,7 +74,7 @@ dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name=f"{model_name}_tp2p5d_bs{batch_size}")
+    wandb.init(project="oslo", name=f"{model_name}_tp1d_bs{batch_size}")
     cur = time.time()
 
 # 저장

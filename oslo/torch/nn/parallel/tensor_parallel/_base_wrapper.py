@@ -24,7 +24,7 @@ from oslo.torch.nn.parallel.utils import (
 
 class BaseTensorParallelWrapper(ParallelWrapper):
     """
-    PyTorch module for 2.5D tensor parallelism
+    PyTorch module for xD tensor parallelism
 
     Args:
         module (nn.Module): model object
@@ -52,7 +52,7 @@ class BaseTensorParallelWrapper(ParallelWrapper):
             mapping: Optional[dict] = None,
             **kwargs,
     ):
-        logger = getLogger("Tensor2p5D")
+        logger = getLogger("TensorParallel")
         PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
 
         if (

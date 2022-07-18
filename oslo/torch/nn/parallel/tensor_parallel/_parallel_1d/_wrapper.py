@@ -332,6 +332,8 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         for param_name, module in self.module.named_modules():
             if module.__class__ == VocabParallelEmbedding1D:
                 self._gather_embedding(module)
+            if module.__class__ == Embedding1D:
+                self._gather_embedding(module)
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
@@ -358,7 +360,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
             ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
             orig_vocab_size = self.module.orig_vocab_size
 
-            module.weight.data = w[:, :orig_vocab_size]
+            module.weight.data = w[:orig_vocab_size, :]
 
             _update_module_arguments(
                 module=module,
@@ -390,35 +392,15 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         is_reversed = module.reversed
         fusion_degree = module.fusion_degree
 
-        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
 
-        # w = gather_2d(self.parallel_context, module.weight.data, tesseract_dim=tesseract_dim, col_first=True)
-        tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
-        dist.all_gather(
-            tensor_list,
-            module.weight.data.contiguous(),
-            self.parallel_context.get_group(ParallelMode.TENSOR_1D),
-        )
-        w = torch.cat(tensor_list, dim=dim)
-
-        if fusion_degree > 1:
-            w = self._reconstruct_combined_qkv(w, world_size, fusion_degree, False)
+        w = self._reconstruct_combined_qkv(module.weight, world_size, fusion_degree, dim)
         if is_reversed:
-            w = module.weight.data.t()
+            w = w.t()
         module.weight.data = w
 
-        if hasattr(module, "bias") and module.bias is not None:
-            # if slice_bias is True and module.bias.dim() >= 1:
-            # b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, dim)
-            tensor_list = [torch.zeros_like(module.bias.data) for _ in range(world_size)]
-            dist.all_gather(
-                tensor_list,
-                module.bias.data.contiguous(),
-                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
-            )
-            b = torch.cat(tensor_list, dim=dim)
-            if fusion_degree > 1:
-                b = self._reconstruct_combined_qkv(b, world_size, fusion_degree, dim)
+        if hasattr(module, "bias") and module.bias is not None and dim != 1:
+            b = self._reconstruct_combined_qkv(module.bias, world_size, fusion_degree, dim)
             module.bias.data = b
 
         _update_module_arguments(
@@ -430,14 +412,10 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
-        del module.data_parallel_rank
-        del module.pipeline_parallel_rank
-        del module.tensor_parallel_size
-        del module.pipeline_parallel_size
+
         del module.reversed
         del module.fusion_degree
         del module.orig_module
-        del module.gather_output
         del module.parallel_context
         module.__class__ = nn.Linear
 
@@ -447,18 +425,11 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
     def _gather_row_linear(self, module):
         self._gather_linear(module, dim=1)
 
-    @staticmethod
-    def _reconstruct_combined_qkv(tensor, world_size, fusion_degree, dim):
-        if dim == 0:
-            reshaped_w = tensor
-        else:
-            reshaped_w = tensor.permute(
-                dim, *range(0, dim), *range(dim+1, tensor.dim()))
-        reshaped_w = reshaped_w.view(world_size, fusion_degree, -1)
-        recon_w = torch.cat([
-            reshaped_w[i]
-            for i in range(world_size)], 1)
-        recon_w = recon_w.view(recon_w.size()[0] * world_size, recon_w.size()[1]//world_size).contiguous()
-        if dim == 0:
-            recon_w = recon_w.permute(1, 0)
-        return recon_w
+    def _reconstruct_combined_qkv(self, tensor, world_size, fusion_degree, dim: int):
+        tensor_list = tensor.chunk(fusion_degree, dim=dim)
+        result_list = []
+        for w in tensor_list:
+            w_list = [torch.zeros_like(w) for _ in range(world_size)]
+            dist.all_gather(w_list, w, self.parallel_context.get_group(ParallelMode.TENSOR_1D))
+            result_list.append(torch.cat(w_list, dim=dim))
+        return torch.cat(result_list, dim=dim)
