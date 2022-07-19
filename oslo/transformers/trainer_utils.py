@@ -39,12 +39,6 @@ class IntervalStrategy(ExplicitEnum):
     EPOCH = "epoch"
 
 
-class EvaluationStrategy(ExplicitEnum):
-    NO = "no"
-    STEPS = "steps"
-    EPOCH = "epoch"
-
-
 def set_seed(seed: int):
     """
     Helper function for reproducible behavior to set the seed in `random`, `numpy`, `torch` and/or `tf` (if installed).

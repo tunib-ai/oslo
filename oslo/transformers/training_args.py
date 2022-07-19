@@ -2,13 +2,9 @@ import contextlib
 import json
 import math
 import os
-import warnings
 from enum import Enum
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Optional
-
-from .trainer_utils import EvaluationStrategy, IntervalStrategy
-
+from typing import Any, Dict, List, Optional, Union
 import torch
 import torch.distributed as dist
 from .utils import (
@@ -17,6 +13,7 @@ from .utils import (
     is_torch_tf32_available,
     is_torch_bf16_available,
 )
+from .trainer_utils import IntervalStrategy
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -358,7 +355,7 @@ class TrainingArguments:
     do_predict: bool = field(
         default=False, metadata={"help": "Whether to run predictions on the test set."}
     )
-    evaluation_strategy: IntervalStrategy = field(
+    evaluation_strategy: Optional[str, IntervalStrategy] = field(
         default="no",
         metadata={"help": "The evaluation strategy to use."},
     )
@@ -438,7 +435,7 @@ class TrainingArguments:
     logging_dir: Optional[str] = field(
         default=None, metadata={"help": "Tensorboard log dir."}
     )
-    logging_strategy: IntervalStrategy = field(
+    logging_strategy: Union[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The logging strategy to use."},
     )
@@ -451,7 +448,7 @@ class TrainingArguments:
     logging_nan_inf_filter: bool = field(
         default=True, metadata={"help": "Filter nan and inf losses for logging."}
     )
-    save_strategy: IntervalStrategy = field(
+    save_strategy: Optional[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The checkpoint save strategy to use."},
     )
@@ -579,7 +576,7 @@ class TrainingArguments:
             "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    oslo_user_config: Optional[str] = field(
+    oslo_user_config: Optional[str, dict] = field(
         default=None,
         metadata={
             "help": "Enable oslo features and pass the path to json config file (e.g. ds_config.json) or an already loaded json file as a dict"
@@ -676,14 +673,6 @@ class TrainingArguments:
 
         # if self.disable_tqdm is None:
         #     self.disable_tqdm = logger.getEffectiveLevel() > logging.WARN
-
-        if isinstance(self.evaluation_strategy, EvaluationStrategy):
-            warnings.warn(
-                "using `EvaluationStrategy` for `evaluation_strategy` is deprecated and will be removed in version 5 of 🤗 Transformers. Use `IntervalStrategy` instead",
-                FutureWarning,
-            )
-            # Go back to the underlying string or we won't be able to instantiate `IntervalStrategy` on it.
-            self.evaluation_strategy = self.evaluation_strategy.value
 
         self.evaluation_strategy = IntervalStrategy(self.evaluation_strategy)
         self.logging_strategy = IntervalStrategy(self.logging_strategy)
@@ -782,12 +771,14 @@ class TrainingArguments:
         # TODO debug option
         # if isinstance(self.debug, str):
         #     self.debug = [DebugOption(s) for s in self.debug.split()]
+        self.oslo_config, self.parallel_context, self.model_wrappers = None, None, None
         if self.oslo_user_config:
             from oslo.transformers.oslo_init import OsloTrainerConfig
-
+            from .oslo_init import init_oslo_features
             # will be used later by the Trainer
             self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
             self.oslo_config.adjust_train_args(self)
+            self.parallel_context, self.model_wrappers = init_oslo_features(self.oslo_config)
 
     def __str__(self):
         self_as_dict = asdict(self)
@@ -807,7 +798,8 @@ class TrainingArguments:
         """
         The actual batch size for training (may differ from `per_gpu_train_batch_size` in distributed training).
         """
-
+        if self.oslo_config and isinstance(self.oslo_config.train_batch_size, int):
+            return self.oslo_config.train_batch_size
         per_device_batch_size = self.per_device_train_batch_size
         train_batch_size = per_device_batch_size * max(1, self.n_gpu)
         return train_batch_size
@@ -942,21 +934,12 @@ class TrainingArguments:
         return log_level_main_node if self.should_log else log_level_replica_node
 
     @property
-    def place_model_on_device(self):
-        """
-        Can be subclassed and overridden for some specific integrations.
-        """
-        # return not is_sagemaker_mp_enabled()
-        pass
-
-    @property
     def _no_sync_in_gradient_accumulation(self):
         """
         TODO
         Whether or not to use no_sync for the gradients when doing gradient accumulation.
         """
-        # return not (self.deepspeed or is_sagemaker_dp_enabled() or is_sagemaker_mp_enabled())
-        pass
+        return not self.oslo_user_config
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):
