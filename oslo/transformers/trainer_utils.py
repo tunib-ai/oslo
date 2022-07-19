@@ -39,6 +39,33 @@ class IntervalStrategy(ExplicitEnum):
     EPOCH = "epoch"
 
 
+class SchedulerType(str, ExplicitEnum):
+    LINEAR = "linear"
+    COSINE = "cosine"
+    COSINE_WITH_RESTARTS = "cosine_with_restarts"
+    POLYNOMIAL = "polynomial"
+    CONSTANT = "constant"
+    CONSTANT_WITH_WARMUP = "constant_with_warmup"
+
+
+class OptimizerNames(str, ExplicitEnum):
+    """
+    Stores the acceptable string identifiers for optimizers.
+    """
+
+    ADAM = "adam"
+    ADAMW = "adamw"
+    ADAGRAD = "adagrad"
+    ADADELTA = "adadelta"
+    ADAFACTOR = "adafactor"
+    ADAMW_BNB = "adamw_bnb_8bit"
+    FUSEDADAM = "fused_adam"
+    FUSEDADAGRAD = "fused_adagrad"
+    FUSEDSGD = "fused_sgd"
+    FUSEDNOVOGRAD = "fused_novograd"
+    FUSEDLAMB = "fused_lamb"
+
+
 def set_seed(seed: int):
     """
     Helper function for reproducible behavior to set the seed in `random`, `numpy`, `torch` and/or `tf` (if installed).

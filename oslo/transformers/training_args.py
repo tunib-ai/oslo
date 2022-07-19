@@ -13,7 +13,7 @@ from .utils import (
     is_torch_tf32_available,
     is_torch_bf16_available,
 )
-from .trainer_utils import IntervalStrategy
+from .trainer_utils import IntervalStrategy, SchedulerType, OptimizerNames
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -91,18 +91,17 @@ class TrainingArguments:
         eval_delay (`float`, *optional*):
             Number of epochs or steps to wait for before the first evaluation can be performed, depending on the
             evaluation_strategy.
-
-        # learning_rate (`float`, *optional*, defaults to 5e-5):
-        #     The initial learning rate for [`AdamW`] optimizer.
-        # weight_decay (`float`, *optional*, defaults to 0):
-        #     The weight decay to apply (if not zero) to all layers except all bias and LayerNorm weights in [`AdamW`]
-        #     optimizer.
-        # adam_beta1 (`float`, *optional*, defaults to 0.9):
-        #     The beta1 hyperparameter for the [`AdamW`] optimizer.
-        # adam_beta2 (`float`, *optional*, defaults to 0.999):
-        #     The beta2 hyperparameter for the [`AdamW`] optimizer.
-        # adam_epsilon (`float`, *optional*, defaults to 1e-8):
-        #     The epsilon hyperparameter for the [`AdamW`] optimizer.
+        learning_rate (`float`, *optional*, defaults to 5e-5):
+            The initial learning rate for [`AdamW`] optimizer.
+        weight_decay (`float`, *optional*, defaults to 0):
+            The weight decay to apply (if not zero) to all layers except all bias and LayerNorm weights in [`AdamW`]
+            optimizer.
+        adam_beta1 (`float`, *optional*, defaults to 0.9):
+            The beta1 hyperparameter for the [`AdamW`] optimizer.
+        adam_beta2 (`float`, *optional*, defaults to 0.999):
+            The beta2 hyperparameter for the [`AdamW`] optimizer.
+        adam_epsilon (`float`, *optional*, defaults to 1e-8):
+            The epsilon hyperparameter for the [`AdamW`] optimizer.
         max_grad_norm (`float`, *optional*, defaults to 1.0):
             Maximum gradient norm (for gradient clipping).
         num_train_epochs(`float`, *optional*, defaults to 3.0):
@@ -112,9 +111,8 @@ class TrainingArguments:
             If set to a positive number, the total number of training steps to perform. Overrides `num_train_epochs`.
             In case of using a finite iterable dataset the training may stop before reaching the set number of steps
             when all data is exhausted
-        # lr_scheduler_type (`str` or [`SchedulerType`], *optional*, defaults to `"linear"`):
-        #     The scheduler type to use. See the documentation of [`SchedulerType`] for all possible values.
-        # TODO 이것도 object 받는 식으로 변경
+        lr_scheduler_type (`str` or [`SchedulerType`], *optional*, defaults to `"linear"`):
+            The scheduler type to use. See the documentation of [`SchedulerType`] for all possible values.
         warmup_ratio (`float`, *optional*, defaults to 0.0):
             Ratio of total training steps used for a linear warmup from 0 to `learning_rate`.
         warmup_steps (`int`, *optional*, defaults to 0):
@@ -296,10 +294,7 @@ class TrainingArguments:
             - `"tpu_metrics_debug"`: print debug metrics on TPU
 
             The options should be separated by whitespaces.
-        optim (`str` or [`training_args.OptimizerNames`], *optional*, defaults to `"adamw_hf"`):
-            The optimizer to use: adamw_hf, adamw_torch, adamw_apex_fused, or adafactor.
-        adafactor (`bool`, *optional*, defaults to `False`):
-            This argument is deprecated. Use `--optim adafactor` instead.
+        optim (`str` or [`training_args.OptimizerNames`], *optional*, defaults to `"adam"`):
         group_by_length (`bool`, *optional*, defaults to `False`):
             Whether or not to group together samples of roughly the same length in the training dataset (to minimize
             padding applied and be more efficient). Only useful if applying dynamic padding.
@@ -355,7 +350,7 @@ class TrainingArguments:
     do_predict: bool = field(
         default=False, metadata={"help": "Whether to run predictions on the test set."}
     )
-    evaluation_strategy: Optional[str, IntervalStrategy] = field(
+    evaluation_strategy: Union[str, IntervalStrategy] = field(
         default="no",
         metadata={"help": "The evaluation strategy to use."},
     )
@@ -392,7 +387,11 @@ class TrainingArguments:
             "help": "Number of epochs or steps to wait for before the first evaluation can be performed, depending on the evaluation_strategy."
         },
     )
-
+    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
+    weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
+    adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
+    adam_beta2: float = field(default=0.999, metadata={"help": "Beta2 for AdamW optimizer"})
+    adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
     max_grad_norm: float = field(default=1.0, metadata={"help": "Max gradient norm."})
 
     num_train_epochs: float = field(
@@ -403,6 +402,10 @@ class TrainingArguments:
         metadata={
             "help": "If > 0: set total number of training steps to perform. Override num_train_epochs."
         },
+    )
+    lr_scheduler_type: SchedulerType = field(
+        default="linear",
+        metadata={"help": "The scheduler type to use."},
     )
     warmup_ratio: float = field(
         default=0.0,
@@ -448,7 +451,7 @@ class TrainingArguments:
     logging_nan_inf_filter: bool = field(
         default=True, metadata={"help": "Filter nan and inf losses for logging."}
     )
-    save_strategy: Optional[str, IntervalStrategy] = field(
+    save_strategy: Union[str, IntervalStrategy] = field(
         default="steps",
         metadata={"help": "The checkpoint save strategy to use."},
     )
@@ -576,7 +579,7 @@ class TrainingArguments:
             "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    oslo_user_config: Optional[str, dict] = field(
+    oslo_user_config: Union[str, dict] = field(
         default=None,
         metadata={
             "help": "Enable oslo features and pass the path to json config file (e.g. ds_config.json) or an already loaded json file as a dict"
@@ -588,13 +591,9 @@ class TrainingArguments:
             "help": "The label smoothing epsilon to apply (zero means no label smoothing)."
         },
     )
-    optim: torch.nn.Module = field(
-        default="adamw_hf",
-        metadata={"help": "The optimizer to use."},
-    )
-    adafactor: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to replace AdamW by Adafactor."},
+    optim: OptimizerNames = field(
+        default="adam",
+        metadata={"help": "The optimizer to use. Choose one of oslo.transformers.OptimizerNames"},
     )
     group_by_length: bool = field(
         default=False,
@@ -745,12 +744,7 @@ class TrainingArguments:
                     torch.backends.cuda.matmul.allow_tf32 = False
                 # no need to assert on else
         if self.report_to is None:
-            logger.info(
-                "The default value for the training argument `--report_to` will change in v5 (from all installed "
-                "integrations to none). In v5, you will need to use `--report_to all` to get the same behavior as "
-                "now. You should start updating your code and make this info disappear :-)."
-            )
-            self.report_to = "all"
+            self.report_to = ["none"]
         if self.report_to == "all" or self.report_to == ["all"]:
             # Import at runtime to avoid a circular import.
             from .integrations import get_available_reporting_integrations
@@ -768,7 +762,7 @@ class TrainingArguments:
                 "Both warmup_ratio and warmup_steps given, warmup_steps will override any effect of warmup_ratio during training"
             )
 
-        # TODO debug option
+        # TODO debug
         # if isinstance(self.debug, str):
         #     self.debug = [DebugOption(s) for s in self.debug.split()]
         self.oslo_config, self.parallel_context, self.model_wrappers = None, None, None
@@ -777,7 +771,7 @@ class TrainingArguments:
             from .oslo_init import init_oslo_features
             # will be used later by the Trainer
             self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
-            self.oslo_config.adjust_train_args(self)
+            #self.oslo_config.adjust_train_args(self)
             self.parallel_context, self.model_wrappers = init_oslo_features(self.oslo_config)
 
     def __str__(self):
