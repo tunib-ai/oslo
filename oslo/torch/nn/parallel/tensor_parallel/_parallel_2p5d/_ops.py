@@ -130,8 +130,6 @@ def reduce_scatter_tensor_2p5d(
     return _ReduceScatterTensor2p5D.apply(inputs, dim, parallel_context, parallel_mode)
 
 
-<<<<<<< HEAD
-=======
 def split_batch_2p5d(
     inputs: Tensor, dim: int, parallel_context: ParallelContext
 ) -> Tensor:
@@ -156,7 +154,6 @@ def split_batch_2p5d(
     # )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)].contiguous()
 
 
->>>>>>> 731650cffc5444b55038e477fdc99ec98295c290
 def get_current_device():
     r"""
     Get current device.
@@ -1058,9 +1055,6 @@ class _ReduceByBatch2p5D(torch.autograd.Function):
         if ctx.reduce_mean:
             return output_grad / ctx.reduce_size, None, None
         else:
-<<<<<<< HEAD
-            return output_grad, None, None
-=======
             return output_grad, None
 
 
@@ -1199,4 +1193,3 @@ def gather_1d(parallel_context, tensor, summa_dim, dim=-1):
     )
     tensor = torch.cat(tensor_list, dim=dim)
     return tensor
->>>>>>> 731650cffc5444b55038e477fdc99ec98295c290
