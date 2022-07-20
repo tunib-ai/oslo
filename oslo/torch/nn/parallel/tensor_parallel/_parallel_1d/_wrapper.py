@@ -332,6 +332,19 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                 gather_output=not is_oslo_model(self.module),
             )
         else:
+            world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+            rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
+
+            if hasattr(module, "bias") and module.bias is not None:
+                if module.bias.dim() >= 1:
+                    bias_list = module.bias.data.chunk(world_size, dim=0)
+                    module.bias.data = bias_list[rank].contiguous()
+
+                    if hasattr(module.bias, "oslo_parallel"):
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_1D] = rank
+                    else:
+                        module.bias.oslo_parallel = {ParallelMode.TENSOR_1D: rank}
+
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
