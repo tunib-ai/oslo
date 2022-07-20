@@ -498,8 +498,14 @@ class Linear2p5D(Linear):
                     ParallelMode.TENSOR_2P5D_COL,
                 )
         if self.gather_output:
-            outputs = all_gather_tensor_2p5d(
-                outputs,
+            output = all_gather_tensor_2p5d(
+                output,
+                dim=0,
+                col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
+                parallel_context=self.parallel_context,
+            ).clone()
+            output = all_gather_tensor_2p5d(
+                output,
                 dim=-1,
                 parallel_context=self.parallel_context,
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,

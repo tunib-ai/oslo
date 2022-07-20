@@ -65,6 +65,11 @@ def _update_module_arguments(module: nn.Module, **kwargs):
         setattr(module, k, v)
 
 
+def _remove_module_arguments(module: nn.Module, args: list):
+    for k in args:
+        delattr(module, k)
+
+
 def allocate_params(model: nn.Module, parallel_context: ParallelContext):
     for name, parameter in model.named_parameters():
         if hasattr(parameter, "oslo_parallel"):

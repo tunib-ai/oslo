@@ -1,6 +1,7 @@
 from typing import Any
 
 import torch
+import torch.distributed as dist
 from torch import Tensor
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
@@ -110,3 +111,21 @@ def all_gather_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelCon
 
 def scatter_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
     return _ScatterTensor1D.apply(inputs, dim, parallel_context)
+
+
+def split_1d(parallel_context, tensor, summa_dim, dim=-1):
+    tensor = tensor.chunk(summa_dim, dim=dim)[
+        parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
+    ]
+    return tensor
+
+
+def gather_1d(parallel_context, tensor, summa_dim, dim=-1):
+    tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+    dist.all_gather(
+        tensor_list,
+        tensor.contiguous(),
+        parallel_context.get_group(ParallelMode.TENSOR_1D),
+    )
+    tensor = torch.cat(tensor_list, dim=dim)
+    return tensor
