@@ -35,8 +35,8 @@ b = deepcopy(layernorm.bias.data)
 
 out = layernorm(input_)
 optimizer = torch.optim.Adam(layernorm.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
 out_update = layernorm(input_)
@@ -59,8 +59,8 @@ layernorm_2p5d.bias.data.copy_(b)
 
 pout = layernorm_2p5d(input_)
 optimizer = torch.optim.Adam(layernorm_2p5d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
 pout_update = layernorm_2p5d(input_)

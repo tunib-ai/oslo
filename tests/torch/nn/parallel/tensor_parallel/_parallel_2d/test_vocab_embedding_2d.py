@@ -27,8 +27,8 @@ w = deepcopy(vocab_embedding.weight.data)
 
 out = vocab_embedding(input_)
 optimizer = torch.optim.Adam(vocab_embedding.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
 out_update = vocab_embedding(input_)
@@ -46,8 +46,8 @@ vocab_embedding_2d.weight.data.copy_(w)
 
 pout = vocab_embedding_2d(input_)
 optimizer = torch.optim.Adam(vocab_embedding_2d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
 pout_update = vocab_embedding_2d(input_)

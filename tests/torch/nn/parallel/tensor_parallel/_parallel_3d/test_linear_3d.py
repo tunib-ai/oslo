@@ -35,8 +35,8 @@ orig_target = target
 
 out = linear(input_)
 optimizer = torch.optim.Adam(linear.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
 out_update = linear(input_)
@@ -57,8 +57,8 @@ linear_3d.bias.data.copy_(b)
 
 pout = linear_3d(input_)
 optimizer = torch.optim.Adam(linear_3d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, ptarget)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, ptarget)
+loss.backward()
 optimizer.step()
 
 pout_update = linear_3d(input_)
@@ -86,8 +86,8 @@ linear_3d.bias.data.copy_(b)
 
 pout = linear_3d(input_)
 optimizer = torch.optim.Adam(linear_3d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
 pout_update = linear_3d(input_)

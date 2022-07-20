@@ -6,7 +6,7 @@ class TensorParallelInfo(object):
     A class to describe tensor parallelization information.
 
     Args:
-        name (Tuple[str]): the name of parameter
+        name (Tuple[str]): the name of module
         combined_qkv (bool): combined qkv or not
         parallel (bool): parallelizable param or not
         reverse (bool): reversed param or not
@@ -19,11 +19,13 @@ class TensorParallelInfo(object):
         combined_qkv: bool = False,
         reversed: bool = False,
         gather_output: bool = False,
+        scatter_output: bool = False,
     ):
         self.name = name
         self.combined_qkv = combined_qkv
         self.reversed = reversed
         self.gather_output = gather_output
+        self.scatter_output = scatter_output
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -130,7 +132,7 @@ class TensorParallelMapping(object):
         if mapping is not None:
             return mapping["Update"]
 
-    def search(self, model, param_name):
+    def search(self, model, module_name):
         """
         Get element by parameter name
 
@@ -142,12 +144,12 @@ class TensorParallelMapping(object):
         """
         mapping = self.get_mapping(model)
         count_contain_elem_in_param = 0
-        param_split = param_name.split(".")
+        param_split = module_name.split(".")
         first_check = []
 
         for elems in mapping.values():
             for elem in elems:
-                if elem.name in param_name:
+                if elem.name in module_name:
                     first_check.append(elem)
 
         for elem in first_check:
@@ -160,110 +162,125 @@ class TensorParallelMapping(object):
 
         return None
 
-    def is_combined_qkv_param(self, model, param_name):
+    def is_combined_qkv_param(self, model, module_name):
         """
-        Check whether the param is combined qkv or not
+        Check whether the module is combined qkv or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is combined qkv or not
+            bool: whether the module is combined qkv or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
         if elem is not None:
             return elem.combined_qkv
 
-    def get_combined_qkv_degree(self, model, param_name, module):
+    def get_combined_qkv_degree(self, model, module_name, module):
         """
         Get combined qkv degree
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
             module (nn.Module): module that has `weight` parameter
 
         Returns:
             int: combined qkv degree
         """
-        if self.is_combined_qkv_param(model, param_name) and hasattr(module, "weight"):
+        if self.is_combined_qkv_param(model, module_name) and hasattr(module, "weight"):
             bigger = max(module.weight.size(0), module.weight.size(1))
             smaller = min(module.weight.size(0), module.weight.size(1))
             return bigger // smaller
         return 1
 
-    def is_reversed(self, model, param_name):
+    def is_reversed(self, model, module_name):
         """
-        Check whether the parameter is reversed or not
+        Check whether the moduleeter is reversed or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is reversed or not
+            bool: whether the module is reversed or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
         if elem is not None:
             return elem.reversed
 
-    def is_gather_output(self, model, param_name):
+    def is_gather_output(self, model, module_name):
         """
-        Check whether the param is gather output or not
+        Check whether the module is gather output or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is combined qkv or not
+            bool: whether the module is combined qkv or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
         if elem is not None:
             return elem.gather_output
 
-    def is_column_parallel(self, model, param_name):
+    def is_scatter_output(self, model, module_name):
         """
-        Check whether the parameter is column parallelizable or not
+        Check whether the module is scatter output or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is column parallelizable or not
+            bool: whether the module is combined qkv or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
+        if elem is not None:
+            return elem.scatter_output
+
+    def is_column_parallel(self, model, module_name):
+        """
+        Check whether the moduleeter is column parallelizable or not
+
+        Args:
+            model (PreTrainedModel): model obj
+            module_name (str): name of module
+
+        Returns:
+            bool: whether the module is column parallelizable or not
+        """
+        elem = self.search(model, module_name)
         if elem is not None:
             return isinstance(elem, Column)
 
-    def is_row_parallel(self, model, param_name):
+    def is_row_parallel(self, model, module_name):
         """
-        Check whether the parameter is row parallelizable or not
+        Check whether the moduleeter is row parallelizable or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is row parallelizable or not
+            bool: whether the module is row parallelizable or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
         if elem is not None:
             return isinstance(elem, Row)
 
-    def is_head(self, model, param_name):
+    def is_head(self, model, module_name):
         """
-        Check whether the parameter is lm head or not
+        Check whether the moduleeter is head or not
 
         Args:
             model (PreTrainedModel): model obj
-            param_name (str): name of parameter
+            module_name (str): name of module
 
         Returns:
-            bool: whether the param is lm head or not
+            bool: whether the module is head or not
         """
-        elem = self.search(model, param_name)
+        elem = self.search(model, module_name)
         if elem is not None:
             return isinstance(elem, Head)

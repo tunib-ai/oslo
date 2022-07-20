@@ -141,8 +141,16 @@ class Embedding1D(nn.Embedding):
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_gather_tensor_1d,
+            gather_tensor_1d,
+            scatter_tensor_1d,
         )
+        from oslo.torch.distributed.nn.functional import (
+            all_gather,
+        )
+        if self.parallel_context.memory_priority:
+            input = all_gather(
+                input, dim=1, parallel_context=self.parallel_context, parallel_mode=ParallelMode.TENSOR_1D,
+            )
 
         output = F.embedding(
             input,
@@ -154,11 +162,13 @@ class Embedding1D(nn.Embedding):
             self.sparse,
         )
 
-        output = all_gather_tensor_1d(
+        output = gather_tensor_1d(
             output,
             -1,
             self.parallel_context,
         )
+        if self.parallel_context.memory_priority:
+            output = scatter_tensor_1d(output, dim=1, parallel_context=self.parallel_context)
         return output
 
 
@@ -192,8 +202,16 @@ class VocabParallelEmbedding1D(nn.Embedding):
 
     def forward(self, input: Tensor) -> Tensor:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_tensor_1d,
+            reduce_tensor_1d,
+            scatter_tensor_1d,
         )
+        from oslo.torch.distributed.nn.functional import (
+            all_gather,
+        )
+        if self.parallel_context.memory_priority:
+            input = all_gather(
+                input, dim=1, parallel_context=self.parallel_context, parallel_mode=ParallelMode.TENSOR_1D,
+            )
 
         if self.world_size > 1:
             input_mask = (input < self.vocab_start_index) | (
@@ -218,7 +236,9 @@ class VocabParallelEmbedding1D(nn.Embedding):
             output_parallel[input_mask, :] = 0.0
 
         # Reduce across all the model parallel GPUs.
-        output = all_reduce_tensor_1d(output_parallel, self.parallel_context)
+        output = reduce_tensor_1d(output_parallel, self.parallel_context)
+        if self.parallel_context.memory_priority:
+            output = scatter_tensor_1d(output, dim=1, parallel_context=self.parallel_context)
         return output
 
 

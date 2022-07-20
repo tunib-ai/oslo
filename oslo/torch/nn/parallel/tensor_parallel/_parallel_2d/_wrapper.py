@@ -15,8 +15,8 @@ from oslo.torch.nn.modules.linear import (
 from oslo.torch.nn.modules.layer_norm import (
     LayerNorm2D,
 )
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
-    split_batch_2d,
+from oslo.torch.distributed.nn.functional import (
+    scatter,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -73,10 +73,11 @@ class _TensorParallel2D(ParallelWrapper):
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_2d(
+                key: scatter(
                     value,
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
+                    parallel_mode=ParallelMode.TENSOR_2D_COL,
                 )
                 if key in BATCH_DIMENSIONS
                 else value
@@ -166,9 +167,9 @@ class _TensorParallel2D(ParallelWrapper):
         return tensor
 
     def _slice_embedding(self, module):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 
         if module is self.module.get_input_embeddings():
             (
@@ -220,10 +221,9 @@ class _TensorParallel2D(ParallelWrapper):
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -308,10 +308,9 @@ class _TensorParallel2D(ParallelWrapper):
         module.__class__ = Linear2D
 
     def _slice_layernorm(self, module):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -380,10 +379,9 @@ class _TensorParallel2D(ParallelWrapper):
                 gather_output=not is_oslo_model(self.module),
             )
         else:
+            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
             row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
             col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
             data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
             pipeline_parallel_rank = self.parallel_context.get_local_rank(
                 ParallelMode.PIPELINE
@@ -394,6 +392,22 @@ class _TensorParallel2D(ParallelWrapper):
             pipeline_parallel_size = self.parallel_context.get_world_size(
                 ParallelMode.PIPELINE
             )
+            if hasattr(module, "bias") and module.bias is not None:
+                if module.bias.dim() >= 1:
+                    bias_list = module.bias.data.chunk(summa_dim, dim=0)
+                    bias_list = [
+                        bias.chunk(summa_dim, dim=0) for bias in bias_list
+                    ]
+                    module.bias.data = bias_list[row_rank][col_rank].contiguous()
+
+                    if hasattr(module.bias, "oslo_parallel"):
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                    else:
+                        module.bias.oslo_parallel = {
+                            ParallelMode.TENSOR_2D_ROW: row_rank,
+                            ParallelMode.TENSOR_2D_COL: col_rank,
+                        }
             _update_module_arguments(
                 module=module,
                 in_features=module.weight.size()[1],

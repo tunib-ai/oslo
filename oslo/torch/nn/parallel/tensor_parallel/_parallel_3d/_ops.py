@@ -582,43 +582,6 @@ def split_tensor_3d(
     return output
 
 
-def split_batch_3d(
-    inputs: Tensor,
-    dim: int = 0,
-    parallel_context: Optional[ParallelContext] = None,
-) -> Tensor:
-    r"""Splits 3D tensor in batch.
-
-    Args:
-        input_ (:class:`torch.tensor`): Input tensor.
-        dim (int): Specified dimension in which to split.
-
-    Returns:
-        :class:`torch.tensor`: The tensor has been split.
-
-    Note:
-        The parallel_mode should be concluded in ``ParallelMode``. More details about ``ParallelMode`` could be found
-        in `parallel_mode <https://github.com/hpcaitech/ColossalAI/blob/main/colossalai/context/parallel_mode.py>`_.
-    """
-    dim_size = inputs.size(dim)
-    weight_world_size = parallel_context.get_world_size(ParallelMode.TENSOR_3D_WEIGHT)
-    input_world_size = parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
-
-    assert (
-        dim_size % (input_world_size * weight_world_size) == 0
-    ), f"The batch size ({dim_size}) is not a multiple of square of 3D cubic dim ({input_world_size*weight_world_size})."
-
-    if inputs.size(dim) <= 1:
-        return inputs
-    output = torch.chunk(inputs, weight_world_size, dim=dim)[
-        parallel_context.get_local_rank(ParallelMode.TENSOR_3D_WEIGHT)
-    ].contiguous()
-    output = torch.chunk(output, input_world_size, dim=dim)[
-        parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
-    ].contiguous()
-    return output
-
-
 class _ReduceTensor3D(torch.autograd.Function):
     @staticmethod
     def forward(

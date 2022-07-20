@@ -81,6 +81,7 @@ class LayerNorm1D(LayerNorm):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        
         super().__init__(
             normalized_shape=normalized_shape,
             partitioned_dim=normalized_shape,
@@ -88,6 +89,28 @@ class LayerNorm1D(LayerNorm):
             bias=bias,
             dtype=dtype,
         )
+
+    def forward(self, input: Tensor) -> Tensor:
+        from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
+            broadcast_tensor_1d,
+        )
+        weight = (
+            broadcast_tensor_1d(self.weight, parallel_context=self.parallel_context)
+            if self.parallel_context.memory_priority
+            else self.weight
+        )
+        bias = (
+            broadcast_tensor_1d(self.bias, parallel_context=self.parallel_context)
+            if self.parallel_context.memory_priority and self.bias is not None
+            else self.bias
+        )
+        normalized_shape = (
+            (self.normalized_shape,)
+            if isinstance(self.normalized_shape, int)
+            else self.normalized_shape
+        )
+        output = F.layer_norm(input, normalized_shape, weight, bias, self.eps)
+        return output
 
 
 class LayerNorm2D(LayerNorm):

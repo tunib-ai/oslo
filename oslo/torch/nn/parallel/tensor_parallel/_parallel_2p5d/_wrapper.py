@@ -12,8 +12,9 @@ from oslo.torch.nn.modules.embedding import (
 )
 from oslo.torch.nn.modules.linear import Linear2p5D
 from oslo.torch.nn.modules.layer_norm import LayerNorm2p5D
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import split_batch_2p5d
-
+from oslo.torch.distributed.nn.functional import (
+    scatter,
+)
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
@@ -70,10 +71,11 @@ class _TensorParallel2p5D(ParallelWrapper):
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_2p5d(
+                key: scatter(
                     value,
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
+                    parallel_mode=ParallelMode.TENSOR_2P5D_COL,
                 )
                 if key in BATCH_DIMENSIONS
                 else value
@@ -228,13 +230,12 @@ class _TensorParallel2p5D(ParallelWrapper):
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
-        dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
         tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
-
+        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -323,13 +324,12 @@ class _TensorParallel2p5D(ParallelWrapper):
         return module
 
     def _slice_layernorm(self, module):
-        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
-        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
-        dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
         tesseract_dim = self.parallel_context.get_world_size(
             ParallelMode.TENSOR_2P5D_COL
         )
-
+        row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_ROW)
+        col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)
+        dep_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_DEP)
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -402,6 +402,9 @@ class _TensorParallel2p5D(ParallelWrapper):
                 gather_output=not is_oslo_model(self.module),
             )
         else:
+            tesseract_dim = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR_2P5D_COL
+            )
             row_rank = self.parallel_context.get_local_rank(
                 ParallelMode.TENSOR_2P5D_ROW
             )
@@ -411,10 +414,6 @@ class _TensorParallel2p5D(ParallelWrapper):
             dep_rank = self.parallel_context.get_local_rank(
                 ParallelMode.TENSOR_2P5D_DEP
             )
-            tesseract_dim = self.parallel_context.get_world_size(
-                ParallelMode.TENSOR_2P5D_COL
-            )
-
             data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
             pipeline_parallel_rank = self.parallel_context.get_local_rank(
                 ParallelMode.PIPELINE
@@ -425,6 +424,24 @@ class _TensorParallel2p5D(ParallelWrapper):
             pipeline_parallel_size = self.parallel_context.get_world_size(
                 ParallelMode.PIPELINE
             )
+
+            if hasattr(module, "bias") and module.bias is not None:
+                if module.bias.dim() >= 1:
+                    bias_list = module.bias.data.chunk(tesseract_dim, dim=0)
+
+                    module.bias.data = bias_list[row_rank].contiguous()
+
+                    if hasattr(module.bias, "oslo_parallel"):
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
+                        module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+                    else:
+                        module.bias.oslo_parallel = {
+                            ParallelMode.TENSOR_2P5D_ROW: row_rank,
+                            ParallelMode.TENSOR_2P5D_COL: col_rank,
+                            ParallelMode.TENSOR_2P5D_DEP: dep_rank,
+                        }
+
             _update_module_arguments(
                 module=module,
                 in_features=module.weight.size()[1],

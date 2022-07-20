@@ -1,5 +1,6 @@
 import os
 import random
+import warnings
 from typing import List, Optional
 
 import numpy as np
@@ -60,6 +61,7 @@ class ParallelContext(object):
         tensor_parallel_size (int): tensor parallel size
         tensor_parallel_depth (int): tensor depth for tensor 2.5 parallelism
         tensor_parallel_mode (str): tensor parallel mode
+        tensor_sequence_parallel (bool): Whether or not to apply tensor parallel for layer_norm and dropout on the sequence dimension when TENSOR_1D
         backend (str): distributed backend
         seed (int): random seed value
 
@@ -163,6 +165,7 @@ class ParallelContext(object):
         tensor_parallel_size: int = 1,
         tensor_parallel_depth: Optional[int] = None,
         tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+        memory_priority: bool = False,
         backend: str = "nccl",
         seed: bool = 42,
     ):
@@ -177,6 +180,7 @@ class ParallelContext(object):
             tensor_parallel_size (int): tensor parallel size
             tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
             tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
+            memory_priority (bool): Whether or not to use memory priority mode (if False, speed priority mode)
             backend (str): distributed backend
             seed (int): random seed value
 
@@ -214,6 +218,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            memory_priority = memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -230,6 +235,7 @@ class ParallelContext(object):
         tensor_parallel_size: int = 1,
         tensor_parallel_depth: Optional[int] = None,
         tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+        memory_priority: bool = False,
         backend: str = "nccl",
         seed: bool = 42,
         local_rank: Optional[int] = None,
@@ -247,6 +253,7 @@ class ParallelContext(object):
             tensor_parallel_size (int): tensor parallel size
             tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
             tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
+            memory_priority (bool): Whether or not to use memory priority mode (if False, speed priority mode)
             backend (str): distributed backend
             seed (int): random seed value
             local_rank (Optional[int]): local rank
@@ -284,6 +291,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            memory_priority = memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -300,6 +308,7 @@ class ParallelContext(object):
         tensor_parallel_size: int = 1,
         tensor_parallel_depth: Optional[int] = None,
         tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
+        memory_priority: bool = False,
         backend: str = "nccl",
         seed: bool = 42,
     ):
@@ -316,6 +325,7 @@ class ParallelContext(object):
             tensor_parallel_size (int): tensor parallel size
             tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
             tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
+            memory_priority (bool): Whether or not to use memory priority mode (if False, speed priority mode)
             backend (str): distributed backend
             seed (int): random seed value
 
@@ -353,6 +363,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            memory_priority = memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -372,6 +383,7 @@ class ParallelContext(object):
         tensor_parallel_size: int,
         tensor_parallel_mode: Optional[str],
         tensor_parallel_depth: Optional[int],
+        memory_priority: bool,
         backend: str,
         seed: int,
     ):
@@ -401,6 +413,12 @@ class ParallelContext(object):
                 "param `tensor_parallel_mode` must not be None "
                 "if param `tensor_parallel_size` > 1."
             )
+        
+        if tensor_parallel_mode != ParallelMode.TENSOR_1D:
+            if memory_priority and tensor_parallel_size > 1:
+                warnings.warn(
+                    "memory_priority is available only with 1D tensor parallel."
+                )
 
         assert tensor_parallel_mode in TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE, (
             f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
@@ -443,6 +461,7 @@ class ParallelContext(object):
         self.pipeline_parallel_size = pipeline_parallel_size
         self.tensor_parallel_size = tensor_parallel_size
         self.tensor_parallel_mode = tensor_parallel_mode
+        self.memory_priority = memory_priority and tensor_parallel_size > 1
 
         # tensor parallel depth for 2.5d parallelism
         self.tensor_parallel_depth = tensor_parallel_depth

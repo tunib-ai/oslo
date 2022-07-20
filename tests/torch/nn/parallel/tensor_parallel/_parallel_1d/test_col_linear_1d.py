@@ -1,9 +1,15 @@
+import argparse
 from copy import deepcopy
 import torch
 import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import ColLinear1D
 from _utils import split_1d, gather_1d
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--memory_priority", action="store_true", default=False)
+args = parser.parse_args()
 
 tp_size = 4
 
@@ -12,13 +18,14 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
+    memory_priority=args.memory_priority,
 )
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
 
 batch_size = 2
-seq_len = 2
+seq_len = 4
 input_dim = 4
 hidden_dim = 8
 world_size = parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -33,16 +40,14 @@ b = deepcopy(linear.bias.data)
 
 out = linear(input_)
 optimizer = torch.optim.Adam(linear.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
 out_update = linear(input_)
 
-if parallel_context.get_global_rank() == 0:
-    print(f"original output: \n{out}\n")
-    print(f"original next output: \n{out_update}\n")
-
+if args.memory_priority:
+    input_ = split_1d(input_, world_size, dim=1, parallel_context=parallel_context)
 target = split_1d(target, world_size, dim=-1, parallel_context=parallel_context)
 w = split_1d(w, world_size, dim=0, parallel_context=parallel_context)
 b = split_1d(b, world_size, dim=0, parallel_context=parallel_context)
@@ -53,8 +58,8 @@ col_linear.bias.data.copy_(b)
 
 pout = col_linear(input_)
 optimizer = torch.optim.Adam(col_linear.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
 pout_update = col_linear(input_)
@@ -65,7 +70,9 @@ pout_update = gather_1d(
 )
 
 if parallel_context.get_global_rank() == 0:
+    print(f"original output: \n{out}\n")
     print(f"parallel output: \n{pout}\n")
+    print(f"original next output: \n{out_update}\n")
     print(f"parallel next output: \n{pout_update}\n")
 
 if parallel_context.get_global_rank() == 0:

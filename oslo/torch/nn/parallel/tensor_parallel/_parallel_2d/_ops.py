@@ -94,26 +94,6 @@ def gather_batch_2d(
     )
 
 
-def split_batch_2d(
-    inputs: Tensor,
-    dim: int = 0,
-    parallel_context: Optional[ParallelContext] = None,
-) -> Tensor:
-    dim_size = inputs.size(dim)
-    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
-    if world_size <= 1:
-        return inputs
-
-    assert (
-        dim_size % world_size == 0
-    ), f"The batch size ({dim_size}) is not a multiple of 2D size ({world_size})."
-
-    return inputs.chunk(world_size, dim=dim)[
-        parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-    ].contiguous()
-
-
 def reduce_tensor_2d(
     inputs: Tensor,
     parallel_context: ParallelContext,
@@ -802,18 +782,17 @@ class _AllGatherTensor2D(torch.autograd.Function):
         parallel_context: ParallelContext,
         parallel_mode: ParallelMode,
     ) -> Tensor:
+        if ctx:
+            ctx.dim = dim
+            ctx.parallel_context = parallel_context
+            ctx.parallel_mode = parallel_mode
+
         outputs = all_gather(
             inputs,
             dim,
             parallel_context=parallel_context,
             parallel_mode=parallel_mode,
         )
-
-        if ctx:
-            ctx.dim = dim
-            ctx.parallel_context = parallel_context
-            ctx.parallel_mode = parallel_mode
-
         return outputs
 
     @staticmethod
