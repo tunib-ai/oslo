@@ -410,6 +410,23 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             pipeline_parallel_size = self.parallel_context.get_world_size(
                 ParallelMode.PIPELINE
             )
+            if hasattr(module, "bias") and module.bias is not None:
+                if module.bias.dim() >= 1:
+                    bias_list = module.bias.data.chunk(summa_dim, dim=0)
+                    bias_list = [
+                        bias.chunk(summa_dim, dim=0) for bias in bias_list
+                    ]
+                    module.bias.data = bias_list[row_rank][col_rank].contiguous()
+
+                    if hasattr(module.bias, "oslo_parallel"):
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2D_ROW] = row_rank
+                        module.bias.oslo_parallel[ParallelMode.TENSOR_2D_COL] = col_rank
+                    else:
+                        module.bias.oslo_parallel = {
+                            ParallelMode.TENSOR_2D_ROW: row_rank,
+                            ParallelMode.TENSOR_2D_COL: col_rank,
+                        }
+                        
             _update_module_arguments(
                 module=module,
                 in_features=module.weight.size()[1],
