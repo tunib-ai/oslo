@@ -5,7 +5,12 @@ import torch.distributed as dist
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datasets import load_dataset
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, AutoModelForCausalLM
+from transformers import (
+    AutoTokenizer,
+    GPT2Config,
+    GPT2LMHeadModel,
+    AutoModelForCausalLM,
+)
 
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
@@ -17,7 +22,8 @@ def latency_trace(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        return result, end-start
+        return result, end - start
+
     return wrapper
 
 
@@ -36,8 +42,7 @@ batch_size = 16
 model_name = "gpt2"
 
 model_name = "gpt2"
-mkwargs = {
-}
+mkwargs = {}
 dataset_name = "squad"
 
 # parallel context 생성
@@ -98,10 +103,8 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp, notp_fw_time = \
-        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
-    loss_tp, tp_fw_time = \
-        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_no_tp, notp_fw_time = fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    loss_tp, tp_fw_time = fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
 
     fw_start_tp = time.time()
     loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
@@ -129,10 +132,13 @@ for data in dataloader:
         )
 
     if dist.get_rank() == 0:
-        wandb.log({
-            "tp.forward.time:": tp_fw_time,
-            "tp.backward.time:": tp_bw_time,
-            "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time})
+        wandb.log(
+            {
+                "tp.forward.time:": tp_fw_time,
+                "tp.backward.time:": tp_bw_time,
+                "notp.forward.time:": notp_fw_time,
+                "notp.backward.time:": notp_bw_time,
+            }
+        )
 
 dist.barrier()

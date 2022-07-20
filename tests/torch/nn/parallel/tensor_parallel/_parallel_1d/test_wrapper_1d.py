@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from datasets import load_dataset
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
+from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import allocate_params
 import time
 
@@ -16,7 +17,8 @@ def time_trace(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        return result, end-start
+        return result, end - start
+
     return wrapper
 
 
@@ -29,17 +31,17 @@ def fw(func, *args, **kwargs):
 def bw(tensors):
     return tensors.backward()
 
+
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
-    tensor_parallel_size=tp_size,
+    tensor_parallel_size=4,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
 )
 
 model_name = "gpt2"
-mkwargs = {
-}
+mkwargs = {}
 dataset_name = "squad"
 
 # 토크나이저 생성
@@ -88,10 +90,8 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp, notp_fw_time = \
-        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
-    loss_tp, tp_fw_time = \
-        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_no_tp, notp_fw_time = fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    loss_tp, tp_fw_time = fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
 
     fw_start_tp = time.time()
     loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
@@ -119,11 +119,14 @@ for data in dataloader:
         )
 
     if dist.get_rank() == 0:
-        wandb.log({
-            "tp.forward.time:": tp_fw_time,
-            "tp.backward.time:": tp_bw_time,
-            "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time})
+        wandb.log(
+            {
+                "tp.forward.time:": tp_fw_time,
+                "tp.backward.time:": tp_bw_time,
+                "notp.forward.time:": notp_fw_time,
+                "notp.backward.time:": notp_bw_time,
+            }
+        )
     #
     # loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
     # loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss

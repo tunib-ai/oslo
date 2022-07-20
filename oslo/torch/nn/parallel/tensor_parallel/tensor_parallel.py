@@ -35,7 +35,7 @@ from oslo.torch.nn.parallel.utils import (
     get_parallel_context,
     is_huggingface_model,
     allocate_params,
-    get_parameter_dtype
+    get_parameter_dtype,
 )
 
 
@@ -86,11 +86,13 @@ class TensorParallel(ParallelWrapper):
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
-        module_args: dict = None
+        module_args: dict = None,
     ):
         super().__init__()
         if is_huggingface_model(module):
-            assert module_args is None, "module_args must not be provided in huggingface module."
+            assert (
+                module_args is None
+            ), "module_args must not be provided in huggingface module."
         else:
             assert isinstance(module_args, dict), "module_args must be a dict."
 
@@ -99,11 +101,17 @@ class TensorParallel(ParallelWrapper):
         module = self._resize_num_classes(module, self.parallel_context, mapping)
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context, mapping, module_args)
+            self.module = _TensorParallel1D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context, mapping, module_args)
+            self.module = _TensorParallel2D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping, module_args)
+            self.module = _TensorParallel2p5D(
+                module, self.parallel_context, mapping, module_args
+            )
         else:
             raise ValueError(
                 "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
@@ -219,14 +227,14 @@ class TensorParallel(ParallelWrapper):
 
     @torch.no_grad()
     def save_parallelized(
-            self,
-            save_directory: Union[str, os.PathLike],
-            save_config: bool = True,
-            state_dict: Optional[dict] = None,
-            save_function: Callable = torch.save,
-            merge_checkpoints: bool = False,
-            mapping: Optional[dict] = None,
-            **kwargs,
+        self,
+        save_directory: Union[str, os.PathLike],
+        save_config: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        merge_checkpoints: bool = False,
+        mapping: Optional[dict] = None,
+        **kwargs,
     ):
         unwrapped_model = unwrap_parallel(self.module.module)
         if is_huggingface_model(unwrapped_model):
@@ -234,7 +242,9 @@ class TensorParallel(ParallelWrapper):
         else:
             new_module = unwrapped_model.__class__(**self.module.config)
         new_module = self._resize_vocab_size(new_module, self.parallel_context)
-        new_module = self._resize_num_classes(new_module, self.parallel_context, mapping)
+        new_module = self._resize_num_classes(
+            new_module, self.parallel_context, mapping
+        )
         return self.module.save_parallelized(
             new_module,
             save_directory,
@@ -249,9 +259,7 @@ class TensorParallel(ParallelWrapper):
     @staticmethod
     def get_module_args(module):
         state_dict = module.state_dict()
-        return {
-            key: value.shape for key, value in state_dict.items()
-        }
+        return {key: value.shape for key, value in state_dict.items()}
 
     def from_parallelized(self, path):
         return self.module.from_parallelized(path)
