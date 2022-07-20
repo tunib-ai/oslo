@@ -103,13 +103,7 @@ class TensorParallel(ParallelWrapper):
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
             self.module = _TensorParallel2D(module, self.parallel_context, mapping, module_args)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-<<<<<<< HEAD
-            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
-        elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
-            self.module = _TensorParallel3D(module, self.parallel_context, mapping)
-=======
             self.module = _TensorParallel2p5D(module, self.parallel_context, mapping, module_args)
->>>>>>> 731650cffc5444b55038e477fdc99ec98295c290
         else:
             raise ValueError(
                 "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
