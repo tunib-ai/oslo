@@ -410,6 +410,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             pipeline_parallel_size = self.parallel_context.get_world_size(
                 ParallelMode.PIPELINE
             )
+            
             if hasattr(module, "bias") and module.bias is not None:
                 if module.bias.dim() >= 1:
                     bias_list = module.bias.data.chunk(summa_dim, dim=0)
