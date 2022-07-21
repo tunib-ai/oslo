@@ -53,6 +53,7 @@ SUPPORTED_FEATURES = {
     },
     "lazy_initialization": _type(bool),
     "backend": _type(str),
+    "seed": _type(int),
 }
 
 TENSOR_PARALLEL_MODE_TYPES = {

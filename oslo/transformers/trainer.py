@@ -21,12 +21,10 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from transformers import PreTrainedTokenizerBase, PreTrainedModel, PretrainedConfig, __version__
-
-
+from ..torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.nn.parallel.data_parallel.distributed_data_parallel import (
-    DistributedDataParallel,
-)
+    DistributedDataParallel,)
 from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
 from .data.data_collator import (
     DataCollator,
@@ -47,6 +45,7 @@ from .trainer_utils import (
     denumpify_detensorize,
     TrainerMemoryTracker,
     PREFIX_CHECKPOINT_DIR,
+    OptimizerNames,
 )
 from .trainer_callback import (
     CallbackHandler,
@@ -68,8 +67,18 @@ from .trainer_pt_utils import (
     nested_detach,
     distributed_concat,
     DistributedLengthGroupedSampler,
-    distributed_broadcast_scalars,
+    get_parameter_names,
 )
+from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
+    SequenceDataParallel,)
+from oslo.torch.nn.parallel import (
+    PipelineParallel,
+    TensorParallel,
+    ShardedDataParallel,
+    FullyShardedDataParallel,
+    DistributedDataParallel,
+)
+
 from .integrations import get_reporting_integration_callbacks  # isort: split
 from .utils import (
     logging,
@@ -353,12 +362,15 @@ class Trainer:
                 f"args.max_steps must be set to a positive value if dataloader does not have a length, was {args.max_steps}"
             )
 
-        delay_optimizer_creation = (self.args.oslo_user_config and
-            self.args.oslo_config.data_parallel_size > 1 and DistributedDataParallel not in self.model_wrappers)
+        delay_optimizer_creation = (
+            self.args.oslo_user_config and
+            self.args.oslo_config.data_parallel_size > 1 and
+            DistributedDataParallel not in self.model_wrappers)
         if not delay_optimizer_creation:
-            self.create_optimizer()
-            self.create_scheduler(num_training_steps=max_steps,
-                                  optimizer=self.optimizer)
+            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+            # self.create_optimizer()
+            # self.create_scheduler(num_training_steps=max_steps,
+            #                       optimizer=self.optimizer)
 
         self.state = TrainerState()
 
@@ -370,9 +382,10 @@ class Trainer:
             self.model_wrapped = model
 
         if delay_optimizer_creation:
-            self.create_optimizer()
-            self.create_scheduler(num_training_steps=max_steps,
-                                  optimizer=self.optimizer)
+            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+            # self.create_optimizer()
+            # self.create_scheduler(num_training_steps=max_steps,
+            #                       optimizer=self.optimizer)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -543,7 +556,8 @@ class Trainer:
                         elif hasattr(model, "clip_grad_norm_"):
                             model.clip_grad_norm_(args.max_grad_norm)
                         else:
-                            nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                            nn.utils.clip_grad_norm_(model.parameters(),
+                                                     args.max_grad_norm)
 
                     # optimizer step
                     optimizer_was_run = True
@@ -597,7 +611,7 @@ class Trainer:
             delattr(self, "_past")
 
         logger.info(
-            "\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n"
+            "\n\nTraining completed.\n\n"
         )
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
             # Wait for everyone to get here so we are sure the model has been saved by process 0.
@@ -1166,6 +1180,18 @@ class Trainer:
             pin_memory=self.args.dataloader_pin_memory,
         )
 
+    def create_optimizer_and_scheduler(self, num_training_steps: int):
+        """
+        Setup the optimizer and the learning rate scheduler.
+
+        We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
+        Trainer's init through `optimizers`, or subclass and override this method (or `create_optimizer` and/or
+        `create_scheduler`) in a subclass.
+        """
+        self.create_optimizer()
+        self.create_scheduler(num_training_steps=num_training_steps,
+                              optimizer=self.optimizer)
+
     def create_optimizer(self):
         """
         Setup the optimizer.
@@ -1173,11 +1199,131 @@ class Trainer:
         We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
-        """
-        if shared ddp:
-           wrap optimizer
-        """
+        opt_model = self.model_wrapped
+
+        if self.parallel_context or self.optimizer is None:
+            decay_parameters = get_parameter_names(opt_model, [nn.LayerNorm])
+            decay_parameters = [
+                name for name in decay_parameters if "bias" not in name
+            ]
+            optimizer_grouped_parameters = [
+                {
+                    "params": [
+                        p for n, p in opt_model.named_parameters()
+                        if n in decay_parameters
+                    ],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [
+                        p for n, p in opt_model.named_parameters()
+                        if n not in decay_parameters
+                    ],
+                    "weight_decay": 0.0,
+                },
+            ]
+
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(self.args)
+
+            if ShardedDataParallel in self.model_wrappers or FullyShardedDataParallel in self.model_wrappers:
+                self.optimizer = ZeroRedundancyOptimizer(
+                    parallel_context=self.parallel_context,
+                    params=optimizer_grouped_parameters,
+                    optim=optimizer_cls,
+                    **optimizer_kwargs,
+                )
+            else:
+                self.optimizer = optimizer_cls(optimizer_grouped_parameters,
+                                               **optimizer_kwargs)
+                if optimizer_cls.__name__ == "Adam8bit":
+                    import bitsandbytes
+
+                    manager = bitsandbytes.optim.GlobalOptimManager.get_instance(
+                    )
+
+                    for module in opt_model.modules():
+                        if isinstance(module, nn.Embedding):
+                            manager.register_module_override(
+                                module, "weight", {"optim_bits": 32})
+                            logger.debug(
+                                f"bitsandbytes: will optimize {module} in fp32")
+
         return self.optimizer
+
+    @staticmethod
+    def get_optimizer_cls_and_kwargs(
+            args: TrainingArguments) -> Tuple[Any, Any]:
+        """
+        Returns the optimizer class and optimizer parameters based on the training arguments.
+
+        Args:
+            args (`transformers.training_args.TrainingArguments`):
+                The training arguments for the training session.
+
+        """
+        optimizer_kwargs = {"lr": args.learning_rate}
+        adam_kwargs = {
+            "betas": (args.adam_beta1, args.adam_beta2),
+            "eps": args.adam_epsilon,
+        }
+        if args.optim == OptimizerNames.ADAFACTOR:
+            from transformers.optimization import Adafactor
+            optimizer_cls = Adafactor
+            optimizer_kwargs.update({
+                "scale_parameter": False,
+                "relative_step": False
+            })
+        elif args.optim == OptimizerNames.ADAMW:
+            from torch.optim import AdamW
+            optimizer_cls = AdamW
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAM:
+            from torch.optim import Adam
+            optimizer_cls = Adam
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAGRAD:
+            from torch.optim import Adagrad
+            optimizer_cls = Adagrad
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADADELTA:
+            from torch.optim import Adadelta
+            optimizer_cls = Adadelta
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAMW_BNB:
+            try:
+                from bitsandbytes.optim import Adam8bit
+
+                optimizer_cls = Adam8bit
+                optimizer_kwargs.update(adam_kwargs)
+            except ImportError:
+                raise ValueError(
+                    "Trainer tried to instantiate bnb Adam8bit but bnb is not installed!"
+                )
+        elif args.optim == OptimizerNames.FUSEDADAM:
+            from ..torch.optim import FusedAdam
+            optimizer_cls = FusedAdam
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.FUSEDADAGRAD:
+            from ..torch.optim import FusedAdagrad
+            optimizer_cls = FusedAdagrad
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.FUSEDSGD:
+            from ..torch.optim import FusedSGD
+            optimizer_cls = FusedSGD
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.FUSEDNOVOGRAD:
+            from ..torch.optim import FusedNovoGrad
+            optimizer_cls = FusedNovoGrad
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.FUSEDLAMB:
+            from ..torch.optim import FusedLamb
+            optimizer_cls = FusedLamb
+            optimizer_kwargs.update(adam_kwargs)
+        else:
+            raise ValueError(
+                f"Trainer cannot instantiate unsupported optimizer: {args.optim}"
+            )
+        return optimizer_cls, optimizer_kwargs
 
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
         """
@@ -1187,13 +1333,15 @@ class Trainer:
         Args:
             num_training_steps (int): The number of training steps to do.
         """
-        # if self.lr_scheduler is None:
-        #     self.lr_scheduler = get_scheduler(
-        #         self.args.lr_scheduler_type,
-        #         optimizer=self.optimizer if optimizer is None else optimizer,
-        #         num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-        #         num_training_steps=num_training_steps,
-        #     )
+
+        if self.parallel_context or self.lr_scheduler is None:
+            from transformers import get_scheduler
+            self.lr_scheduler = get_scheduler(
+                self.args.lr_scheduler_type,
+                optimizer=self.optimizer if optimizer is None else optimizer,
+                num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                num_training_steps=num_training_steps,
+            )
         return self.lr_scheduler
 
     def num_examples(self, dataloader: DataLoader) -> int:
@@ -1296,7 +1444,7 @@ class Trainer:
         self.save_model(output_dir, _internal_call=True)
 
         # TODO check it work
-        if DistributedDataParallel in self.model_wrappers:
+        if isinstance(self.optimizer, ZeroRedundancyOptimizer):
             self.optimizer.consolidate_state_dict()
 
         if self.args.should_save:
@@ -1418,7 +1566,8 @@ class Trainer:
             f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric})."
         )
 
-        best_model_path = os.path.join(self.state.best_model_checkpoint, WEIGHTS_NAME)
+        best_model_path = os.path.join(self.state.best_model_checkpoint,
+                                       WEIGHTS_NAME)
         if os.path.exists(best_model_path):
             # load the model state dict on the CPU to avoid an OOM error.
             state_dict = torch.load(best_model_path, map_location="cpu")
@@ -1456,55 +1605,68 @@ class Trainer:
         # release memory
         del state_dict
 
-
-    def _sorted_checkpoints(
-        self, output_dir=None, checkpoint_prefix=PREFIX_CHECKPOINT_DIR, use_mtime=False
-    ) -> List[str]:
+    def _sorted_checkpoints(self,
+                            output_dir=None,
+                            checkpoint_prefix=PREFIX_CHECKPOINT_DIR,
+                            use_mtime=False) -> List[str]:
         ordering_and_checkpoint_path = []
 
-        glob_checkpoints = [str(x) for x in Path(output_dir).glob(f"{checkpoint_prefix}-*") if os.path.isdir(x)]
+        glob_checkpoints = [
+            str(x)
+            for x in Path(output_dir).glob(f"{checkpoint_prefix}-*")
+            if os.path.isdir(x)
+        ]
 
         for path in glob_checkpoints:
             if use_mtime:
-                ordering_and_checkpoint_path.append((os.path.getmtime(path), path))
+                ordering_and_checkpoint_path.append(
+                    (os.path.getmtime(path), path))
             else:
                 regex_match = re.match(f".*{checkpoint_prefix}-([0-9]+)", path)
                 if regex_match is not None and regex_match.groups() is not None:
-                    ordering_and_checkpoint_path.append((int(regex_match.groups()[0]), path))
+                    ordering_and_checkpoint_path.append(
+                        (int(regex_match.groups()[0]), path))
 
         checkpoints_sorted = sorted(ordering_and_checkpoint_path)
-        checkpoints_sorted = [checkpoint[1] for checkpoint in checkpoints_sorted]
+        checkpoints_sorted = [
+            checkpoint[1] for checkpoint in checkpoints_sorted
+        ]
         # Make sure we don't delete the best model.
         if self.state.best_model_checkpoint is not None:
-            best_model_index = checkpoints_sorted.index(str(Path(self.state.best_model_checkpoint)))
+            best_model_index = checkpoints_sorted.index(
+                str(Path(self.state.best_model_checkpoint)))
             for i in range(best_model_index, len(checkpoints_sorted) - 2):
-                checkpoints_sorted[i], checkpoints_sorted[i + 1] = checkpoints_sorted[i + 1], checkpoints_sorted[i]
+                checkpoints_sorted[i], checkpoints_sorted[
+                    i + 1] = checkpoints_sorted[i + 1], checkpoints_sorted[i]
         return checkpoints_sorted
-
 
     def _rotate_checkpoints(self, use_mtime=False, output_dir=None) -> None:
         if self.args.save_total_limit is None or self.args.save_total_limit <= 0:
             return
 
         # Check if we should delete older checkpoint(s)
-        checkpoints_sorted = self._sorted_checkpoints(use_mtime=use_mtime, output_dir=output_dir)
+        checkpoints_sorted = self._sorted_checkpoints(use_mtime=use_mtime,
+                                                      output_dir=output_dir)
         if len(checkpoints_sorted) <= self.args.save_total_limit:
             return
 
         # If save_total_limit=1 with load_best_model_at_end=True, we could end up deleting the last checkpoint, which
         # we don't do to allow resuming.
         save_total_limit = self.args.save_total_limit
-        if (
-            self.state.best_model_checkpoint is not None
-            and self.args.save_total_limit == 1
-            and checkpoints_sorted[-1] != self.state.best_model_checkpoint
-        ):
+        if (self.state.best_model_checkpoint is not None and
+                self.args.save_total_limit == 1 and
+                checkpoints_sorted[-1] != self.state.best_model_checkpoint):
             save_total_limit = 2
 
-        number_of_checkpoints_to_delete = max(0, len(checkpoints_sorted) - save_total_limit)
-        checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
+        number_of_checkpoints_to_delete = max(
+            0,
+            len(checkpoints_sorted) - save_total_limit)
+        checkpoints_to_be_deleted = checkpoints_sorted[:
+                                                       number_of_checkpoints_to_delete]
         for checkpoint in checkpoints_to_be_deleted:
-            logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
+            logger.info(
+                f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit"
+            )
             shutil.rmtree(checkpoint)
 
     def _move_model_to_device(self, model, device):
@@ -1670,7 +1832,9 @@ class Trainer:
                 process_index=self.args.process_index,
             )
 
-    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+    def get_eval_dataloader(self,
+                            eval_dataset: Optional[Dataset] = None
+                           ) -> DataLoader:
         """
         Returns the evaluation [`~torch.utils.data.DataLoader`].
 
@@ -1686,7 +1850,8 @@ class Trainer:
         eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
 
         if isinstance(eval_dataset, datasets.Dataset):
-            eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
+            eval_dataset = self._remove_unused_columns(eval_dataset,
+                                                       description="evaluation")
 
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             if self.args.world_size > 1:
@@ -1729,7 +1894,8 @@ class Trainer:
                 method are automatically removed. It must implement `__len__`.
         """
         if isinstance(test_dataset, datasets.Dataset):
-            test_dataset = self._remove_unused_columns(test_dataset, description="test")
+            test_dataset = self._remove_unused_columns(test_dataset,
+                                                       description="test")
 
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
             if self.args.world_size > 1:
@@ -1790,7 +1956,7 @@ class Trainer:
             loss = loss.mean(
             )  # mean() to average on multi-gpu parallel training
 
-        if self.args.gradient_accumulation_steps > 1 :
+        if self.args.gradient_accumulation_steps > 1:
             # TODO check oslo gradient_accumulation_steps
             # deepspeed handles loss scaling by gradient_accumulation_steps in its `backward`
             loss = loss / self.args.gradient_accumulation_steps
@@ -1869,7 +2035,7 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _wrap_model(self, model_wrappers: List, training: bool=True):
+    def _wrap_model(self, model_wrappers: List, training: bool = True):
         model = self.model
         if not training:
             return self.model
@@ -1880,7 +2046,10 @@ class Trainer:
         # Distributed training (should be after apex fp16 initialization)
         if self.parallel_context is not None:
             for wrapper in model_wrappers:
-                model = wrapper(self.model, self.parallel_context)
+                if isinstance(wrapper, ShardedDataParallel):
+                    model = wrapper(model,
+                                    self.optimizer,
+                                    parallel_context=self.parallel_context)
             allocate_params(model, self.parallel_context)
         return model
 
@@ -1911,7 +2080,6 @@ class Trainer:
         if self.args.should_save:
             if self.parallel_context:
                 state_dict = self.model.state_dict()
-                # TODO unwrap oslo parallel modules
                 self._save(output_dir, state_dict=state_dict)
             self._save(output_dir)
 
@@ -1939,7 +2107,4 @@ class Trainer:
             self.model.save_pretrained(output_dir, state_dict=state_dict)
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
-
-        # Good practice: save your training arguments together with the trained model
-        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
-
+        # torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
