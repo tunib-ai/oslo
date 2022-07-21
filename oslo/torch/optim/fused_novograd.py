@@ -3,28 +3,28 @@ from oslo.torch.utils.multi_tensor_apply import multi_tensor_applier
 from oslo.torch._C import get_novograd_kernel
 
 
-class FusedNovoGrad(torch.optim.Optimizer):
+class FusedNovograd(torch.optim.Optimizer):
 
-    """Implements NovoGrad algorithm.
+    """Implements Novograd algorithm.
 
     Currently GPU-only.  Requires Apex to be installed via
     ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./``.
 
-    This version of fused NovoGrad implements 2 fusions.
+    This version of fused Novograd implements 2 fusions.
 
-      * Fusion of the NovoGrad update's elementwise operations
+      * Fusion of the Novograd update's elementwise operations
       * A multi-tensor apply launch that batches the elementwise updates applied to all the model's parameters into one or a few kernel launches.
 
-    :class:`apex.optimizers.FusedNovoGrad`'s usage is identical to any Pytorch optimizer::
+    :class:`apex.optimizers.FusedNovograd`'s usage is identical to any Pytorch optimizer::
 
-        opt = apex.optimizers.FusedNovoGrad(model.parameters(), lr = ....)
+        opt = apex.optimizers.FusedNovograd(model.parameters(), lr = ....)
         ...
         opt.step()
 
-    :class:`apex.optimizers.FusedNovoGrad` may be used with or without Amp.  If you wish to use :class:`FusedNovoGrad` with Amp,
+    :class:`apex.optimizers.FusedNovograd` may be used with or without Amp.  If you wish to use :class:`FusedNovograd` with Amp,
     you may choose any ``opt_level``::
 
-        opt = apex.optimizers.FusedNovoGrad(model.parameters(), lr = ....)
+        opt = apex.optimizers.FusedNovograd(model.parameters(), lr = ....)
         model, opt = amp.initialize(model, opt, opt_level="O0" or "O1 or "O2")
         ...
         opt.step()
@@ -82,7 +82,7 @@ class FusedNovoGrad(torch.optim.Optimizer):
         set_grad_none=True,
     ):
         if amsgrad:
-            raise RuntimeError("FusedNovoGrad does not support the AMSGrad variant.")
+            raise RuntimeError("FusedNovograd does not support the AMSGrad variant.")
         defaults = dict(
             lr=lr,
             bias_correction=bias_correction,
@@ -93,7 +93,7 @@ class FusedNovoGrad(torch.optim.Optimizer):
             norm_type=norm_type,
             init_zero=init_zero,
         )
-        super(FusedNovoGrad, self).__init__(params, defaults)
+        super(FusedNovograd, self).__init__(params, defaults)
         fused_novogard_cuda = get_novograd_kernel()
         # Skip buffer
         # Creating the overflow buffer on the same device as the params tensors.
@@ -111,10 +111,10 @@ class FusedNovoGrad(torch.optim.Optimizer):
                 for p in group["params"]:
                     p.grad = None
         else:
-            super(FusedNovoGrad, self).zero_grad()
+            super(FusedNovograd, self).zero_grad()
 
     def load_state_dict(self, state_dict):
-        super(FusedNovoGrad, self).load_state_dict(state_dict)
+        super(FusedNovograd, self).load_state_dict(state_dict)
         # in case exp_avg_sq is not on the same device as params, move it there
         for group in self.param_groups:
             if len(group["params"]) > 0:
@@ -157,7 +157,7 @@ class FusedNovoGrad(torch.optim.Optimizer):
                     continue
                 if p.grad.data.is_sparse:
                     raise RuntimeError(
-                        "FusedNovoGrad does not support sparse gradients, please consider SparseAdam instead"
+                        "FusedNovograd does not support sparse gradients, please consider SparseAdam instead"
                     )
 
                 state = self.state[p]
@@ -175,7 +175,7 @@ class FusedNovoGrad(torch.optim.Optimizer):
                     p_32.append(p.data)
                     m_32.append(state["exp_avg"])
                 else:
-                    raise RuntimeError("FusedNovoGrad only support fp16 and fp32.")
+                    raise RuntimeError("FusedNovograd only support fp16 and fp32.")
 
             # we store per weight norm as one tensor for one group/precision combination
             # different from optim.Adam, we store norm here(not ^2) so we can unify calculation for norm types
@@ -212,7 +212,7 @@ class FusedNovoGrad(torch.optim.Optimizer):
                         v_32 = [torch.sum(torch.pow(g, 2)).sqrt().item() for g in g_32]
                     else:
                         raise RuntimeError(
-                            "FusedNovoGrad only support l2/inf norm now."
+                            "FusedNovograd only support l2/inf norm now."
                         )
                     # Creating the following parameters on the same device as the params tensors.
                     group["exp_avg_sq"][0] = torch.cuda.FloatTensor(
