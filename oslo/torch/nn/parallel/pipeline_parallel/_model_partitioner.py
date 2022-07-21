@@ -50,11 +50,6 @@ class ModelPartitioner(object):
         else:
             element.oslo_parallel = {ParallelMode.PIPELINE: node.device}
 
-        if node.parent is None:
-            setattr(element, "oslo_pp_parent_rank", node.device)
-        else:
-            setattr(element, "oslo_pp_parent_rank", node.parent.device)
-
     def partition(self):
         # 1. construct tree
         self.root_node = Node(
@@ -79,14 +74,15 @@ class ModelPartitioner(object):
         self._tree_partitioning()
 
         # 4. set device to parameters and buffers
+        self._set_attribute(self.module, self.root_node)
+
         for node in dfs(self.root_node):
-            if all([not hasattr(child, "device") for child in node.children]):
-                module = node.modules[0]
-                self._set_attribute(module, node)
-                for param in node.parameters:
-                    self._set_attribute(param, node)
-                for buffer in module.buffers():
-                    self._set_attribute(buffer, node)
+            module = node.modules[0]
+            self._set_attribute(module, node)
+            for param in node.parameters:
+                self._set_attribute(param, node)
+            for buffer in module.buffers():
+                self._set_attribute(buffer, node)
 
     @staticmethod
     def _get_parameters(module, to_list=True):

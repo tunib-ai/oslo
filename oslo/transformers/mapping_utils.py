@@ -216,12 +216,3 @@ class _ExpertParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
                 cache_mapping[cls] = mapping
 
         self.__MAPPING__ = cache_mapping
-
-
-HF_TO_OSLO = {
-    transformers.GPT2Model: oslo.transformers.GPT2Model,
-    transformers.GPT2LMHeadModel: oslo.transformers.GPT2LMHeadModel,
-    transformers.GPT2DoubleHeadsModel: oslo.transformers.GPT2DoubleHeadModel,
-    transformers.GPT2ForSequenceClassification: oslo.transformers.GPT2ForSequenceClassification,
-    transformers.GPT2ForTokenClassification: oslo.transformers.GPT2ForTokenClassification,
-}

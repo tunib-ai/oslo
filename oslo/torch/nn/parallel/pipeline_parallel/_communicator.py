@@ -3,7 +3,7 @@ from queue import Queue
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._message import Message
 
-MESSAGE_QUEUE_TYPES = ["FORWARD", "BACKWARD"]
+MESSAGE_QUEUE_TYPES = ["FORWARD"]
 MESSAGE_QUESES = {type: Queue() for type in MESSAGE_QUEUE_TYPES}
 
 
