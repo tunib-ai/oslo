@@ -387,11 +387,21 @@ class TrainingArguments:
             "help": "Number of epochs or steps to wait for before the first evaluation can be performed, depending on the evaluation_strategy."
         },
     )
-    learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
-    weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
-    adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
-    adam_beta2: float = field(default=0.999, metadata={"help": "Beta2 for AdamW optimizer"})
-    adam_epsilon: float = field(default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."})
+    learning_rate: float = field(
+        default=5e-5, metadata={"help": "The initial learning rate for AdamW."}
+    )
+    weight_decay: float = field(
+        default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."}
+    )
+    adam_beta1: float = field(
+        default=0.9, metadata={"help": "Beta1 for AdamW optimizer"}
+    )
+    adam_beta2: float = field(
+        default=0.999, metadata={"help": "Beta2 for AdamW optimizer"}
+    )
+    adam_epsilon: float = field(
+        default=1e-8, metadata={"help": "Epsilon for AdamW optimizer."}
+    )
     max_grad_norm: float = field(default=1.0, metadata={"help": "Max gradient norm."})
 
     num_train_epochs: float = field(
@@ -593,7 +603,9 @@ class TrainingArguments:
     )
     optim: OptimizerNames = field(
         default="adam",
-        metadata={"help": "The optimizer to use. Choose one of oslo.transformers.OptimizerNames"},
+        metadata={
+            "help": "The optimizer to use. Choose one of oslo.transformers.OptimizerNames"
+        },
     )
     group_by_length: bool = field(
         default=False,
@@ -769,10 +781,13 @@ class TrainingArguments:
         if self.oslo_user_config:
             from oslo.transformers.oslo_init import OsloTrainerConfig
             from .oslo_init import init_oslo_features
+
             # will be used later by the Trainer
             self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
-            #self.oslo_config.adjust_train_args(self)
-            self.parallel_context, self.model_wrappers = init_oslo_features(self.oslo_config)
+            # self.oslo_config.adjust_train_args(self)
+            self.parallel_context, self.model_wrappers = init_oslo_features(
+                self.oslo_config
+            )
 
     def __str__(self):
         self_as_dict = asdict(self)
@@ -792,8 +807,8 @@ class TrainingArguments:
         """
         The actual batch size for training (may differ from `per_gpu_train_batch_size` in distributed training).
         """
-        if self.oslo_config and isinstance(self.oslo_config.train_batch_size, int):
-            return self.oslo_config.train_batch_size
+        # if self.oslo_config and isinstance(self.oslo_config.train_batch_size, int):
+        #     return self.oslo_config.train_batch_size
         per_device_batch_size = self.per_device_train_batch_size
         train_batch_size = per_device_batch_size * max(1, self.n_gpu)
         return train_batch_size
