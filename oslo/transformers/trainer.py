@@ -2159,14 +2159,6 @@ class Trainer:
         # Distributed training (should be after apex fp16 initialization)
         if self.parallel_context is not None:
             for wrapper in model_wrappers:
-                if isinstance(wrapper, ShardedDataParallel):
-                    model = wrapper(
-                        model, self.optimizer, parallel_context=self.parallel_context
-                    )
-            allocate_params(model, self.parallel_context)
-        # Distributed training (should be after apex fp16 initialization)
-        if self.parallel_context is not None:
-            for wrapper in model_wrappers:
                 if isinstance(wrapper, TensorParallel):
                     model = wrapper(
                         self.model,
