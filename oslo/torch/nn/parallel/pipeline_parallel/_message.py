@@ -44,3 +44,12 @@ class TensorStub(object):
     dtype: torch.dtype
     shape: Union[List, Tuple]
     requires_grad: bool
+
+
+# TODO; dummy object for test
+@dataclass
+class HandShakeMessage:
+    inputs: TensorStub
+    src: torch.device
+    dst: torch.device
+    location: str

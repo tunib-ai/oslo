@@ -1,3 +1,7 @@
+import inspect
+import time
+import pickle
+from contextlib import contextmanager
 from queue import Queue
 from types import MethodType
 from collections.abc import Iterable
@@ -11,109 +15,138 @@ from torch.cuda.amp import custom_fwd, custom_bwd
 from oslo.torch.distributed.nn.functional import send, recv
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import get_parallel_context
+from oslo.torch.distributed.nn.functional import send, recv
 
-from ._message import Message, TensorStub
-
-
-# rpc queue
-MessageQueue = Queue()
-
-
-def rpc_push_queue(msg):
-    globals()["MessageQueue"].put(msg)
+from ._communicator import rpc_push_queue, prepare_recv
+from ._server import workers, _ORIGINAL_FORWARDS, _NEW_FORWARDS, _MODULE_DEVICE_LOCATIONS
+from ._message import HandShakeMessage, TensorStub
 
 
-def rpc_pull_queue():
-    return MessageQueue.get()
+def on_same_device(location):
+    module_device = _MODULE_DEVICE_LOCATIONS[location]
+    module_device = torch.device('cuda', module_device)
+    current_device = dist.get_rank()    # TODO;
+    current_device = torch.device('cuda', current_device)
+    is_same = module_device == current_device
+    print(f'{location}, module device: {module_device}, current device: {current_device}, {is_same}')
+    return is_same
 
 
-PRE_FORWARD_HOOK_REGISTER = {}
+# TODO; better way?
+def get_current_location():
+    frame = inspect.currentframe()
+    while hasattr(frame, "f_back"):
+        f_locals = frame.f_locals
+        if "self" in f_locals and isinstance(f_locals["self"], nn.Module):
+            break
+        else:
+            frame = frame.f_back
+
+    caller_module = frame.f_locals["self"]
+    location = caller_module.location
+
+    return location
 
 
-def pipeline_parallel_pre_forward_hook(self, x):
-    print('hou')
+def wrap_forward(module):
+    orig_forward = module.forward
+    loc = module.location
+    device = module.oslo_parallel[ParallelMode.PIPELINE]
 
-    if self.device == 'cpu':
-        # module lives in other gpu
-        dest = self.oslo_parallel[ParallelMode.PIPELINE]
-        parallel_context = get_parallel_context(self, parallel_context=None)
-        rpc_worker_name = parallel_context.get_pipeline_rpc_worker_name(dest)
+    _ORIGINAL_FORWARDS[loc] = orig_forward
+    _MODULE_DEVICE_LOCATIONS[loc] = device
 
-        # rpc.rpc_async(
-        #     to=rpc_worker_name,
-        #     func=rpc_push_queue,
-        #     args=("Ready?", ),
-        # )
+    # TODO; make available on any input
+    def new_forward(x, location=None):
+        print(location)
 
-    else:
-        return self(x)
+        if location is None:
+            location = get_current_location()
 
+        is_same = on_same_device(location)
 
-def convert_forward(self):
-    self.forward = MethodType(pipeline_parallel_pre_forward_hook, self)
+        print(f'{location}, {is_same} !!!!!!!!!!!!!!!!!!!')
 
+        if is_same:
+            # just put task in the job Queue
+            forward_fn = _ORIGINAL_FORWARDS[location]
 
-def wrap_module(m, parallel_context):
-    if isinstance(m, Iterable):     # ModuleList, ModuleDict...
-        return m
-    else:
-        return ModuleWrapper(m, parallel_context)
+            print(x.device, dist.get_rank(), workers.rank)
 
+            if workers.rank == 1:
+                print(forward_fn(x))
 
-class ModuleWrapper(nn.Module):
-    def __init__(self, m, parallel_context):
-        super().__init__()
-        self.module = m
-        self.parallel_context = parallel_context
+            future = workers.put(forward_fn, x)
+            result = future.result()
 
-    def forward(self, x):
-        print(torch.cuda.current_device(), self.module._location)
-        # print(x)
+        else:
+            src = dist.get_rank()
+            src = torch.device('cuda', src)
+            dst = _MODULE_DEVICE_LOCATIONS[location]
+            dst = torch.device('cuda', dst)
 
-        self.send_message(x)
+            future = make_request(x, src, dst, location)
+            result = future.wait()
+            result = tensor_to_pyobject(result)
+            result = result.to(src)
 
-        # if torch.device('cuda', torch.cuda.current_device()) == x.device:
-        #     x = self.module(x)  # TODO; need layer-wise split...
-        #
-        #     # Enqueue TODO; better way?
-        #     self.send_message(x)
-        # else:
-        #     # module lives in other gpu
-        #     self.send_message(x)
+        return result
 
-    def send_message(self, x):
-        print("SEND")
-        dst_rank = self.module.oslo_parallel[ParallelMode.PIPELINE]
-        location = self.module._location
-        rpc_worker_name = self.parallel_context.get_pipeline_rpc_worker_name(dst_rank)
-
-        src_rank = dist.get_rank()
-        msg = prepare_forward_message(x, src_rank, dst_rank, location)
-        rpc.rpc_async(
-            to=rpc_worker_name,
-            func=rpc_push_queue,
-            args=(msg, ),
-        )
+    module.forward = new_forward
+    _NEW_FORWARDS[loc] = new_forward
 
 
-def prepare_event_head_message(x):
-    return prepare_forward_message(x, 0, 0, "")
+def prepare_handshake_message(x, src, dst, location):
+    stub = TensorStub(
+        id='0',   # TODO;
+        dtype=x.dtype,
+        shape=x.shape,
+        requires_grad=x.requires_grad,
+    )
 
-
-def prepare_forward_message(x, src, dst, location):
-    msg = Message()
-    # TODO; right???
-    msg.comm_type = "request"   # TODO;
-    msg.reqeust_from = "root"   # TODO;
-    msg.exec_type = "forward"
-    msg.inputs = None           # TODO; temp
-    msg.outputs = None
-    # msg.inputs = TensorStub()   # TODO; make with the information in x
-    msg.src_rank = src
-    msg.dst_rank = dst
-    msg.location = location
-    msg.in_autocast_context = False
-    msg.in_grad_related_context = False
-    msg.use_activation_checkpointing = False
+    msg = HandShakeMessage(
+        inputs=x.cpu(),
+        src=src,
+        dst=dst,
+        location=location
+    )
 
     return msg
+
+
+def tensor_to_pyobject(tensor: torch.Tensor):
+    nparray = tensor.cpu().numpy()
+    return pickle.loads(nparray.tobytes())
+
+
+def pyobject_to_tensor(obj, fixed_buffer_size: int = 0) -> torch.Tensor:
+    pickled = pickle.dumps(obj)
+    result: torch.Tensor = torch.ByteTensor(bytearray(pickled))
+    if fixed_buffer_size:
+        delta = fixed_buffer_size - len(result)
+        if delta < 0:
+            raise ValueError(
+                f"message too big to send, increase `fixed_buffer_size`? - {len(result)} > {fixed_buffer_size}"
+            )
+        elif delta > 0:
+            result = torch.cat((result, torch.zeros(delta, dtype=torch.uint8)))
+
+    return result
+
+
+def make_request(x, src, dst, location):
+    # TODO; this is super slow...
+    msg = prepare_handshake_message(x, src, dst, location)
+    msg = pyobject_to_tensor(msg)
+    rpc_dst = f'PP_WORKER_{dst.index}'  # TODO;
+
+    print(f'RPC dst: {rpc_dst}')
+
+    # send a message
+    ret = rpc.rpc_async(
+        to=rpc_dst,
+        func=prepare_recv,
+        args=(msg, ),
+    )
+
+    return ret

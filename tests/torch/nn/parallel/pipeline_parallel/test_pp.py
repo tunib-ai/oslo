@@ -1,3 +1,6 @@
+import concurrent.futures
+from threading import Thread
+
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -10,12 +13,12 @@ from oslo.torch.nn.parallel import PipelineParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
 
-_print = print
-
-
-def print(*args, **kw):
-    if dist.get_rank() == 0:
-        _print(*args, **kw)
+# _print = print
+#
+#
+# def print(*args, **kw):
+#     if dist.get_rank() == 0:
+#         _print(*args, **kw)
 
 
 torch.manual_seed(42)
@@ -27,6 +30,28 @@ parallel_context = ParallelContext.from_torch(
 )
 
 current_device = torch.cuda.current_device()
+
+
+# def print_device(i):
+#     torch.cuda.set_device(torch.distributed.get_rank())
+#     print(f'{torch.cuda.current_device()}')
+#     dummy = torch.rand(1)
+#
+#     print(dummy)
+#     dummy = dummy.cuda()
+#
+#     print(dummy.device)
+#
+#
+# with concurrent.futures.ThreadPoolExecutor() as exe:
+#     for i in range(1):
+#         exe.submit(print_device, i)
+
+# t = Thread(
+#     target=print_device,
+#     args=(0, )
+# )
+# t.start()
 
 n_steps = 1
 batch_size = 16
@@ -93,6 +118,22 @@ if parallel_context.get_global_rank() == 0:
 optimizer_pp = Adam(wrapper_pp.parameters(), lr=3e-5)
 optimizer_no_pp = Adam(model_no_pp.parameters(), lr=3e-5)
 
+
+from oslo.torch.nn.parallel.pipeline_parallel._hooks import wrap_forward
+
+from torch.nn.modules.batchnorm import SyncBatchNorm
+
+
+def recursive_convert(module):
+    wrap_forward(module)
+
+    for n, m in module.named_children():
+        recursive_convert(m)
+
+
+recursive_convert(wrapper_pp.module)    # CAUTION; PipelineParallel's forward need to be remained!
+
+
 allocate_params(wrapper_pp, parallel_context)
 
 
@@ -107,41 +148,27 @@ print_location(wrapper_pp, '')
 
 
 print(f"FC1 @ {model.fc1.weight.device}, FCS[-1] @ {model.fcs[-1].weight.device}")
-print(f"FC1 @ {model.fc1._location}, FCS[-1] @ {model.fcs[-1]._location}")
+print(f"FC1 @ {model.fc1.location}, FCS[-1] @ {model.fcs[-1].location}")
+print(f"FC1 @ {wrapper_pp.module.fc1.weight.device}, FCS[-1] @ {wrapper_pp.module.fcs[-1].weight.device}")
 
 
-def hook_fn(m, i, o):
-    print(m)
+
+def hook_fn(m, i):
+    print(f'{m.weight.device}, {m.location} \n')
 
 
 def get_all_layers(net):
-    for name, layer in net._modules.items():
+    for name, layer in net.named_modules():
         # If it is a sequential, don't register a hook on it
         # but recursively register hook on all it's module children
         if isinstance(layer, nn.Sequential):
             get_all_layers(layer)
-        else:
+        elif isinstance(layer, nn.Linear):
             # it's a non sequential. Register a hook
-            layer.register_backward_hook(hook_fn)
+            layer.register_forward_pre_hook(hook_fn)
 
 
 get_all_layers(wrapper_pp)
-
-
-from oslo.torch.nn.parallel.pipeline_parallel._hooks import wrap_module
-
-from torch.nn.modules.batchnorm import SyncBatchNorm
-
-def recursive_convert(module, parallel_context):
-    if len(list(module.named_children())) == 0:
-        return
-
-    for n, m in module.named_children():
-        recursive_convert(m, parallel_context)
-        module._modules[n] = wrap_module(m, parallel_context)
-
-
-recursive_convert(wrapper_pp, wrapper_pp.parallel_context)
 
 
 """
@@ -163,10 +190,8 @@ for rank in range(dist.get_world_size()):
 loss_fn = torch.nn.MSELoss()
 
 
-print(wrapper_pp.__class__.__name__)
-
 for i in range(n_steps):
-    sample_input = torch.rand(batch_size, in_channels).to('cuda:0')
+    sample_input = torch.rand(batch_size, in_channels).cuda()
     sample_output = torch.rand(batch_size, out_channels)
 
     optimizer_pp.zero_grad()
