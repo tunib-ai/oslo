@@ -87,7 +87,6 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
         self,
         processor: ProcessorForMaskedLM,
         mlm_probability: float = 0.15,
-        pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
         if mlm_probability >= 1.0:
@@ -100,7 +99,7 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
-        self.pad_to_multiple_of = pad_to_multiple_of
+        self.local_world_size = 0
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
@@ -109,8 +108,8 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
             examples,
             return_tensors="pt",
             pad_to_multiple_of=self.local_world_size
-            if self.local_world_size
-            else self.pad_to_multiple_of,
+            if self.local_world_size > 1
+            else None,
         )
 
         # If special token mask has been preprocessed, pop it from the dict.

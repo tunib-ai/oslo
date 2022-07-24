@@ -2,8 +2,9 @@ from typing import Any, Dict, List, Optional
 import logging
 import warnings
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers.file_utils import PaddingStrategy
@@ -15,24 +16,41 @@ logging.captureWarnings(True)
 
 
 class ProcessorForSequenceClassification(BaseProcessor):
-    def __init__(self, model_name_or_path: str, max_length: int) -> None:
+    def __init__(
+        self, model_name_or_path: str, max_length: int, is_text_pair: bool = False
+    ) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
+        self.is_text_pair = is_text_pair
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
         assert (
-            "text" in column_names
-        ), "The name of dataset column that you want to tokenize must be 'text'"
-        assert (
             "labels" in column_names
         ), "The name of dataset column that you want to use as a label must be 'labels'"
 
-        dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
-            examples["text"],
-            truncation=True,
-            max_length=self._max_length,
-            verbose=False,
-        )
+        if self.is_text_pair:
+            assert (
+                "text1" in column_names and "text2" in column_names
+            ), "The name of dataset columns that you want to tokenize must be 'text1' and 'text2'"
+
+            dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
+                examples["text1"],
+                examples["text2"],
+                truncation=True,
+                max_length=self._max_length,
+                verbose=False,
+            )
+        else:
+            assert (
+                "text" in column_names
+            ), "The name of dataset column that you want to tokenize must be 'text'"
+
+            dict_of_training_examples: Dict[str, List[int]] = self._tokenizer(
+                examples["text"],
+                truncation=True,
+                max_length=self._max_length,
+                verbose=False,
+            )
 
         dict_of_training_examples["labels"] = examples["labels"]
 
@@ -64,35 +82,30 @@ class DataCollatorForSequenceClassification:
         self.tokenizer = processor._tokenizer
         self.pad_to_multiple_of = pad_to_multiple_of
         self.padding = padding
-        self.parallel_context = parallel_context
+        self.local_world_size = 0
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self.set_parallel_context(parallel_context)
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else self.pad_to_multiple_of,
             return_tensors="pt",
         )
 
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                if value.dim() < 2:
-                    continue
-
-                value = value.chunk(
-                    self.local_world_size,
-                    dim=1,
-                )[self.local_rank]
-
-                if not value.is_contiguous():
-                    value = value.contiguous()
-
-                batch[key] = value
+        if self.local_world_size > 1:
+            sp_collate_fn = SequenceDataParallelCollator(
+                tokenizer=self.tokenizer,
+                parallel_key=PARALLEL_KEY["seq_cls"],
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
         return batch
+
+    def set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

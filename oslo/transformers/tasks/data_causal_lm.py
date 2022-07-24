@@ -2,8 +2,9 @@ import logging
 import warnings
 from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers.data.data_collator import _torch_collate_batch
@@ -70,7 +71,6 @@ class DataCollatorForCausalLM:
     def __init__(
         self,
         processor: ProcessorForCausalLM,
-        pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if not isinstance(processor, ProcessorForCausalLM):
@@ -84,14 +84,9 @@ class DataCollatorForCausalLM:
             )
 
         self.tokenizer = processor._tokenizer
-        self.pad_to_multiple_of = pad_to_multiple_of
-        self.parallel_context = parallel_context
+        self.local_world_size = 0
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self.set_parallel_context(parallel_context)
 
     def __call__(self, examples):
         examples = [example["input_ids"] for example in examples]
@@ -99,21 +94,24 @@ class DataCollatorForCausalLM:
             "input_ids": _torch_collate_batch(
                 examples,
                 tokenizer=self.tokenizer,
-                pad_to_multiple_of=self.pad_to_multiple_of,
+                pad_to_multiple_of=self.local_world_size
+                if self.local_world_size > 1
+                else None,
             )
         }
         batch["labels"] = batch["input_ids"].clone()
 
-        if self.pad_to_multiple_of is not None:
+        if self.local_world_size > 1:
             batch["labels"][batch["labels"] == self.tokenizer.pad_token_id] = -100
-
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
-
-                if not value.is_contiguous():
-                    value = value.contiguous()
-
-                batch[key] = value
+            sp_collate_fn = SequenceDataParallelCollator(
+                tokenizer=self.tokenizer,
+                parallel_key=PARALLEL_KEY["clm"],
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
         return batch
+
+    def set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

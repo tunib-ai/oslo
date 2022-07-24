@@ -10,25 +10,30 @@ except ImportError:
 
 
 PARALLEL_KEY = {
-    "clm": ("input_ids", "attention_mask"),
-    "mlm": ("input_ids", "attention_mask"),
-    "seq_cls": ("input_ids", "attention_mask"),
-    "token_cls": ("input_ids", "attention_mask"),
-    "summarization": ("input_ids", "attention_mask"),
-    "bert": ("input_ids", "token_type_ids", "attention_mask"),
-    "albert": ("input_ids", "token_type_ids", "attention_mask"),
-    "bart": (
+    "clm": ["input_ids", "attention_mask"],
+    "mlm": ["input_ids", "attention_mask"],
+    "seq_cls": ["input_ids", "attention_mask"],
+    "token_cls": ["input_ids", "attention_mask"],
+    "summarization": [
         "input_ids",
         "attention_mask",
         "decoder_input_ids",
         "decoder_attention_mask",
-    ),
-    "t5": (
+    ],
+    "bert": ["input_ids", "token_type_ids", "attention_mask"],
+    "albert": ["input_ids", "token_type_ids", "attention_mask"],
+    "bart": [
         "input_ids",
         "attention_mask",
         "decoder_input_ids",
         "decoder_attention_mask",
-    ),
+    ],
+    "t5": [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ],
 }
 
 

@@ -5,7 +5,8 @@ import torch
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers import AutoTokenizer
@@ -185,13 +186,9 @@ class DataCollatorForTokenClassification:
         self.pad_to_multiple_of = pad_to_multiple_of
         self.label_pad_token_id = label_pad_token_id
         self.padding = padding
-        self.parallel_context = parallel_context
+        self.local_world_size = 0
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self.set_parallel_context(parallel_context)
 
     def __call__(self, features):
         label_name = "labels"
@@ -200,12 +197,16 @@ class DataCollatorForTokenClassification:
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else self.pad_to_multiple_of,
             # Conversion to tensors will fail if we have labels as they are not of the same length yet.
             return_tensors="pt" if labels is None else None,
         )
+
         sequence_length = torch.tensor(batch["input_ids"]).shape[1]
-        if self.padding_side == "right":
+        padding_side = self.tokenizer.padding_side
+        if padding_side == "right":
             batch[label_name] = [
                 list(label) + [self.label_pad_token_id] * (sequence_length - len(label))
                 for label in labels
@@ -217,13 +218,17 @@ class DataCollatorForTokenClassification:
             ]
 
         batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                value = torch.tensor(value, dtype=torch.int64)
-                value = value.chunk(self.local_world_size, dim=1)[self.local_rank]
 
-                if not value.is_contiguous():
-                    value = value.contiguous()
+        if self.local_world_size > 1:
+            sp_collate_fn = SequenceDataParallelCollator(
+                tokenizer=self.tokenizer,
+                parallel_key=PARALLEL_KEY["token_cls"],
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
-                batch[key] = value
         return batch
+
+    def set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

@@ -5,8 +5,9 @@ import logging
 import torch
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers import DataCollatorForWholeWordMask
@@ -69,7 +70,6 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self,
         processor: ProcessorForBertPretraining,
         mlm_probability: float = 0.15,
-        pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if mlm_probability >= 1.0:
@@ -81,30 +81,29 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
-        self.pad_to_multiple_of = pad_to_multiple_of
         self.pad_token_id = self.tokenizer.pad_token_id
         self.pad_token_type_id = self.tokenizer.pad_token_type_id
-        self.parallel_context = parallel_context
+        self.local_world_size = 0
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self.set_parallel_context(parallel_context)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_wwm_and_sop_from_examples(examples)
         batch = self.tokenizer.pad(
-            examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of
+            examples,
+            return_tensors="pt",
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
         )
         batch_mask = batch.pop("mask_label")
 
-        if self.pad_to_multiple_of:
+        if self.local_world_size > 1:
             batch_size, mask_seq_length = batch_mask.size()
-            if mask_seq_length % self.pad_to_multiple_of != 0:
+            if mask_seq_length % self.local_world_size != 0:
                 required_length = (
-                    (mask_seq_length // self.pad_to_multiple_of) + 1
-                ) * self.pad_to_multiple_of
+                    (mask_seq_length // self.local_world_size) + 1
+                ) * self.local_world_size
                 difference = required_length - mask_seq_length
                 mask_pads = torch.full(
                     [batch_size, difference], fill_value=0, dtype=batch_mask.dtype
@@ -112,23 +111,16 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
                 batch_mask = torch.cat([batch_mask, mask_pads], axis=1)
 
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
-            batch["input_ids"], batch_mask
+            batch["input_ids"], mask_labels=batch_mask
         )
 
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                if key == "next_sentence_label":
-                    continue
-
-                value = value.chunk(
-                    self.local_world_size,
-                    dim=1,
-                )[self.local_rank]
-
-                if not value.is_contiguous():
-                    value = value.contiguous()
-
-                batch[key] = value
+        if self.local_world_size > 1:
+            sp_collate_fn = SequenceDataParallelCollator(
+                tokenizer=self.tokenizer,
+                parallel_key=PARALLEL_KEY["bert"],
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
         return batch
 
@@ -169,3 +161,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
                 }
             )
         return output_examples
+
+    def set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
