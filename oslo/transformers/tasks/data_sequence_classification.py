@@ -2,7 +2,8 @@ from typing import Any, Dict, List, Optional
 import logging
 import warnings
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -65,7 +66,6 @@ class DataCollatorForSequenceClassification:
     def __init__(
         self,
         processor: ProcessorForSequenceClassification,
-        pad_to_multiple_of: Optional[int] = None,
         padding: PaddingStrategy = "longest",
         parallel_context: Optional[ParallelContext] = None,
     ):
@@ -80,9 +80,8 @@ class DataCollatorForSequenceClassification:
             )
 
         self.tokenizer = processor._tokenizer
-        self.pad_to_multiple_of = pad_to_multiple_of
         self.padding = padding
-        self.local_world_size = 0
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
@@ -90,15 +89,14 @@ class DataCollatorForSequenceClassification:
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
+            return_tensors="pt",
             pad_to_multiple_of=self.local_world_size
             if self.local_world_size > 1
-            else self.pad_to_multiple_of,
-            return_tensors="pt",
+            else None,
         )
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["seq_cls"],
                 parallel_context=self.parallel_context,
             )

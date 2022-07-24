@@ -2,9 +2,9 @@ from typing import Any, Dict, List, Optional, Union
 import logging
 import warnings
 import torch
-import numpy as np
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -80,52 +80,32 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
         self.padding = padding
         self.label_pad_token_id = label_pad_token_id
         self.pad_to_multiple_of = pad_to_multiple_of
-        self.local_world_size = 0
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
-        labels = [feature["labels"] for feature in features]
-
-        # We have to pad the labels before calling `tokenizer.pad` as this method won't pad them and needs them of the
-        # same length to return tensors.
-        max_label_length = max(len(l) for l in labels)
-        self.pad_to_multiple_of = (
-            self.local_world_size
-            if self.local_world_size > 1
-            else self.pad_to_multiple_of
-        )
-        if self.pad_to_multiple_of is not None:
-            max_label_length = (
-                (max_label_length // self.pad_to_multiple_of) + 1
-            ) * self.pad_to_multiple_of
-
-        padding_side = self.tokenizer.padding_side
-        for feature in features:
-            remainder = [self.label_pad_token_id] * (
-                max_label_length - len(feature["labels"])
-            )
-            if isinstance(feature["labels"], list):
-                feature["labels"] = (
-                    feature["labels"] + remainder
-                    if padding_side == "right"
-                    else remainder + feature["labels"]
-                )
-            elif padding_side == "right":
-                feature["labels"] = np.concatenate(
-                    [feature["labels"], remainder]
-                ).astype(np.int64)
-            else:
-                feature["labels"] = np.concatenate(
-                    [remainder, feature["labels"]]
-                ).astype(np.int64)
-
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors="pt",
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
+            # Conversion to tensors will fail if we have labels as they are not of the same length yet.
+            return_tensors=None,
         )
+
+        labels = [feature["labels"] for feature in features]
+        batch["labels"] = pad_labels(
+            labels,
+            self.tokenizer,
+            pad_token_id=self.label_pad_token_id,
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
+        )
+
+        batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
 
         # prepare decoder_input_ids
         if self.model is not None and hasattr(
@@ -143,7 +123,6 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["summarization"],
                 parallel_context=self.parallel_context,
             )

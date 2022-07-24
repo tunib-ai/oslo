@@ -4,7 +4,8 @@ import warnings
 import logging
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -82,7 +83,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         self.mlm_probability = mlm_probability
         self.pad_token_id = self.tokenizer.pad_token_id
         self.pad_token_type_id = self.tokenizer.pad_token_type_id
-        self.local_world_size = 0
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
@@ -103,7 +104,6 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["albert"],
                 parallel_context=self.parallel_context,
             )

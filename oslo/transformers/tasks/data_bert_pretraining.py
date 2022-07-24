@@ -5,7 +5,8 @@ import logging
 import torch
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -83,7 +84,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self.mlm_probability = mlm_probability
         self.pad_token_id = self.tokenizer.pad_token_id
         self.pad_token_type_id = self.tokenizer.pad_token_type_id
-        self.local_world_size = 0
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
@@ -96,19 +97,16 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
             if self.local_world_size > 1
             else None,
         )
+
         batch_mask = batch.pop("mask_label")
 
         if self.local_world_size > 1:
-            batch_size, mask_seq_length = batch_mask.size()
-            if mask_seq_length % self.local_world_size != 0:
-                required_length = (
-                    (mask_seq_length // self.local_world_size) + 1
-                ) * self.local_world_size
-                difference = required_length - mask_seq_length
-                mask_pads = torch.full(
-                    [batch_size, difference], fill_value=0, dtype=batch_mask.dtype
-                )
-                batch_mask = torch.cat([batch_mask, mask_pads], axis=1)
+            batch_mask = pad_labels(
+                batch_mask,
+                self.tokenizer,
+                label_pad_token_id=0,
+                pad_to_multiple_of=self.local_world_size,
+            )
 
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], mask_labels=batch_mask
@@ -116,7 +114,6 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["bert"],
                 parallel_context=self.parallel_context,
             )

@@ -4,7 +4,8 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -134,6 +135,7 @@ class DataCollatorForT5Pretraining:
     def __init__(
         self,
         processor: ProcessorForT5Pretraining,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
         assert isinstance(
@@ -146,7 +148,8 @@ class DataCollatorForT5Pretraining:
         self.input_length = processor._max_length
         self.target_length = processor.target_chunk_size
         self.pad_token_id = self.tokenizer.pad_token_id
-        self.local_world_size = 0
+        self.label_pad_token_id = label_pad_token_id
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
 
@@ -192,31 +195,21 @@ class DataCollatorForT5Pretraining:
         batch = {key: torch.from_numpy(value) for key, value in batch.items()}
 
         if self.local_world_size > 1:
-            batch = self.pad_to_multiple_of(self.local_world_size, batch)
+            batch = self.tokenizer.pad(
+                batch, return_tensors="pt", pad_to_multiple_of=self.local_world_size
+            )
 
-        # decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id.
-        # See T5 docs for more information
-        shifted_labels = batch["labels"].new_zeros(batch["labels"].shape)
-        shifted_labels[..., 1:] = batch["labels"][..., :-1].clone()
-        shifted_labels[..., 0] = self.pad_token_id  # decoder_start_token_id
+            batch["labels"] = pad_labels(
+                batch["labels"],
+                self.tokenizer,
+                self.label_pad_token_id,
+                pad_to_multiple_of=self.local_world_size,
+            )
 
-        batch["decoder_input_ids"] = torch.masked_fill(
-            shifted_labels == -100, self.pad_token_id
-        )
-        batch["decoder_attention_mask"] = torch.where(
-            shifted_labels == -100,
-            0,
-            torch.ones_like(shifted_labels),
-        )
-        batch["attention_mask"] = torch.where(
-            batch["input_ids"] == self.pad_token_id,
-            0,
-            torch.ones_like(batch["input_ids"]),
-        )
+        batch = self.prepare_decoder_inputs_from_labels(batch)
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["t5"],
                 parallel_context=self.parallel_context,
             )
@@ -327,37 +320,21 @@ class DataCollatorForT5Pretraining:
 
         return is_noise[:orig_length]
 
-    def pad_to_multiple_of(
-        self, pad_to_multiple_of: int, batch: Dict[str, torch.Tensor]
-    ):
-        for key, value in batch.items():
-            assert (
-                value.dim() == 2
-            ), f"{key} values must be 2-dimensional. ({key} value.dim(): {value.dim()})"
+    def prepare_decoder_inputs_from_labels(self, batch):
+        # decoder_start_token_id has to be defined. In T5 it is usually set to the pad_token_id.
+        # See T5 docs for more information
+        shifted_labels = batch["labels"].new_zeros(batch["labels"].shape)
+        shifted_labels[..., 1:] = batch["labels"][..., :-1].clone()
+        shifted_labels[..., 0] = self.pad_token_id  # decoder_start_token_id
 
-            batch_size, seq_length = value.size()
-
-            if seq_length % pad_to_multiple_of != 0:
-                required_length = (
-                    (seq_length // pad_to_multiple_of) + 1
-                ) * pad_to_multiple_of
-                difference = required_length - seq_length
-
-                if key == "labels":
-                    pads = torch.full(
-                        [batch_size, difference],
-                        fill_value=-100,
-                        dtype=value.dtype,
-                    )
-                else:
-                    pads = torch.full(
-                        [batch_size, difference],
-                        fill_value=self.pad_token_id,
-                        dtype=value.dtype,
-                    )
-
-                batch[key] = torch.cat([value, pads], axis=1)
-
+        batch["decoder_input_ids"] = torch.masked_fill(
+            shifted_labels == self.label_pad_token_id, self.pad_token_id
+        )
+        batch["decoder_attention_mask"] = torch.where(
+            shifted_labels == self.label_pad_token_id,
+            0,
+            torch.ones_like(shifted_labels),
+        )
         return batch
 
     def set_parallel_context(self, parallel_context: ParallelContext):

@@ -6,29 +6,51 @@ from typing import List, Optional, Union
 import datasets
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from numpy.random import choice
-
-from oslo.transformers.tasks.data_causal_lm import ProcessorForCausalLM
-from oslo.transformers.tasks.data_sequence_classification import (
+from oslo.transformers.tasks import (
+    ProcessorForCausalLM,
+    ProcessorForMaskedLM,
     ProcessorForSequenceClassification,
-)
-from oslo.transformers.tasks.data_token_classification import (
     ProcessorForTokenClassification,
-)
-from oslo.transformers.tasks.data_bert_pretraining import ProcessorForBertPretraining
-from oslo.transformers.tasks.data_albert_pretraining import (
+    ProcessorForSummarization,
+    ProcessorForBertPretraining,
     ProcessorForAlbertPretraining,
+    ProcessorForBartPretraining,
+    ProcessorForT5Pretraining,
 )
-from oslo.transformers.tasks.data_roberta_pretraining import (
-    ProcessorForRobertaPretraining,
-)
-from oslo.transformers.tasks.data_bart_pretraining import ProcessorForBartPretraining
-from oslo.transformers.tasks.data_t5_pretraining import ProcessorForT5Pretraining
 
 try:
     from transformers import AutoTokenizer
     from transformers.file_utils import ExplicitEnum
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+
+PARALLEL_KEY = {
+    "clm": ["input_ids", "attention_mask"],
+    "mlm": ["input_ids", "attention_mask"],
+    "seq_cls": ["input_ids", "token_type_ids", "attention_mask"],
+    "token_cls": ["input_ids", "attention_mask"],
+    "summarization": [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ],
+    "bert": ["input_ids", "token_type_ids", "attention_mask"],
+    "albert": ["input_ids", "token_type_ids", "attention_mask"],
+    "bart": [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ],
+    "t5": [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ],
+}
 
 
 SENT_TEXT_SCRIPT = str(
@@ -42,6 +64,19 @@ class CorpusType(ExplicitEnum):
     SENT_TEXT = "sent_text"
     SENT_JSON = "sent_json"
     DATASET = "dataset"
+
+
+def pad_labels(
+    labels, tokenizer, label_pad_token_id, pad_to_multiple_of: Optional[int] = None
+):
+    labels = tokenizer.pad(
+        {"input_ids": labels},
+        return_tensors="pt",
+        pad_to_multiple_of=pad_to_multiple_of,
+    )["input_ids"]
+
+    labels.masked_fill_(labels == tokenizer.pad_token_id, label_pad_token_id)
+    return labels
 
 
 def batch_iterator(
@@ -171,9 +206,10 @@ def serialize_corpora(
         "causal_lm": ProcessorForCausalLM,
         "sequence_classification": ProcessorForSequenceClassification,
         "token_classification": ProcessorForTokenClassification,
+        "summarization": ProcessorForSummarization,
         "bert_pretraining": ProcessorForBertPretraining,
         "albert_pretraining": ProcessorForAlbertPretraining,
-        "roberta_pretraining": ProcessorForRobertaPretraining,
+        "roberta_pretraining": ProcessorForMaskedLM,
         "bart_pretraining": ProcessorForBartPretraining,
         "t5_pretraining": ProcessorForT5Pretraining,
     }

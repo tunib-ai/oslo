@@ -5,10 +5,10 @@ from typing import Any, Dict, List, Optional
 import warnings
 import logging
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
-from oslo.transformers.models.bart.modeling_bart import shift_tokens_right
 
 try:
     from transformers import (
@@ -77,6 +77,7 @@ class DataCollatorForBartPretraining:
         mlm_probability: float = 0.15,
         possion_lambda: float = 3.0,
         permute_sentence: bool = True,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if mlm_probability >= 1.0:
@@ -91,9 +92,10 @@ class DataCollatorForBartPretraining:
         self.possion_lambda = possion_lambda
         self.permute_sentence = permute_sentence
         self.pad_token_id = self.tokenizer.pad_token_id
+        self.label_pad_token_id = label_pad_token_id
         self.decoder_start_token_id = self.tokenizer.eos_token_id
         self.mask_token_id = processor._tokenizer.mask_token_id
-        self.local_world_size = 0
+        self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
         self.get_start_indices = {
@@ -113,32 +115,17 @@ class DataCollatorForBartPretraining:
         )
 
         if self.local_world_size > 1:
-            batch_size, label_seq_length = batch["labels"].size()
-            if label_seq_length % self.local_world_size != 0:
-                label_required_length = (
-                    (label_seq_length // self.local_world_size) + 1
-                ) * self.local_world_size
+            batch["labels"] = pad_labels(
+                batch["labels"],
+                self.tokenizer,
+                self.label_pad_token_id,
+                pad_to_multiple_of=self.local_world_size,
+            )
 
-                difference = label_required_length - label_seq_length
-                label_pads = torch.full(
-                    (batch_size, difference),
-                    fill_value=-100,
-                    dtype=batch["labels"].dtype,
-                )
-                batch["labels"] = torch.cat([batch["labels"], label_pads], axis=-1)
-
-        batch["decoder_input_ids"] = shift_tokens_right(
-            batch["labels"], self.pad_token_id, self.decoder_start_token_id
-        )
-        batch["decoder_attention_mask"] = torch.where(
-            batch["decoder_input_ids"] == self.pad_token_id,
-            0,
-            torch.ones_like(batch["decoder_input_ids"]),
-        )
+        batch = self.prepare_decoder_inputs_from_labels(batch)
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                tokenizer=self.tokenizer,
                 parallel_key=PARALLEL_KEY["bart"],
                 parallel_context=self.parallel_context,
             )
@@ -238,6 +225,25 @@ class DataCollatorForBartPretraining:
                 input_ids.extend(split_sentence)
 
         return input_ids
+
+    def prepare_decoder_inputs_from_labels(self, batch):
+        # Shift input ids one token to the right
+        shifted_input_ids = batch["labels"].new_zeros(batch["labels"].shape)
+        shifted_input_ids[:, 1:] = batch["labels"][:, :-1].clone()
+        shifted_input_ids[:, 0] = self.decoder_start_token_id
+
+        shifted_input_ids.masked_fill_(
+            shifted_input_ids == self.label_pad_token_id,
+            self.pad_token_id,
+        )
+
+        batch["decoder_input_ids"] = shifted_input_ids
+        batch["decoder_attention_mask"] = torch.where(
+            shifted_input_ids == self.pad_token_id,
+            0,
+            torch.ones_like(shifted_input_ids),
+        )
+        return batch
 
     def set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
