@@ -8,14 +8,14 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 class SequenceDataParallelCollator:
     def __init__(
         self,
+        tokenizer,
         parallel_keys: List[str],
         parallel_context: ParallelContext,
         dim: int = 1,
-        pad_token_id: Optional[int] = 0,
     ):
         self.parallel_keys = parallel_keys
         self.dim = dim
-        self.pad_token_id = pad_token_id
+        self.tokenizer = tokenizer
         self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
 
@@ -37,13 +37,21 @@ class SequenceDataParallelCollator:
             if num_pads > 0:
                 pad_size = list(value_size)
                 pad_size[self.dim] = num_pads
+
+                if key in ["input_ids", "decoder_input_ids"]:
+                    pad_token_id = self.tokenizer.pad_token_id
+                elif key in ["attention_mask", "decoder_attention_mask"]:
+                    pad_token_id = 0
+                elif key == "token_type_ids":
+                    pad_token_id = self.tokenizer.pad_token_type_id
+
                 pads = (
                     torch.ones(
                         pad_size,
                         dtype=value.dtype,
                         device=value.device,
                     )
-                    * self.pad_token_id
+                    * pad_token_id
                 )
                 value = torch.cat([value, pads], dim=self.dim)
 
