@@ -1,5 +1,6 @@
 import os
 from queue import Queue
+from threading import Thread
 
 import torch
 import torch.distributed as dist
@@ -9,6 +10,8 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
 MessageQueues = [Queue() for _ in range(2)]
+
+REMOTE_JOB_QUEUE = Queue()
 
 
 def rpc_push_queue(msg, ind):
@@ -59,15 +62,16 @@ def test_rpc(parallel_context):
         rpc.rpc_async(
             to=worker_map[local_rank + 1],
             func=rpc_push_queue,
-            args=("No!!", 0),
+            args=(torch.rand(2, 2, 2), 0),
         )
 
     elif is_final_stage:
         msg = MessageQueues[0].get()
-        print(local_rank, msg)
+        print(os.getpid(), local_rank, msg, torch.cuda.current_device())
 
     else:
         msg = MessageQueues[0].get()
+        print(os.getpid(), local_rank, msg, torch.cuda.current_device())
         rpc.rpc_async(to=worker_map[local_rank + 1], func=rpc_push_queue, args=(msg, 0))
 
 

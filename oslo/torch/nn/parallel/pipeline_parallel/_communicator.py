@@ -14,7 +14,23 @@ from ._server import workers, _ORIGINAL_FORWARDS, _NEW_FORWARDS
 
 
 MESSAGE_QUEUE_TYPES = ["FORWARD", "BACKWARD"]
-MESSAGE_QUESES = {type: Queue() for type in MESSAGE_QUEUE_TYPES}
+MESSAGE_QUEUES = {type: Queue() for type in MESSAGE_QUEUE_TYPES}
+
+REMOTE_JOB_QUEUE = Queue()
+FINAL_RESULT_QUEUE = Queue()
+LOCAL_RESULT_QUEUES = dict()
+
+
+def push_final_result_queue(msg):
+    globals()["FINAL_RESULT_QUEUE"].put(msg)
+
+
+def push_result_queue(msg, tag):
+    globals()["LOCAL_RESULT_QUEUES"][tag].put(msg)
+
+
+def push_job_queue(msg):
+    globals()["REMOTE_JOB_QUEUE"].put(msg)
 
 
 def rpc_push_queue(type: str, msg: Message):
@@ -84,6 +100,9 @@ def tensor_to_pyobject(tensor: torch.Tensor):
 
 # TODO; can this be thread?
 def prepare_recv(msg):
+    torch.cuda.set_device(dist.get_rank())
+
+    msg = msg.to_here()
     msg = tensor_to_pyobject(msg)
 
     inputs = msg.inputs
@@ -96,10 +115,10 @@ def prepare_recv(msg):
     print(inputs)
 
     rank = dist.get_rank()
-    torch.cuda.set_device(torch.distributed.get_rank())
+    # torch.cuda.set_device(torch.distributed.get_rank())
     print(f'ing?? {torch.cuda.is_available()}, {dst}, {location}, {torch.cuda.current_device()}, {rank}')
 
-    dummy = torch.rand(4, 4, 4)
+    dummy = torch.rand(1, 8, 8)
 
     print(dummy)
 
@@ -111,15 +130,16 @@ def prepare_recv(msg):
 
     print(f"ang? {dummy.device}")
 
-    with torch.cuda.device(dst):
-        inputs = inputs.cuda()   # TODO; why this does not work?
-        print(inputs.device)
-        forward_fn = _ORIGINAL_FORWARDS[location]
 
-    print(inputs)
+    inputs = inputs.cuda()
+    print(inputs.device)
+    forward_fn = _ORIGINAL_FORWARDS[location]
+
+    print(inputs)                   # TODO; why this does not work?
 
     print(forward_fn)
-    print(forward_fn(inputs))
+
+    print(forward_fn(dummy))        # TODO; why this does not work?
 
     future = workers.put(forward_fn, inputs)
 

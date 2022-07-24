@@ -868,8 +868,21 @@ class ParallelContext(object):
         if self.pipeline_parallel_size > 1:
             rank = self.get_local_rank(ParallelMode.PIPELINE)
             world_size = self.get_world_size(ParallelMode.PIPELINE)
+
+            options = rpc.TensorPipeRpcBackendOptions()
+            for other in self.get_ranks_in_group(ParallelMode.PIPELINE):
+                if other == rank:
+                    continue
+                options.set_device_map(
+                    f"PP_WORKER_{other}",
+                    {rank: other}
+                )
+
             rpc.init_rpc(
-                name=self.pipeline_worker_map[rank], rank=rank, world_size=world_size
+                name=self.pipeline_worker_map[rank],
+                rank=rank,
+                world_size=world_size,
+                rpc_backend_options=options,
             )
 
     def make_ranks_to_devices(self):

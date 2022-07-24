@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 from torch.optim import Adam
+from torch.distributed.elastic.multiprocessing.errors import record
 
 from transformers import GPT2LMHeadModel
 
@@ -124,16 +125,6 @@ from oslo.torch.nn.parallel.pipeline_parallel._hooks import wrap_forward
 from torch.nn.modules.batchnorm import SyncBatchNorm
 
 
-def recursive_convert(module):
-    wrap_forward(module)
-
-    for n, m in module.named_children():
-        recursive_convert(m)
-
-
-recursive_convert(wrapper_pp.module)    # CAUTION; PipelineParallel's forward need to be remained!
-
-
 allocate_params(wrapper_pp, parallel_context)
 
 
@@ -187,18 +178,33 @@ for rank in range(dist.get_world_size()):
     print()
 """
 
-loss_fn = torch.nn.MSELoss()
+
+@record
+def run():
+    def recursive_convert(module):
+        wrap_forward(module)
+
+        for n, m in module.named_children():
+            recursive_convert(m)
+
+    recursive_convert(wrapper_pp.module)  # CAUTION; PipelineParallel's forward need to be remained!
+
+    loss_fn = torch.nn.MSELoss()
 
 
-for i in range(n_steps):
-    sample_input = torch.rand(batch_size, in_channels).cuda()
-    sample_output = torch.rand(batch_size, out_channels)
+    for i in range(n_steps):
+        sample_input = torch.rand(batch_size, in_channels).cuda()
+        sample_output = torch.rand(batch_size, out_channels)
 
-    optimizer_pp.zero_grad()
-    optimizer_no_pp.zero_grad()
+        optimizer_pp.zero_grad()
+        optimizer_no_pp.zero_grad()
 
-    out_pp = wrapper_pp(sample_input)
-    out_no_pp = model_no_pp(sample_input)
+        out_pp = wrapper_pp(sample_input)
+        out_no_pp = model_no_pp(sample_input)
+
+        print(out_pp)
+
+run()
 #
 #     if out_pp is not None:
 #         sample_output = sample_output.to(out_pp.device)

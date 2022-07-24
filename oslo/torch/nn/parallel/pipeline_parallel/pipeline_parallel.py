@@ -2,14 +2,19 @@ import time     # TODO; temp
 import concurrent.futures
 from typing import Optional, Dict, Any
 
+import torch
 import torch.nn as nn
 import torch.distributed as dist
 from torch.distributed import rpc
 
 from oslo.torch.distributed.parallel_context import ParallelContext
 from oslo.torch.distributed.parallel_mode import ParallelMode
+from oslo.torch.distributed.nn.functional import broadcast
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
 from oslo.torch.nn.parallel.utils import get_parallel_context
+
+from ._server import workers, _ORIGINAL_FORWARDS, _NEW_FORWARDS
+from ._communicator import FINAL_RESULT_QUEUE, REMOTE_JOB_QUEUE, push_result_queue, push_job_queue, push_final_result_queue
 
 
 class PipelineParallel(nn.Module):
@@ -67,28 +72,75 @@ class PipelineParallel(nn.Module):
         #   otherwise, we cannot know that forward-backward is done.
 
         rank = dist.get_rank()
-        num_mb = 1  # TODO;
+        num_mb = 2  # TODO;
 
         # TODO;
         if rank == 0:
             micro_batches = x.chunk(num_mb)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_mb) as executor:
-                futs = executor.map(self.module, micro_batches)
+            futures = []
+            for mb in micro_batches:
+                future = workers.put(self.module, mb)
+                futures.append(future)
 
-                for fut in concurrent.futures.as_completed(futs):
-                    result = fut.result()
+            results = []
+            for done in concurrent.futures.as_completed(futures):
+                results.append(done.result())
+
+            for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
+                if other == 0:
+                    continue
+
+                end_call = rpc.rpc_async(
+                    to=f'PP_WORKER_{other}',
+                    func=push_job_queue,
+                    args=(None, ),
+                )
+                end_call.wait()
+
+            results = torch.cat(results, 0)
+            for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
+                if other == 0:
+                    continue
+
+                end_call = rpc.rpc_async(
+                    to=f'PP_WORKER_{other}',
+                    func=push_final_result_queue,
+                    args=(results, ),
+                )
+                end_call.wait()
 
         else:
-            result = None
+            while True:     # TODO; better way?
+                job = REMOTE_JOB_QUEUE.get()
 
-        dist.barrier()
+                if job is None:
+                    break
 
-        return result
+                inputs, msg = job
+                src = msg.src
+                location = msg.location
+                tag = msg.id
+
+                forward_fn = _ORIGINAL_FORWARDS[location]
+                result = forward_fn(inputs)
+
+                rpc_dst = f'PP_WORKER_{src.index}'  # TODO;
+
+                rpc.rpc_async(
+                    to=rpc_dst,
+                    func=push_result_queue,
+                    args=(result, tag),
+                )
+
+            # forward pass end, get copy from master
+            results = FINAL_RESULT_QUEUE.get()
+
+        return results
 
     def build_forward_dict(self):
 
         def get_location(module, prefix):
-            self._forward_dict[prefix] = module.forward
+            self._forward_dict[prefix] = module
             setattr(module, "location", prefix)
             setattr(module, "parallel_context", self.parallel_context)
 

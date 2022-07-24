@@ -53,3 +53,4 @@ class HandShakeMessage:
     src: torch.device
     dst: torch.device
     location: str
+    id: int

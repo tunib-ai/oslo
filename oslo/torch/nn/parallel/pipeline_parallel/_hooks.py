@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from queue import Queue
 from types import MethodType
 from collections.abc import Iterable
+import random
 
 import torch
 from torch import nn
@@ -17,7 +18,7 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.utils import get_parallel_context
 from oslo.torch.distributed.nn.functional import send, recv
 
-from ._communicator import rpc_push_queue, prepare_recv
+from ._communicator import rpc_push_queue, prepare_recv, push_job_queue, LOCAL_RESULT_QUEUES
 from ._server import workers, _ORIGINAL_FORWARDS, _NEW_FORWARDS, _MODULE_DEVICE_LOCATIONS
 from ._message import HandShakeMessage, TensorStub
 
@@ -58,7 +59,7 @@ def wrap_forward(module):
 
     # TODO; make available on any input
     def new_forward(x, location=None):
-        print(location)
+        print(f'in new forward: {location=}')
 
         if location is None:
             location = get_current_location()
@@ -73,9 +74,6 @@ def wrap_forward(module):
 
             print(x.device, dist.get_rank(), workers.rank)
 
-            if workers.rank == 1:
-                print(forward_fn(x))
-
             future = workers.put(forward_fn, x)
             result = future.result()
 
@@ -85,10 +83,12 @@ def wrap_forward(module):
             dst = _MODULE_DEVICE_LOCATIONS[location]
             dst = torch.device('cuda', dst)
 
-            future = make_request(x, src, dst, location)
-            result = future.wait()
-            result = tensor_to_pyobject(result)
-            result = result.to(src)
+            tag = random.randint(0, 12345678)   # TODO;
+            LOCAL_RESULT_QUEUES[tag] = Queue()
+            make_request(x, src, dst, location, tag)
+
+            result = LOCAL_RESULT_QUEUES[tag].get()
+            del LOCAL_RESULT_QUEUES[tag]
 
         return result
 
@@ -96,7 +96,7 @@ def wrap_forward(module):
     _NEW_FORWARDS[loc] = new_forward
 
 
-def prepare_handshake_message(x, src, dst, location):
+def prepare_handshake_message(x, src, dst, location, tag):
     stub = TensorStub(
         id='0',   # TODO;
         dtype=x.dtype,
@@ -105,10 +105,11 @@ def prepare_handshake_message(x, src, dst, location):
     )
 
     msg = HandShakeMessage(
-        inputs=x.cpu(),
+        inputs=x.detach().clone().cpu(),
         src=src,
         dst=dst,
-        location=location
+        location=location,
+        id=tag,
     )
 
     return msg
@@ -134,19 +135,17 @@ def pyobject_to_tensor(obj, fixed_buffer_size: int = 0) -> torch.Tensor:
     return result
 
 
-def make_request(x, src, dst, location):
+def make_request(x, src, dst, location, tag):
     # TODO; this is super slow...
-    msg = prepare_handshake_message(x, src, dst, location)
-    msg = pyobject_to_tensor(msg)
+    msg = prepare_handshake_message(x, src, dst, location, tag)
+    # msg = pyobject_to_tensor(msg)
     rpc_dst = f'PP_WORKER_{dst.index}'  # TODO;
 
-    print(f'RPC dst: {rpc_dst}')
+    print(f'RPC dst: {rpc_dst}, {location=}')
 
-    # send a message
-    ret = rpc.rpc_async(
+    rpc.rpc_async(
         to=rpc_dst,
-        func=prepare_recv,
-        args=(msg, ),
+        func=push_job_queue,
+        # args=((rpc.RRef(torch.rand(8, 8, 8)), msg), ),
+        args=((x.cuda(), msg), ),
     )
-
-    return ret
