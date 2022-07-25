@@ -210,7 +210,7 @@ class ExpertParallel(ParallelWrapper):
             num_experts = {cur_id: num_experts for cur_id in layer_ids}
         elif type(num_experts) is dict:
             assert (
-                num_experts.keys() != layer_ids
+                num_experts.keys() == layer_ids
             ), "The Keys of Experts Dictionary must be equal to the Set of Layer Ids"
         else:
             raise TypeError("num_enc_experts or num_dec_experts must be int or dict")
@@ -282,6 +282,8 @@ class ExpertParallel(ParallelWrapper):
         layer_id = self._extract_layer_id(module_name)
         role = self._get_module_role(module_name)
 
+        print(f"NUM EXPERTS : {self.num_experts}")
+        print(f"LAYER ID : {layer_id}")
         num_experts = self.num_experts[role][layer_id]
         ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
 
