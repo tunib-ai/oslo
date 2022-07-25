@@ -44,3 +44,7 @@ class ParallelMode(Enum):
     TENSOR_3D_INPUT = "tensor_3d_input"
     TENSOR_3D_WEIGHT = "tensor_3d_weight"
     TENSOR_3D_OUTPUT = "tensor_3d_output"
+
+    # Expert parallel groups
+    EXPERT = "expert"
+    EXPERT_DATA = "expert_data"

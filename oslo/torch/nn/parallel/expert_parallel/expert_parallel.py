@@ -1,13 +1,15 @@
 import copy
 import math
-from typing import Optional
+from typing import Union
 
 import torch
 import torch.nn as nn
-import torch.distributed as dist
+
+# import torch.distributed as dist
 
 from oslo.torch.distributed import ParallelMode
-from oslo.torch.distributed._seed.helper import seed
+
+# from oslo.torch.distributed._seed.helper import seed
 
 from oslo.torch.distributed.parallel_context import ParallelContext
 from oslo.torch.nn.parallel.utils import ParallelWrapper
@@ -15,22 +17,17 @@ from oslo.torch.nn.parallel.utils import is_huggingface_model, _update_module_ar
 
 from oslo.transformers.mapping_utils import _ExpertParallelMappingForHuggingFace
 
-from oslo.torch.nn.parallel.expert_parallel._context import ExpertParallelContext
+# from oslo.torch.nn.parallel.expert_parallel._context import ExpertParallelContext
 from oslo.torch.nn.parallel.expert_parallel.mapping import ExpertParallelMapping
 
 from oslo.torch.nn.parallel.expert_parallel.experts import Experts
 from oslo.torch.nn.parallel.expert_parallel.layers import (
-    ExpertParallelFrontBlockDS,
-    ExpertParallelBehindBlockDS,
+    ExpertParallelFrontBlock,
+    ExpertParallelBehindBlock,
     TopKGate,
 )
 
 from oslo.torch.nn.parallel.expert_parallel._ops import OSLO_EP_KERNEL_FLAG
-
-from oslo.torch.nn.parallel.expert_parallel.utils import (
-    UniformNoiseSampler,
-    NormalNoiseSampler,
-)
 
 
 class ExpertParallel(ParallelWrapper):
@@ -74,8 +71,8 @@ class ExpertParallel(ParallelWrapper):
         model: nn.Module,
         parallel_context: ParallelContext,
         use_kernel_optim=True,
-        num_enc_experts=None,
-        num_dec_experts=None,
+        num_enc_experts: Union[int, dict] = None,
+        num_dec_experts: Union[int, dict] = None,
         top_k: int = 2,
         capacity_factor_train: float = 1.0,
         capacity_factor_eval: float = 1.0,
@@ -92,9 +89,10 @@ class ExpertParallel(ParallelWrapper):
         self.model = model
 
         use_kernel_optim = OSLO_EP_KERNEL_FLAG and use_kernel_optim
-        self.ep_context = ExpertParallelContext(parallel_context, use_kernel_optim)
-        self.ep_context.setup(parallel_context.seed)
-        self.ep_context.reset_loss()
+        self.parallel_context = parallel_context
+        # self.ep_context = ExpertParallelContext(parallel_context, use_kernel_optim)
+        # self.ep_context.setup(parallel_context.seed)
+        # self.ep_context.reset_loss()
 
         self.device = torch.cuda.current_device()
 
@@ -135,16 +133,41 @@ class ExpertParallel(ParallelWrapper):
             num_dec_experts, self.dec_layer_ids
         )
 
+        self._sanity_check()
+
         self._parallelize()
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
+    # TODO : Need to Test
+    def _sanity_check(self):
+        if "enc" in self.parallel_context.expert_parallel_size:
+            # num_experts must be divisible by corresponding expert parallel size
+            assert all(
+                [
+                    self.parallel_context.expert_parallel_size["enc"][k]
+                    % self.num_experts["enc"][k]
+                    == 0
+                    for k in self.num_experts
+                ]
+            )
+
+        if "dec" in self.parallel_context.expert_parallel_size:
+            # num_experts must be divisible by corresponding expert parallel size
+            assert all(
+                [
+                    self.parallel_context.expert_parallel_size["dec"][k]
+                    % self.num_experts["dec"][k]
+                    == 0
+                    for k in self.num_experts
+                ]
+            )
+
     @torch.no_grad()
     def _parallelize(self):
         self._parallelize_module()
         self.to(self.device)
-        # self._sync_ep_model_param()
 
     def _parallelize_module(self):
         to_parallelize = [
@@ -152,25 +175,25 @@ class ExpertParallel(ParallelWrapper):
         ]
         for module_name, module in to_parallelize:
             if self.expert_parallel_mapping.is_front_parallel(self.model, module_name):
-                self._wrap_front_ds(
+                self._wrap_front(
                     module,
                     module_name,
                     reversed=self.expert_parallel_mapping.is_reversed_param(
                         self.model, module_name
                     ),
                 )
-                module.__class__ = ExpertParallelFrontBlockDS
+                module.__class__ = ExpertParallelFrontBlock
             elif self.expert_parallel_mapping.is_behind_parallel(
                 self.model, module_name
             ):
-                self._wrap_behind_ds(
+                self._wrap_behind(
                     module,
                     module_name,
                     reversed=self.expert_parallel_mapping.is_reversed_param(
                         self.model, module_name
                     ),
                 )
-                module.__class__ = ExpertParallelBehindBlockDS
+                module.__class__ = ExpertParallelBehindBlock
 
         return
 
@@ -251,7 +274,7 @@ class ExpertParallel(ParallelWrapper):
 
         return ".".join(spl_modules[:split_id])
 
-    def _wrap_front_ds(self, module: nn.Module, module_name: str, reversed: bool):
+    def _wrap_front(self, module: nn.Module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
         if reversed:
             out_features, in_features = in_features, out_features
@@ -260,6 +283,7 @@ class ExpertParallel(ParallelWrapper):
         role = self._get_module_role(module_name)
 
         num_experts = self.num_experts[role][layer_id]
+        ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
 
         gate = TopKGate(
             in_features,
@@ -280,31 +304,32 @@ class ExpertParallel(ParallelWrapper):
 
         if layer_id not in self.link_info:
             self.link_info[layer_id] = dict()
-        # link_info_k = self._extract_link_info_key(module_name)
-        # if link_info_k not in self.link_info:
-        #    self.link_info[link_info_k] = dict()
 
-        num_local_experts, ep_info = self.ep_context.get_info(num_experts)
+        # num_local_experts, ep_info = self.ep_context.get_info(num_experts)
+        num_local_experts = num_experts // ep_size
         experts = Experts(module, num_local_experts)
+
+        ep_group = self.parallel_context.get_group(ParallelMode.EXPERT)
 
         _update_module_arguments(
             module=module,
-            ep_context=self.ep_context,
-            # link_info=self.link_info[link_info_k],
+            # ep_context=self.ep_context,
             link_info=self.link_info[layer_id],
             gate=gate,
             in_features=in_features,
             out_features=out_features,
             front_experts=experts,
-            ep_group=ep_info.ep_group,
-            ep_size=ep_info.ep_size,
+            ep_group=ep_group,
+            ep_size=ep_size,
+            # ep_group=ep_info.ep_group,
+            # ep_size=ep_info.ep_size,
             num_local_experts=num_local_experts,
             use_residual=self.use_residual,
             expert_parallel_residual=expert_parallel_residual,
             expert_parallel_residual_mix=expert_parallel_residual_mix,
         )
 
-    def _wrap_behind_ds(self, module, module_name: str, reversed: bool):
+    def _wrap_behind(self, module, module_name: str, reversed: bool):
         out_features, in_features = module.weight.size()
         if reversed:
             out_features, in_features = in_features, out_features
@@ -313,6 +338,7 @@ class ExpertParallel(ParallelWrapper):
         role = self._get_module_role(module_name)
 
         num_experts = self.num_experts[role][layer_id]
+        ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
 
         expert_parallel_residual = None
         if self.use_residual:
@@ -320,64 +346,25 @@ class ExpertParallel(ParallelWrapper):
 
         if layer_id not in self.link_info:
             self.link_info[layer_id] = dict()
-        # link_info_k = self._extract_link_info_key(module_name)
-        # if link_info_k not in self.link_info:
-        #    self.link_info[link_info_k] = dict()
 
-        num_local_experts, ep_info = self.ep_context.get_info(num_experts)
+        # num_local_experts, ep_info = self.ep_context.get_info(num_experts)
+        num_local_experts = num_experts // ep_size
         experts = Experts(module, num_local_experts)
+
+        ep_group = self.parallel_context.get_group(ParallelMode.EXPERT)
 
         _update_module_arguments(
             module,
-            ep_context=self.ep_context,
+            # ep_context=self.ep_context,
             link_info=self.link_info[layer_id],
-            # link_info=self.link_info[link_info_k],
             in_features=in_features,
             out_features=out_features,
             behind_experts=experts,
-            ep_size=ep_info.ep_size,
-            ep_group=ep_info.ep_group,
+            ep_size=ep_size,
+            ep_group=ep_group,
+            # ep_size=ep_info.ep_size,
+            # ep_group=ep_info.ep_group,
             num_local_experts=num_local_experts,
             use_residual=self.use_residual,
             expert_parallel_residual=expert_parallel_residual,
         )
-
-    def _get_ep_size_param_dict(self):
-        ep_size_param_dict = dict()
-        for param in self.model.parameters():
-            if not hasattr(param, "ep_info"):
-                ep_size = 1
-            else:
-                ep_size = param.ep_info.ep_size
-
-            if ep_size not in ep_size_param_dict:
-                ep_size_param_dict[ep_size] = []
-
-            ep_size_param_dict[ep_size].append(param)
-
-        return ep_size_param_dict
-
-    def _sync_ep_model_param(self):
-        ep_info_dict = self.ep_context.parallel_info_dict
-        if self.ep_context.has_setup and len(ep_info_dict) > 0:
-            param_dict = self._get_ep_size_param_dict()
-            if 1 in param_dict:
-                _, ep_info = self.ep_context.get_info(1)
-                dp_group = ep_info.get_dp_group()
-                src_rank = ep_info.get_dp_group_ranks()[0]
-
-                for param in param_dict[1]:
-                    dist.broadcast(
-                        param,
-                        src=src_rank,
-                        group=dp_group,
-                    )
-
-            for ep_size in param_dict:
-                if ep_size != 1 and ep_size != self.ep_context.world_size:
-                    _, ep_info = self.ep_context.get_info(ep_size)
-                    src_rank = dist.get_rank(ep_info.ep_group)
-                    for param in param_dict[ep_size]:
-                        dist.broadcast(
-                            param, src=src_rank, group=param.ep_info.dp_group
-                        )

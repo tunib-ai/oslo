@@ -418,10 +418,10 @@ class TopKGate(Module):
 
 
 # TODO : Implement kernel optimized code
-class ExpertParallelFrontBlockDS(Module):
+class ExpertParallelFrontBlock(Module):
     def __init__(
         self,
-        ep_context: ExpertParallelContext,
+        # ep_context: ExpertParallelContext,
         link_info: dict,
         in_features: int,
         out_features: int,
@@ -434,7 +434,7 @@ class ExpertParallelFrontBlockDS(Module):
     ):
         super().__init__()
 
-        self.ep_context = ep_context
+        # self.ep_context = ep_context
         self.link_info = link_info
 
         self.gate = gate
@@ -538,10 +538,10 @@ class ExpertParallelFrontBlockDS(Module):
 
 
 # TODO : Implement Kernel Optimized Code
-class ExpertParallelBehindBlockDS(Module):
+class ExpertParallelBehindBlock(Module):
     def __init__(
         self,
-        ep_context: ExpertParallelContext,
+        # ep_context: ExpertParallelContext,
         link_info: dict,
         in_features: int,
         out_features: int,
@@ -553,7 +553,7 @@ class ExpertParallelBehindBlockDS(Module):
     ):
         super().__init__()
 
-        self.ep_context = ep_context
+        # self.ep_context = ep_context
         self.link_info = link_info
 
         self.in_features = in_features

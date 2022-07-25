@@ -19,6 +19,7 @@ class ProcessGroupInitializer(ABC):
         sequence_parallel_size: int,
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
+        expert_parallel_size: int,
     ):
         self.rank = rank
         self.world_size = world_size
@@ -26,6 +27,7 @@ class ProcessGroupInitializer(ABC):
         self.sequence_parallel_size = sequence_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
         self.tensor_parallel_size = tensor_parallel_size
+        self.expert_parallel_size = expert_parallel_size
 
     @abstractmethod
     def init_dist_group(self):
