@@ -1,5 +1,5 @@
-import time     # TODO; temp
 import concurrent.futures
+from queue import Queue
 from typing import Optional, Dict, Any
 
 import torch
@@ -9,12 +9,16 @@ from torch.distributed import rpc
 
 from oslo.torch.distributed.parallel_context import ParallelContext
 from oslo.torch.distributed.parallel_mode import ParallelMode
-from oslo.torch.distributed.nn.functional import broadcast
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
-from ._server import workers, _ORIGINAL_FORWARDS, _NEW_FORWARDS
-from ._communicator import FINAL_RESULT_QUEUE, REMOTE_JOB_QUEUE, push_result_queue, push_job_queue, push_final_result_queue
+from ._message import generate_request
+from ._server import (
+    workers,
+    _MODULE_DEVICE_LOCATIONS, _ORIGINAL_FORWARDS,
+    FINAL_RESULT_QUEUE, REMOTE_JOB_QUEUE, LOCAL_RESULT_QUEUES,
+    push_result_queue, push_job_queue, push_final_result_queue,
+)
 
 
 class PipelineParallel(nn.Module):
@@ -60,23 +64,15 @@ class PipelineParallel(nn.Module):
             memory_computation_balance=memory_computation_balance,
         )
         self.partitioner.partition()
-        self.oslo_parallel = self.module.oslo_parallel      # TODO; right?
-
-        self._forward_dict = dict()
-        self.build_forward_dict()
+        self.oslo_parallel = self.module.oslo_parallel
+        self._recursive_wrap(self, "")
 
     def forward(self, x):
-        # TODO;
-        #   need to make event that counts root node's
-        #   number of forward input-output diff and backward input-output diff.
-        #   otherwise, we cannot know that forward-backward is done.
-
-        rank = dist.get_rank()
+        rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
         num_mb = 2  # TODO;
 
-        # TODO;
         if rank == 0:
-            micro_batches = x.chunk(num_mb)
+            micro_batches = x.chunk(num_mb)     # TODO;
             futures = []
             for mb in micro_batches:
                 future = workers.put(self.module, mb)
@@ -86,8 +82,9 @@ class PipelineParallel(nn.Module):
             for done in concurrent.futures.as_completed(futures):
                 results.append(done.result())
 
+            # TODO; why putting None and result at the same time make a strange result?
             for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
-                if other == 0:
+                if other == rank:
                     continue
 
                 end_call = rpc.rpc_async(
@@ -99,7 +96,7 @@ class PipelineParallel(nn.Module):
 
             results = torch.cat(results, 0)
             for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
-                if other == 0:
+                if other == rank:
                     continue
 
                 end_call = rpc.rpc_async(
@@ -112,20 +109,19 @@ class PipelineParallel(nn.Module):
         else:
             while True:     # TODO; better way?
                 job = REMOTE_JOB_QUEUE.get()
+                req, args, kwargs = job
 
-                if job is None:
+                if req is None:
                     break
 
-                inputs, msg = job
-                src = msg.src
-                location = msg.location
-                tag = msg.id
+                src = req.src
+                location = req.location
+                tag = req.tag
 
                 forward_fn = _ORIGINAL_FORWARDS[location]
-                result = forward_fn(inputs)
+                result = forward_fn(*args, **kwargs)
 
-                rpc_dst = f'PP_WORKER_{src.index}'  # TODO;
-
+                rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(src.index)
                 rpc.rpc_async(
                     to=rpc_dst,
                     func=push_result_queue,
@@ -137,15 +133,60 @@ class PipelineParallel(nn.Module):
 
         return results
 
-    def build_forward_dict(self):
+    def _recursive_wrap(self, module, prefix):
+        setattr(module, "location", prefix)
+        if prefix != "":    # wrapper's forward function should not be wrapped
+            self._wrap_forward(module)
 
-        def get_location(module, prefix):
-            self._forward_dict[prefix] = module
-            setattr(module, "location", prefix)
-            setattr(module, "parallel_context", self.parallel_context)
+        for name, m in module.named_children():
+            new_prefix = f'{prefix}.{name}' if prefix != '' else name
+            self._recursive_wrap(m, new_prefix)
 
-            for n, m in module.named_children():
-                new_prefix = f'{prefix}.{n}' if prefix != '' else n
-                get_location(m, new_prefix)
+    def _wrap_forward(self, module):
+        orig_forward = module.forward
+        loc = module.location
+        device = module.oslo_parallel[ParallelMode.PIPELINE]
 
-        get_location(self, "")
+        _ORIGINAL_FORWARDS[loc] = orig_forward
+        _MODULE_DEVICE_LOCATIONS[loc] = device
+
+        def new_forward(*args, **kwargs):
+            location = module.location
+
+            module_device = _MODULE_DEVICE_LOCATIONS[location]
+            module_device = torch.device('cuda', module_device)
+            current_device = torch.cuda.current_device()
+            current_device = torch.device('cuda', current_device)
+            is_same = module_device == current_device
+
+            if is_same:
+                # just put task in the job Queue
+                forward_fn = _ORIGINAL_FORWARDS[location]
+
+                future = workers.put(forward_fn, *args, **kwargs)
+                result = future.result()
+
+            else:
+                src = dist.get_rank()
+                src = torch.device('cuda', src)
+                dst = _MODULE_DEVICE_LOCATIONS[location]
+                dst = torch.device('cuda', dst)
+
+                req = generate_request(src, dst, location)
+                tag = req.tag
+                LOCAL_RESULT_QUEUES[tag] = Queue()
+
+                rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
+                rpc.rpc_async(
+                    to=rpc_dst,
+                    func=push_job_queue,
+                    args=(req, ) + args,
+                    kwargs=kwargs,
+                )
+
+                result = LOCAL_RESULT_QUEUES[tag].get()
+                del LOCAL_RESULT_QUEUES[tag]
+
+            return result
+
+        module.forward = new_forward

@@ -1,18 +1,36 @@
-import os
 import concurrent.futures
+from queue import Queue
 
-import torch.cuda
 import torch.distributed as dist
 
 
 # original forward dictionary
 _ORIGINAL_FORWARDS = dict()
 
-# new forward dictionary
-_NEW_FORWARDS = dict()
-
 # module device locations
 _MODULE_DEVICE_LOCATIONS = dict()
+
+# Queue for rpc request
+REMOTE_JOB_QUEUE = Queue()
+
+# Queue for rpc response
+LOCAL_RESULT_QUEUES = dict()
+
+# Queue for final loss
+FINAL_RESULT_QUEUE = Queue()
+
+
+def push_final_result_queue(result):
+    globals()["FINAL_RESULT_QUEUE"].put(result)
+
+
+def push_result_queue(result, tag):
+    globals()["LOCAL_RESULT_QUEUES"][tag].put(result)
+
+
+def push_job_queue(req, *args, **kwargs):
+    job = (req, args, kwargs)
+    globals()["REMOTE_JOB_QUEUE"].put(job)
 
 
 class Workers:
@@ -24,9 +42,7 @@ class Workers:
         # lazy initialization
         if self.rank is None:
             self.rank = dist.get_rank()
-            print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {os.getpid()=}, Worker at {self.rank}'s current device: {torch.cuda.current_device()}")
 
-        print(forward_fn)
         future = self.executor.submit(forward_fn, *args, **kwargs)
         return future
 

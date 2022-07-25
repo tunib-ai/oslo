@@ -5,6 +5,7 @@ from typing import Tuple, List, Union
 import torch
 
 MESSAGE_GENERATION = 0
+REQUEST_GENERATION = 0
 
 
 @dataclass(init=False)
@@ -46,11 +47,22 @@ class TensorStub(object):
     requires_grad: bool
 
 
-# TODO; dummy object for test
-@dataclass
-class HandShakeMessage:
-    inputs: TensorStub
+@dataclass(init=False)
+class Request:
     src: torch.device
     dst: torch.device
     location: str
-    id: int
+    tag: int
+
+    def __init__(self):
+        global REQUEST_GENERATION
+        REQUEST_GENERATION += 1
+        self.tag = REQUEST_GENERATION
+
+
+def generate_request(src, dst, location):
+    req = Request()
+    req.src = src
+    req.dst = dst
+    req.location = location
+    return req
