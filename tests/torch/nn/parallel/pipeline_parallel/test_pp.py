@@ -29,8 +29,9 @@ parallel_context = ParallelContext.from_torch(
 current_device = torch.cuda.current_device()
 
 
-n_steps = 1
+n_steps = 1000
 batch_size = 16
+num_micro_batches = 2
 
 in_channels = 16
 hidden_channels = 8
@@ -99,6 +100,7 @@ wrapper_pp = PipelineParallel(
     model,
     parallel_context=parallel_context,
     memory_computation_balance=1.0,
+    num_micro_batches=num_micro_batches,
 )
 
 wrapper_pp.train()
@@ -175,19 +177,15 @@ def run():
         optimizer_pp.zero_grad()
         optimizer_no_pp.zero_grad()
 
-        out_pp = wrapper_pp(sample_input)
-        out_no_pp = model_no_pp(sample_input)
+        sample_output_chunks = sample_output.chunk(num_micro_batches)
 
-        if dist.get_rank() == 0:
-            loss_pp = loss_fn(out_pp, sample_output)
+        for out_pp, target in zip(wrapper_pp(sample_input), sample_output_chunks):
+            loss_pp = loss_fn(out_pp, target)
             loss_pp.backward()
 
-            loss_no_pp = loss_fn(out_no_pp, sample_output)
-            loss_no_pp.backward()
-
-            time.sleep(sleep)
-        else:
-            time.sleep(sleep + 2)
+        out_no_pp = model_no_pp(sample_input)
+        loss_no_pp = loss_fn(out_no_pp, sample_output)
+        loss_no_pp.backward()
 
         # grad print
         for n, p in wrapper_pp.named_parameters():
@@ -202,31 +200,9 @@ def run():
             if p1.device == torch.cuda.current_device():
                 assert torch.allclose(p1.grad, p2.grad)
 
+    time.sleep(sleep)
     torch.distributed.rpc.shutdown()
 
 
 run()
-#
-#     if out_pp is not None:
-#         sample_output = sample_output.to(out_pp.device)
-#         loss_pp = loss_fn(out_pp, sample_output)
-#         loss_no_pp = loss_fn(out_no_pp, sample_output)
-#
-#         # if parallel_context.get_global_rank() == 0:
-#         _print(f"rank: {dist.get_rank()}, pp:{loss_pp}, NOTHING:{loss_no_pp}")
-#     _print("AHHHHHHHHHHH!!!!!!!!!!!")
-#
-#     dist.barrier()
-#
-#     _print(f"rank: {dist.get_rank()}, barrier")
-#
-#     if out_pp is not None:
-#         loss_pp.backward()
-#         loss_no_pp.backward()
-#
-#     if out_pp is not None:
-#         for n, p in wrapper_pp.named_parameters():
-#             print(n, p.grad)
-#
-#     optimizer_pp.step()
-#     optimizer_no_pp.step()
+

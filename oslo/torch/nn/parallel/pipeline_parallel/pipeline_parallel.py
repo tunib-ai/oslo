@@ -57,6 +57,7 @@ class PipelineParallel(nn.Module):
         parallel_context: ParallelContext,
         memory_computation_balance: float = 1.0,
         tracing_inputs: Dict[str, Any] = None,
+        num_micro_batches:int = 1,
     ):
         super().__init__()
         self.module = module
@@ -72,13 +73,12 @@ class PipelineParallel(nn.Module):
         self._recursive_wrap(self, "")
         self._lock = Lock()
         self.rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
+        self.num_micro_batches = num_micro_batches
 
     def forward(self, x):
-        num_mb = 1  # TODO;
-
         futures = []
         if self.rank == 0:
-            micro_batches = x.chunk(num_mb)     # TODO;
+            micro_batches = x.chunk(self.num_micro_batches)     # TODO;
 
             def notify(fut):
                 for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
@@ -90,7 +90,7 @@ class PipelineParallel(nn.Module):
 
             for ind, mb in enumerate(micro_batches):
                 future = workers.put(self.module, mb)
-                if ind+1 == num_mb:
+                if ind+1 == self.num_micro_batches:
                     future.add_done_callback(notify)
                 futures.append(future)
 
@@ -100,29 +100,27 @@ class PipelineParallel(nn.Module):
         self._inner_loop()
 
         if self.rank == 0:
-            results = []
             for done in concurrent.futures.as_completed(futures):
-                results.append(done.result())
+                result = done.result()
 
-            # distribute
-            results = torch.cat(results, 0)
-            for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
-                if other == self.rank:
-                    continue
+                # distribute
+                for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
+                    if other == self.rank:
+                        continue
 
-                rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(other)
-                end_call = rpc.rpc_async(
-                    to=rpc_dst,
-                    func=push_final_result_queue,
-                    args=(results, ),
-                )
-                end_call.wait()
+                    rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(other)
+                    rpc.rpc_async(
+                        to=rpc_dst,
+                        func=push_final_result_queue,
+                        args=(result, ),
+                    ).wait()
+                yield result
 
         else:
             # forward pass end, wait results from master
-            results = FINAL_RESULT_QUEUE.get()
-
-        return results
+            for _ in range(self.num_micro_batches):
+                result = FINAL_RESULT_QUEUE.get()
+                yield result    # has no gradient
 
     def _inner_loop(self):
         while True:     # TODO; better way?
