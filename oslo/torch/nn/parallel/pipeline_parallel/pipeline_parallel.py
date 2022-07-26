@@ -1,4 +1,6 @@
 import concurrent.futures
+import threading
+import time
 from queue import Queue
 from threading import Lock
 from typing import Optional, Dict, Any
@@ -13,7 +15,7 @@ from oslo.torch.distributed.parallel_mode import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
-from ._functional import pipe_backward_redirection
+from ._functional import request_backward_redirection, response_backward_redirection
 from ._messages import generate_request
 from ._server import (
     workers,
@@ -69,87 +71,93 @@ class PipelineParallel(nn.Module):
         self.oslo_parallel = self.module.oslo_parallel
         self._recursive_wrap(self, "")
         self._lock = Lock()
+        self.rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
 
     def forward(self, x):
-        rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
         num_mb = 1  # TODO;
 
-        if rank == 0:
+        futures = []
+        if self.rank == 0:
             micro_batches = x.chunk(num_mb)     # TODO;
-            futures = []
-            for mb in micro_batches:
+
+            def notify(fut):
+                for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
+                    rpc.rpc_async(
+                        to=f'PP_WORKER_{other}',
+                        func=push_job_queue,
+                        args=(None, ),
+                    )
+
+            for ind, mb in enumerate(micro_batches):
                 future = workers.put(self.module, mb)
+                if ind+1 == num_mb:
+                    future.add_done_callback(notify)
                 futures.append(future)
 
+        # TODO; 주석 영어로 번역..
+        #  inner_loop 함수는 아무 것도 return 하지 않지만
+        #  new_forward 함수에서 workers에 return 해준다.
+        self._inner_loop()
+
+        if self.rank == 0:
             results = []
             for done in concurrent.futures.as_completed(futures):
                 results.append(done.result())
 
-            # TODO; why putting None and result at the same time make a strange result?
-            for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
-                if other == rank:
-                    continue
-
-                end_call = rpc.rpc_async(
-                    to=f'PP_WORKER_{other}',
-                    func=push_job_queue,
-                    args=(None, ),
-                )
-                end_call.wait()
-
+            # distribute
             results = torch.cat(results, 0)
             for other in self.parallel_context.get_ranks_in_group(ParallelMode.PIPELINE):
-                if other == rank:
+                if other == self.rank:
                     continue
 
+                rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(other)
                 end_call = rpc.rpc_async(
-                    to=f'PP_WORKER_{other}',
+                    to=rpc_dst,
                     func=push_final_result_queue,
                     args=(results, ),
                 )
                 end_call.wait()
 
         else:
-            while True:     # TODO; better way?
-                job = REMOTE_JOB_QUEUE.get()
-                req, args, kwargs = job
-
-                if req is None:
-                    break
-
-                args = pipe_backward_redirection(req, *args)
-
-                src = req.src
-                dst = req.dst
-                location = req.location
-                tag = req.tag
-
-                forward_fn = _ORIGINAL_FORWARDS[location]
-                result = forward_fn(*args, **kwargs)
-
-                # make reverse direction req for backward
-                rpc_caller = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
-                with self._lock:  # TODO; need a lock?
-                    reverse_req = generate_request(dst, src, None, rpc_caller)
-
-                rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(src.index)
-                rpc.rpc_async(
-                    to=rpc_dst,
-                    func=push_result_queue,
-                    args=(reverse_req, result, tag),
-                )
-
-                reverse_tag = reverse_req.tag
-                assert reverse_tag not in ACTIVATIONS      # TODO; check tag duplicate in other way
-                # ACTIVATIONS[reverse_tag] = Queue()
-                # ACTIVATIONS[reverse_tag].put(result)
-
-                ACTIVATIONS[reverse_tag] = result
-
-            # forward pass end, get copy from master
+            # forward pass end, wait results from master
             results = FINAL_RESULT_QUEUE.get()
 
         return results
+
+    def _inner_loop(self):
+        while True:     # TODO; better way?
+            job = REMOTE_JOB_QUEUE.get()
+            req, args, kwargs = job
+
+            if req is None:
+                break
+
+            args = request_backward_redirection(req, *args)
+
+            src = req.src
+            dst = req.dst
+            location = req.location
+            tag = req.tag
+
+            forward_fn = _ORIGINAL_FORWARDS[location]
+            result = forward_fn(*args, **kwargs)
+
+            # make reverse direction req for backward
+            rpc_caller = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
+            with self._lock:  # TODO; need a lock?
+                reverse_req = generate_request(dst, src, None, rpc_caller)
+
+            rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(src.index)
+            rpc.rpc_async(
+                to=rpc_dst,
+                func=push_result_queue,
+                args=(reverse_req, result, tag),
+            )
+
+            reverse_tag = reverse_req.tag
+            assert reverse_tag not in ACTIVATIONS      # TODO; check tag duplicate in other way
+
+            ACTIVATIONS[reverse_tag] = result
 
     def _recursive_wrap(self, module, prefix):
         setattr(module, "location", prefix)
@@ -171,6 +179,8 @@ class PipelineParallel(nn.Module):
         def new_forward(*args, **kwargs):
             location = module.location
 
+            print(location)
+
             module_device = _MODULE_DEVICE_LOCATIONS[location]
             module_device = torch.device('cuda', module_device)
             current_device = torch.cuda.current_device()
@@ -180,9 +190,7 @@ class PipelineParallel(nn.Module):
             if is_same:
                 # just put task in the job Queue
                 forward_fn = _ORIGINAL_FORWARDS[location]
-
-                future = workers.put(forward_fn, *args, **kwargs)
-                result = future.result()
+                result = forward_fn(*args, **kwargs)
 
             else:
                 src = dist.get_rank()
@@ -209,14 +217,16 @@ class PipelineParallel(nn.Module):
 
                 result = REMOTE_RESULT_QUEUES[tag].get()
 
-               # pre-work for backward
+                print(f'{result=}')
+
+                # pre-work for backward
                 req, result = result
                 # TODO; avoid wrap by tuple
                 wrapped = False
                 if isinstance(result, torch.Tensor):
                     result = (result, )
                     wrapped = True
-                result = pipe_backward_redirection(req, *result)
+                result = response_backward_redirection(req, *result)
                 if wrapped:
                     result = result[0]
 

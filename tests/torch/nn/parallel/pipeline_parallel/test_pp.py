@@ -163,6 +163,8 @@ for rank in range(dist.get_world_size()):
 """
 
 
+
+sleep = 3
 def run():
     loss_fn = torch.nn.MSELoss()
 
@@ -183,21 +185,24 @@ def run():
             loss_no_pp = loss_fn(out_no_pp, sample_output)
             loss_no_pp.backward()
 
-            for n, p in wrapper_pp.named_parameters():
-                # if p.grad is not None:
+            time.sleep(sleep)
+        else:
+            time.sleep(sleep + 2)
+
+        # grad print
+        for n, p in wrapper_pp.named_parameters():
+            if p.grad is not None:
                 print(n, p.grad)
 
-            named_params1 = wrapper_pp.module.named_parameters()
-            named_params2 = model_no_pp.named_parameters()
+        named_params1 = wrapper_pp.module.named_parameters()
+        named_params2 = model_no_pp.named_parameters()
 
-            # for (n1, p1), (n2, p2) in zip(named_params1, named_params2):
-            #     assert n1 == n2
-            #     if p1.device == torch.device('cuda', 0):
-            #         assert torch.allclose(p1.grad, p2.grad)
+        for (n1, p1), (n2, p2) in zip(named_params1, named_params2):
+            assert n1 == n2
+            if p1.device == torch.cuda.current_device():
+                assert torch.allclose(p1.grad, p2.grad)
 
-        time.sleep(100)
-        assert torch.allclose(out_pp, out_no_pp), f'{out_pp=}, {out_no_pp=}'
-
+    torch.distributed.rpc.shutdown()
 
 
 run()

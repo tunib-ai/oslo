@@ -39,13 +39,24 @@ def push_job_queue(req, *args, **kwargs):
     globals()["REMOTE_JOB_QUEUE"].put(job)
 
 
-def run_remote_backward(tag, to, *grad_outputs):
+def run_request_backward(tag, to, *grad_outputs):
     activation = ACTIVATIONS[tag]    # TODO;
 
     print(f'run_remote_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
 
-    if dist.get_rank() == 0:
-        print(activation)
+    print(f'{activation=}')
+
+    torch.autograd.backward(activation, grad_outputs)
+
+    # del ACTIVATIONS[tag]
+
+
+def run_response_backward(tag, to, *grad_outputs):
+    activation = ACTIVATIONS[tag]    # TODO;
+
+    print(f'run_remote_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
+
+    print(f'{activation=}')
 
     torch.autograd.backward(activation, grad_outputs)
 
