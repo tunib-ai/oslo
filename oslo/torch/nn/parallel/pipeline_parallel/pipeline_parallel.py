@@ -1,5 +1,6 @@
 import concurrent.futures
 from queue import Queue
+from threading import Lock
 from typing import Optional, Dict, Any
 
 import torch
@@ -12,11 +13,12 @@ from oslo.torch.distributed.parallel_mode import ParallelMode
 from oslo.torch.nn.parallel.pipeline_parallel._model_partitioner import ModelPartitioner
 from oslo.torch.nn.parallel.utils import get_parallel_context
 
-from ._message import generate_request
+from ._functional import pipe_backward_redirection
+from ._messages import generate_request
 from ._server import (
     workers,
-    _MODULE_DEVICE_LOCATIONS, _ORIGINAL_FORWARDS,
-    FINAL_RESULT_QUEUE, REMOTE_JOB_QUEUE, LOCAL_RESULT_QUEUES,
+    _MODULE_DEVICE_LOCATIONS, _ORIGINAL_FORWARDS, ACTIVATIONS,
+    FINAL_RESULT_QUEUE, REMOTE_JOB_QUEUE, REMOTE_RESULT_QUEUES,
     push_result_queue, push_job_queue, push_final_result_queue,
 )
 
@@ -66,10 +68,11 @@ class PipelineParallel(nn.Module):
         self.partitioner.partition()
         self.oslo_parallel = self.module.oslo_parallel
         self._recursive_wrap(self, "")
+        self._lock = Lock()
 
     def forward(self, x):
         rank = self.parallel_context.get_local_rank(ParallelMode.PIPELINE)
-        num_mb = 2  # TODO;
+        num_mb = 1  # TODO;
 
         if rank == 0:
             micro_batches = x.chunk(num_mb)     # TODO;
@@ -114,19 +117,34 @@ class PipelineParallel(nn.Module):
                 if req is None:
                     break
 
+                args = pipe_backward_redirection(req, *args)
+
                 src = req.src
+                dst = req.dst
                 location = req.location
                 tag = req.tag
 
                 forward_fn = _ORIGINAL_FORWARDS[location]
                 result = forward_fn(*args, **kwargs)
 
+                # make reverse direction req for backward
+                rpc_caller = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
+                with self._lock:  # TODO; need a lock?
+                    reverse_req = generate_request(dst, src, None, rpc_caller)
+
                 rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(src.index)
                 rpc.rpc_async(
                     to=rpc_dst,
                     func=push_result_queue,
-                    args=(result, tag),
+                    args=(reverse_req, result, tag),
                 )
+
+                reverse_tag = reverse_req.tag
+                assert reverse_tag not in ACTIVATIONS      # TODO; check tag duplicate in other way
+                # ACTIVATIONS[reverse_tag] = Queue()
+                # ACTIVATIONS[reverse_tag].put(result)
+
+                ACTIVATIONS[reverse_tag] = result
 
             # forward pass end, get copy from master
             results = FINAL_RESULT_QUEUE.get()
@@ -171,10 +189,15 @@ class PipelineParallel(nn.Module):
                 src = torch.device('cuda', src)
                 dst = _MODULE_DEVICE_LOCATIONS[location]
                 dst = torch.device('cuda', dst)
+                rpc_caller = self.parallel_context.get_pipeline_rpc_worker_name(src.index)
 
-                req = generate_request(src, dst, location)
+                with self._lock:    # TODO; need a lock?
+                    req = generate_request(src, dst, location, rpc_caller)
                 tag = req.tag
-                LOCAL_RESULT_QUEUES[tag] = Queue()
+                REMOTE_RESULT_QUEUES[tag] = Queue()
+                # ACTIVATIONS[tag] = Queue()
+                # ACTIVATIONS[tag].put((args, kwargs))
+                ACTIVATIONS[tag] = args     # TODO; kwargs...
 
                 rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
                 rpc.rpc_async(
@@ -184,8 +207,20 @@ class PipelineParallel(nn.Module):
                     kwargs=kwargs,
                 )
 
-                result = LOCAL_RESULT_QUEUES[tag].get()
-                del LOCAL_RESULT_QUEUES[tag]
+                result = REMOTE_RESULT_QUEUES[tag].get()
+
+               # pre-work for backward
+                req, result = result
+                # TODO; avoid wrap by tuple
+                wrapped = False
+                if isinstance(result, torch.Tensor):
+                    result = (result, )
+                    wrapped = True
+                result = pipe_backward_redirection(req, *result)
+                if wrapped:
+                    result = result[0]
+
+                del REMOTE_RESULT_QUEUES[tag]
 
             return result
 

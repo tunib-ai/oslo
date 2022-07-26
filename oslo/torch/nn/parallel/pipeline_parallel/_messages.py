@@ -53,6 +53,7 @@ class Request:
     dst: torch.device
     location: str
     tag: int
+    caller: str
 
     def __init__(self):
         global REQUEST_GENERATION
@@ -60,9 +61,11 @@ class Request:
         self.tag = REQUEST_GENERATION
 
 
-def generate_request(src, dst, location):
+def generate_request(src, dst, location, caller):
     req = Request()
     req.src = src
     req.dst = dst
     req.location = location
+    req.caller = caller
+
     return req
