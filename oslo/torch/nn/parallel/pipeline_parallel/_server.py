@@ -43,20 +43,19 @@ def run_remote_backward(tag, to, *grad_outputs):
     activation = ACTIVATIONS[tag]  # TODO;
 
     print(f'run_remote_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
-
     print(f'{activation=}')
 
-    torch.autograd.backward(activation, grad_outputs)
+    torch.autograd.backward(activation, grad_outputs, retain_graph=True)
 
-    del ACTIVATIONS[tag]
+    ACTIVATIONS.pop(tag)
 
 
 def run_request_backward(tag, to, *grad_outputs):
     activation = ACTIVATIONS[tag]    # TODO;
 
-    print(f'run_remote_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
-
-    print(f'{activation=}')
+    # print(f'run_request_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
+    #
+    # print(f'{activation=}')
 
     torch.autograd.backward(activation, grad_outputs)
 
@@ -66,9 +65,9 @@ def run_request_backward(tag, to, *grad_outputs):
 def run_response_backward(tag, to, *grad_outputs):
     activation = ACTIVATIONS[tag]    # TODO;
 
-    print(f'run_remote_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
-
-    print(f'{activation=}')
+    # print(f'run_response_backward, {dist.get_rank()=}, {to=}, {tag=}, {ACTIVATIONS.keys()=}')
+    #
+    # print(f'{activation=}')
 
     torch.autograd.backward(activation, grad_outputs)
 

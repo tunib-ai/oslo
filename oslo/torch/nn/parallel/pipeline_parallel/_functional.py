@@ -27,7 +27,7 @@ class _PipeBackwardRedirection(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, *grad_outputs):
 
-        print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
+        # print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
 
         rpc.rpc_async(
             to=ctx.req.caller,
@@ -53,7 +53,7 @@ class _PipeRequestRedirection(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, *grad_outputs):
 
-        print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
+        # print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
 
         rpc.rpc_async(
             to=ctx.req.caller,
@@ -65,8 +65,8 @@ class _PipeRequestRedirection(torch.autograd.Function):
 
 
 def request_backward_redirection(req, *args, **kwargs):
-    print(f'request_backward_redirection, {req=}, {args=}')
-    return _PipeBackwardRedirection.apply(req, *args, **kwargs)
+    # print(f'request_backward_redirection, {req=}, {args=}')
+    return _PipeRequestRedirection.apply(req, *args, **kwargs)
 
 
 class _PipeResponseRedirection(torch.autograd.Function):
@@ -84,7 +84,7 @@ class _PipeResponseRedirection(torch.autograd.Function):
     @custom_bwd
     def backward(ctx, *grad_outputs):
 
-        print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
+        # print(f'backward!, {dist.get_rank()=}, {ctx.req=}')
 
         rpc.rpc_async(
             to=ctx.req.caller,
@@ -96,5 +96,5 @@ class _PipeResponseRedirection(torch.autograd.Function):
 
 
 def response_backward_redirection(req, *args, **kwargs):
-    print(f'response_backward_redirection, {req=}, {args=}')
-    return _PipeBackwardRedirection.apply(req, *args, **kwargs)
+    # print(f'response_backward_redirection, {req=}, {args=}')
+    return _PipeResponseRedirection.apply(req, *args, **kwargs)

@@ -9,6 +9,10 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel import PipelineParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 
+import matplotlib
+import matplotlib.pyplot as plt
+
+matplotlib.use("Agg")
 
 _print = print
 
@@ -17,6 +21,8 @@ def print(*args, **kw):
     if dist.get_rank() == 0:
         _print(*args, **kw)
 
+
+torch.autograd.set_detect_anomaly(True)
 
 torch.manual_seed(42)
 
@@ -105,8 +111,8 @@ wrapper_pp = PipelineParallel(
 
 wrapper_pp.train()
 
-if parallel_context.get_global_rank() == 0:
-    print(wrapper_pp.partitioner.module)
+# if parallel_context.get_global_rank() == 0:
+#     print(wrapper_pp.partitioner.module)
 
 optimizer_pp = Adam(wrapper_pp.parameters(), lr=3e-5)
 optimizer_no_pp = Adam(model_no_pp.parameters(), lr=3e-5)
@@ -130,22 +136,22 @@ allocate_params(wrapper_pp, parallel_context)
 
 
 
-def hook_fn(m, i, o):
-    _print(f'backward hook!! {m.weight.device=} {m.location=}')
-
-
-def get_all_layers(net):
-    for name, layer in net.named_modules():
-        # If it is a sequential, don't register a hook on it
-        # but recursively register hook on all it's module children
-        if isinstance(layer, nn.Sequential):
-            get_all_layers(layer)
-        elif isinstance(layer, nn.Linear):
-            # it's a non sequential. Register a hook
-            layer.register_backward_hook(hook_fn)
-
-
-get_all_layers(wrapper_pp)
+# def hook_fn(m, i, o):
+#     _print(f'backward hook!! {m.weight.device=} {m.location=}')
+#
+#
+# def get_all_layers(net):
+#     for name, layer in net.named_modules():
+#         # If it is a sequential, don't register a hook on it
+#         # but recursively register hook on all it's module children
+#         if isinstance(layer, nn.Sequential):
+#             get_all_layers(layer)
+#         elif isinstance(layer, nn.Linear):
+#             # it's a non sequential. Register a hook
+#             layer.register_backward_hook(hook_fn)
+#
+#
+# get_all_layers(wrapper_pp)
 
 
 """
@@ -166,31 +172,45 @@ for rank in range(dist.get_world_size()):
 
 
 
-sleep = 3
+sleep = 0.1
 def run():
+    pp_losses = []
+    no_pp_losses = []
     loss_fn = torch.nn.MSELoss()
 
     for i in range(n_steps):
         sample_input = torch.rand(batch_size, in_channels).cuda()
-        sample_output = torch.rand(batch_size, out_channels).cuda()
+        sample_output = torch.rand(batch_size, out_channels).cuda() * 10
 
-        optimizer_pp.zero_grad()
+        optimizer_pp.zero_grad(set_to_none=True)
         optimizer_no_pp.zero_grad()
 
         sample_output_chunks = sample_output.chunk(num_micro_batches)
 
-        for out_pp, target in zip(wrapper_pp(sample_input), sample_output_chunks):
+        # wait for all forward pass
+        results = [result for result in wrapper_pp(sample_input)]
+
+        cum_loss_pp = torch.zeros(1)
+        for out_pp, target in zip(results, sample_output_chunks):
             loss_pp = loss_fn(out_pp, target)
             loss_pp.backward()
+            time.sleep(sleep)
+            cum_loss_pp += loss_pp.detach().item()
+
+        cum_loss_pp /= num_micro_batches
 
         out_no_pp = model_no_pp(sample_input)
         loss_no_pp = loss_fn(out_no_pp, sample_output)
+
         loss_no_pp.backward()
 
+        pp_losses.append(cum_loss_pp.item())
+        no_pp_losses.append(loss_no_pp.item())
+
         # grad print
-        for n, p in wrapper_pp.named_parameters():
-            if p.grad is not None:
-                print(n, p.grad)
+        # for n, p in wrapper_pp.named_parameters():
+        #     if p.grad is not None:
+        #         print(n, p.grad)
 
         named_params1 = wrapper_pp.module.named_parameters()
         named_params2 = model_no_pp.named_parameters()
@@ -200,8 +220,22 @@ def run():
             if p1.device == torch.cuda.current_device():
                 assert torch.allclose(p1.grad, p2.grad)
 
+        optimizer_pp.step()
+        optimizer_no_pp.step()
+
+        print(i)
+        time.sleep(sleep)
+
     time.sleep(sleep)
     torch.distributed.rpc.shutdown()
+
+    if dist.get_rank() == 0:
+        plt.figure(figsize=(64, 16))
+        plt.plot(pp_losses, label='PP')
+        plt.plot(no_pp_losses, label='no PP')
+        plt.legend()
+        plt.title('PP vs. no PP')
+        plt.savefig(f'pp_vs_no_pp.png')
 
 
 run()

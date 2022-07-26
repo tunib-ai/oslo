@@ -109,18 +109,25 @@ class PipelineParallel(nn.Module):
                         continue
 
                     rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(other)
-                    rpc.rpc_async(
+                    rpc.rpc_sync(   # TODO; async
                         to=rpc_dst,
                         func=push_final_result_queue,
                         args=(result, ),
-                    ).wait()
+                    )
+
                 yield result
+
+                # TODO;
+                time.sleep(0.1)
 
         else:
             # forward pass end, wait results from master
             for _ in range(self.num_micro_batches):
                 result = FINAL_RESULT_QUEUE.get()
                 yield result    # has no gradient
+
+                # TODO;
+                time.sleep(0.1)
 
     def _inner_loop(self):
         while True:     # TODO; better way?
@@ -177,7 +184,7 @@ class PipelineParallel(nn.Module):
         def new_forward(*args, **kwargs):
             location = module.location
 
-            print(location)
+            # print(location)
 
             module_device = _MODULE_DEVICE_LOCATIONS[location]
             module_device = torch.device('cuda', module_device)
@@ -201,8 +208,6 @@ class PipelineParallel(nn.Module):
                     req = generate_request(src, dst, location, rpc_caller)
                 tag = req.tag
                 REMOTE_RESULT_QUEUES[tag] = Queue()
-                # ACTIVATIONS[tag] = Queue()
-                # ACTIVATIONS[tag].put((args, kwargs))
                 ACTIVATIONS[tag] = args     # TODO; kwargs...
 
                 rpc_dst = self.parallel_context.get_pipeline_rpc_worker_name(dst.index)
@@ -215,7 +220,7 @@ class PipelineParallel(nn.Module):
 
                 result = REMOTE_RESULT_QUEUES[tag].get()
 
-                print(f'{result=}')
+                # print(f'{result=}')
 
                 # pre-work for backward
                 req, result = result
@@ -228,7 +233,7 @@ class PipelineParallel(nn.Module):
                 if wrapped:
                     result = result[0]
 
-                del REMOTE_RESULT_QUEUES[tag]
+                REMOTE_RESULT_QUEUES.pop(tag)
 
             return result
 
