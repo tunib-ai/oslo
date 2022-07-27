@@ -2,8 +2,7 @@ from typing import Any, Dict, List, Optional
 import logging
 import warnings
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -97,7 +96,7 @@ class DataCollatorForSequenceClassification:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["seq_cls"],
+                parallel_key=ParallelKey.SEQ_CLS,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

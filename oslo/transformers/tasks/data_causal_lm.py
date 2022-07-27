@@ -2,8 +2,7 @@ import logging
 import warnings
 from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -109,7 +108,7 @@ class DataCollatorForCausalLM:
                 batch["labels"] == self.tokenizer.pad_token_id, self.label_pad_token_id
             )
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["clm"],
+                parallel_key=ParallelKey.CLM,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

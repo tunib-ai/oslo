@@ -5,8 +5,7 @@ import torch
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
@@ -62,6 +61,10 @@ class ProcessorForTokenClassification(BaseProcessor):
                 use_auth_token=True if model_args.use_auth_token else None,
             )
         """
+        if self._tokenizer.pad_token is None:
+            warnings.warn(
+                "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
+            )
 
         self.label_names = self.get_label_names(dataset)
         self.label_map = self.get_label_map(self.label_names)
@@ -144,10 +147,9 @@ class ProcessorForTokenClassification(BaseProcessor):
         previous_word_idx = None
         label_ids = []
         for word_idx in word_ids:
-            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
-            # ignored in the loss function.
+            # Special tokens have a word id that is None. We set the label to pad token id
             if word_idx is None:
-                label_ids.append(-100)
+                label_ids.append(self._tokenizer.pad_token_id)
             # We set the label for the first token of each word.
             elif word_idx != previous_word_idx:
                 label_ids.append(labels[word_idx])
@@ -196,7 +198,7 @@ class DataCollatorForTokenClassification:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["token_cls"],
+                parallel_key=ParallelKey.TOKEN_CLS,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)
@@ -228,6 +230,10 @@ class DataCollatorForTokenClassification:
             ]
 
         batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
+        batch[label_name].masked_fill_(
+            batch[label_name] == self.tokenzier.pad_token_id, self.label_pad_token_id
+        )
+        return batch
 
     def set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context

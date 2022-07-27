@@ -3,8 +3,7 @@ import logging
 import warnings
 import torch
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -95,9 +94,8 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
             return_tensors=None,
         )
 
-        labels = [feature["labels"] for feature in features]
         batch["labels"] = pad_labels(
-            labels,
+            [feature["labels"] for feature in features],
             self.tokenizer,
             pad_token_id=self.label_pad_token_id,
             pad_to_multiple_of=self.local_world_size
@@ -123,7 +121,7 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["summarization"],
+                parallel_key=ParallelKey.SUMMARIZATION,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

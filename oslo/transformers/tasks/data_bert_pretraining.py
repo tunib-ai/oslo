@@ -5,8 +5,7 @@ import logging
 import torch
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -71,6 +70,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self,
         processor: ProcessorForBertPretraining,
         mlm_probability: float = 0.15,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if mlm_probability >= 1.0:
@@ -84,6 +84,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self.mlm_probability = mlm_probability
         self.pad_token_id = self.tokenizer.pad_token_id
         self.pad_token_type_id = self.tokenizer.pad_token_type_id
+        self.label_pad_token_id = label_pad_token_id
         self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
@@ -111,10 +112,12 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], mask_labels=batch_mask
         )
+        if self.label_pad_token_id != -100:
+            batch["label"].masked_fill_(batch["label"] == -100, self.label_pad_token_id)
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["bert"],
+                parallel_key=ParallelKey.BERT,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

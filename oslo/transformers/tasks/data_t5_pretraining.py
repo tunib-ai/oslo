@@ -4,8 +4,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -210,7 +209,7 @@ class DataCollatorForT5Pretraining:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["t5"],
+                parallel_key=ParallelKey.T5,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

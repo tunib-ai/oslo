@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datasets.arrow_dataset import Batch
 
 try:
@@ -21,3 +21,46 @@ class BaseProcessor(ABC):
     @abstractmethod
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         pass
+
+
+class ParallelKey:
+    CLM = ["input_ids", "attention_mask"]
+    MLM = ["input_ids", "attention_mask"]
+    SEQ_CLS = ["input_ids", "token_type_ids", "attention_mask"]
+    TOKEN_CLS = ["input_ids", "attention_mask"]
+    SUMMARIZATION = [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ]
+    BERT = ["input_ids", "token_type_ids", "attention_mask"]
+    ALBERT = ["input_ids", "token_type_ids", "attention_mask"]
+    BART = [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ]
+    T5 = [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+    ]
+
+
+def pad_labels(
+    labels,
+    tokenizer,
+    label_pad_token_id: int,
+    pad_to_multiple_of: Optional[int] = None,
+):
+    labels = tokenizer.pad(
+        {"input_ids": labels},
+        return_tensors="pt",
+        pad_to_multiple_of=pad_to_multiple_of,
+    )["input_ids"]
+
+    labels.masked_fill_(labels == tokenizer.pad_token_id, label_pad_token_id)
+    return labels

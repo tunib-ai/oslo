@@ -2,8 +2,7 @@ import warnings
 import logging
 from typing import Dict, List, Optional, Any
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
-from oslo.transformers.tasks.data_utils import PARALLEL_KEY
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -88,6 +87,7 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
         self,
         processor: ProcessorForMaskedLM,
         mlm_probability: float = 0.15,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
         if mlm_probability >= 1.0:
@@ -100,6 +100,7 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
+        self.label_pad_token_id = label_pad_token_id
         self.local_world_size = 1
         if parallel_context is not None:
             self.set_parallel_context(parallel_context)
@@ -118,10 +119,12 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
+        if self.label_pad_token_id != -100:
+            batch["label"].masked_fill_(batch["label"] == -100, self.label_pad_token_id)
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=PARALLEL_KEY["mlm"],
+                parallel_key=ParallelKey.MLM,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)
