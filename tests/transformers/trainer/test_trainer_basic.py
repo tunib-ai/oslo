@@ -13,10 +13,9 @@ model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
 optim = torch.optim.Adam(params=model.parameters(), lr=3e-5)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-    optimizer=optim, T_0=1)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer=optim, T_0=1)
 
-dataset = load_dataset("glue", 'cola')
+dataset = load_dataset("glue", "cola")
 dataset = dataset.rename_column("sentence", "text")
 dataset = dataset.rename_column("label", "labels")
 

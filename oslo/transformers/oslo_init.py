@@ -17,10 +17,8 @@ from oslo.torch.nn.parallel import (
 
 def _type(_type):
     return lambda key, val: {
-        "check":
-            isinstance(val, _type),
-        "msg":
-            f"``{key}: {val}`` is not a valid set. it must be type of {_type}",
+        "check": isinstance(val, _type),
+        "msg": f"``{key}: {val}`` is not a valid set. it must be type of {_type}",
     }
 
 
@@ -68,7 +66,7 @@ SUPPORTED_FEATURES = {
             "bucket_cap_mb": _type(int),
             "find_unused_parameters": _type(bool),
             "check_reduction": _type(bool),
-            "gradient_as_bucket_view": _type(bool)
+            "gradient_as_bucket_view": _type(bool),
         },
         "sequence": {
             "device_ids": _type((list, torch.device, type(None))),
@@ -78,7 +76,7 @@ SUPPORTED_FEATURES = {
             "bucket_cap_mb": _type(int),
             "find_unused_parameters": _type(bool),
             "check_reduction": _type(bool),
-            "gradient_as_bucket_view": _type(bool)
+            "gradient_as_bucket_view": _type(bool),
         },
     },
     "model_parallelism": {
@@ -91,9 +89,7 @@ SUPPORTED_FEATURES = {
             "memory_computation_balance": _type(float),
             "tracing_inputs": _type((dict, type(None))),
         },
-        "tensor": {
-            "mapping": _type((dict, type(None)))
-        },
+        "tensor": {"mapping": _type((dict, type(None)))},
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": _type(bool),
@@ -120,17 +116,21 @@ def _config_check(arg, user_config):
             if isinstance(arg, dict):
                 assert k in arg, (
                     f"An argument ``{k}`` is not available. "
-                    f"We only support the arguments like {list(arg.keys())}.")
+                    f"We only support the arguments like {list(arg.keys())}."
+                )
             else:
-                raise Exception(f"``{k}: {user_config[k]} is not a valid set. "
-                                f"please check your configuration.``")
+                raise Exception(
+                    f"``{k}: {user_config[k]} is not a valid set. "
+                    f"please check your configuration.``"
+                )
 
             if isinstance(user_config[k], dict):
                 _config_check(arg[k], user_config[k])
             else:
                 assert not isinstance(arg[k], dict), (
                     f"``{k}: {user_config[k]} is not a valid set. "
-                    f"please check your configuration.``")
+                    f"please check your configuration.``"
+                )
                 check_result = arg[k](k, user_config[k])
                 assert check_result["check"], check_result["msg"]
     else:
@@ -139,17 +139,22 @@ def _config_check(arg, user_config):
 
 def check_user_config(user_config):
     _config_check(SUPPORTED_FEATURES, user_config)
-    if "model_parallelism" in user_config and "tensor_parallel_mode" in user_config[
-            "model_parallelism"]:
+    if (
+        "model_parallelism" in user_config
+        and "tensor_parallel_mode" in user_config["model_parallelism"]
+    ):
         assert (
             user_config["model_parallelism"]["tensor_parallel_mode"]
             in TENSOR_PARALLEL_MODE_TYPES.keys()
-        ), (f"{user_config['model_parallelism']['tensor_parallel_mode']} is not valid type of tensor_parallel_mode. "
-            f"choose one of {', '.join(TENSOR_PARALLEL_MODE_TYPES.keys())}")
+        ), (
+            f"{user_config['model_parallelism']['tensor_parallel_mode']} is not valid type of tensor_parallel_mode. "
+            f"choose one of {', '.join(TENSOR_PARALLEL_MODE_TYPES.keys())}"
+        )
         # check user config tensor_parallel_mode
         user_tp_mode = user_config["model_parallelism"]["tensor_parallel_mode"]
         user_config["model_parallelism"][
-            "tensor_parallel_mode"] = TENSOR_PARALLEL_MODE_TYPES[user_tp_mode]
+            "tensor_parallel_mode"
+        ] = TENSOR_PARALLEL_MODE_TYPES[user_tp_mode]
 
 
 class OsloTrainerConfig:
@@ -259,8 +264,7 @@ class OsloTrainerConfig:
             with open(config_file_or_dict, "r", encoding="utf-8") as f:
                 config = json.load(f)
         else:
-            raise ValueError(
-                "expecting either a path to a oslo config file or a dict")
+            raise ValueError("expecting either a path to a oslo config file or a dict")
 
         check_user_config(config)
         self.config = config
@@ -287,13 +291,13 @@ class OsloTrainerConfig:
 
     def dtype(self):
         if self._dtype is None:
-            raise ValueError(
-                "trainer_config_process() wasn't called yet to tell dtype")
+            raise ValueError("trainer_config_process() wasn't called yet to tell dtype")
         return self._dtype
 
 
 def init_oslo_features(
-    oslo_init_config: OsloTrainerConfig,) -> Tuple[ParallelContext, List]:
+    oslo_init_config: OsloTrainerConfig,
+) -> Tuple[ParallelContext, List]:
     """
     Init OSLO features with json or dict configuration user passed.
     ParallelContext or other effective features should be defined on this function
@@ -314,11 +318,21 @@ def init_oslo_features(
     if hasattr(cfg, "model_parallelism"):
         mp_cfg = cfg.model_parallelism
 
-    data_parallel_size = dp_cfg["data_parallel_size"] if "data_parallel_size" in dp_cfg else 1
-    sequence_parallel_size = dp_cfg["sequence_parallel_size"] if "sequence_parallel_size" in dp_cfg else 1
-    expert_parallel_size = mp_cfg["expert_parallel_size"] if "expert_parallel_size" in mp_cfg else 1
-    pipeline_parallel_size = mp_cfg["pipeline_parallel_size"] if "pipeline_parallel_size" in mp_cfg else 1
-    tensor_parallel_size = mp_cfg["tensor_parallel_size"] if "tensor_parallel_size" in mp_cfg else 1
+    data_parallel_size = (
+        dp_cfg["data_parallel_size"] if "data_parallel_size" in dp_cfg else 1
+    )
+    sequence_parallel_size = (
+        dp_cfg["sequence_parallel_size"] if "sequence_parallel_size" in dp_cfg else 1
+    )
+    expert_parallel_size = (
+        mp_cfg["expert_parallel_size"] if "expert_parallel_size" in mp_cfg else 1
+    )
+    pipeline_parallel_size = (
+        mp_cfg["pipeline_parallel_size"] if "pipeline_parallel_size" in mp_cfg else 1
+    )
+    tensor_parallel_size = (
+        mp_cfg["tensor_parallel_size"] if "tensor_parallel_size" in mp_cfg else 1
+    )
 
     parallel_context = ParallelContext.from_torch(
         data_parallel_size=data_parallel_size,
@@ -326,8 +340,12 @@ def init_oslo_features(
         expert_parallel_size=expert_parallel_size,
         pipeline_parallel_size=pipeline_parallel_size,
         tensor_parallel_size=tensor_parallel_size,
-        tensor_parallel_depth=mp_cfg["tensor_parallel_depth"] if "tensor_parallel_depth" in mp_cfg else 1,
-        tensor_parallel_mode=mp_cfg["tensor_parallel_mode"] if "tensor_parallel_mode" in mp_cfg else TENSOR_PARALLEL_MODE_TYPES["1d"],
+        tensor_parallel_depth=mp_cfg["tensor_parallel_depth"]
+        if "tensor_parallel_depth" in mp_cfg
+        else 1,
+        tensor_parallel_mode=mp_cfg["tensor_parallel_mode"]
+        if "tensor_parallel_mode" in mp_cfg
+        else TENSOR_PARALLEL_MODE_TYPES["1d"],
         backend=cfg.backend if hasattr(cfg, "backend") else "nccl",
         seed=cfg.seed if hasattr(cfg, "seed") else 42,
     )
@@ -352,7 +370,8 @@ def init_oslo_features(
             model_wrapper.append(DistributedDataParallel)
         if "zero2" in dp_cfg and "zero3" in dp_cfg:
             logging.warning(
-                "Both ZeRO2 and ZeRO3 are set, Ignore ZeRO2 and apply ZeRO3.")
+                "Both ZeRO2 and ZeRO3 are set, Ignore ZeRO2 and apply ZeRO3."
+            )
 
     if tensor_parallel_size > 1:
         model_wrapper.append(TensorParallel)

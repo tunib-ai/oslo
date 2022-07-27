@@ -12,19 +12,21 @@ oslo_init_dict_form = {
             "auto_refresh_trainable": True,
             "reduce_fp16": True,
             "warn_on_trainable_params_changed": True,
-        }
+        },
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": False,
-        "contiguous_checkpointing": False
+        "contiguous_checkpointing": False,
     },
     "lazy_initialization": False,
-    "backend": "nccl"
+    "backend": "nccl",
 }
 
 user_config_from_dict = OsloTrainerConfig(oslo_init_dict_form)
 
-user_config_from_json = OsloTrainerConfig("tests/transformers/trainer/oslo_user_config.json")
+user_config_from_json = OsloTrainerConfig(
+    "tests/transformers/trainer/oslo_user_config.json"
+)
 
 print(user_config_from_dict)
 

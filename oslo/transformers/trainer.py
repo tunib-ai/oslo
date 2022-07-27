@@ -1318,7 +1318,6 @@ class Trainer:
                 optimizer_grouped_parameters, **optimizer_kwargs
             )
 
-
         return self.optimizer
 
     @staticmethod

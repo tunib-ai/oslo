@@ -43,17 +43,17 @@ oslo_init_dict_form = {
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": False,
-        "contiguous_checkpointing": False
+        "contiguous_checkpointing": False,
     },
     "lazy_initialization": False,
-    "backend": "nccl"
+    "backend": "nccl",
 }
 
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
 
-dataset = load_dataset("glue", 'cola')
+dataset = load_dataset("glue", "cola")
 dataset = dataset.rename_column("sentence", "text")
 dataset = dataset.rename_column("label", "labels")
 
@@ -61,10 +61,10 @@ processor = ProcessorForSequenceClassification("bert-base-uncased", 512)
 if processor._tokenizer.pad_token is None:
     processor._tokenizer.pad_token = processor._tokenizer.eos_token
 
-processed_dataset = dataset.map(processor,
-                                batched=True,
-                                remove_columns=dataset["train"].column_names)
-#processed_dataset.cleanup_cache_files()
+processed_dataset = dataset.map(
+    processor, batched=True, remove_columns=dataset["train"].column_names
+)
+# processed_dataset.cleanup_cache_files()
 train_dataset = processed_dataset["train"]
 valid_dataset = processed_dataset["validation"]
 
@@ -80,18 +80,17 @@ args = TrainingArguments(
     seed=0,
     optim="adam",
     load_best_model_at_end=True,
-    oslo_user_config=oslo_init_dict_form
+    oslo_user_config=oslo_init_dict_form,
 )
-#print(args)
+# print(args)
 trainer = Trainer(
     args=args,
     model=model,
     tokenizer=tokenizer,
-    #optimizers=(optim, scheduler),
+    # optimizers=(optim, scheduler),
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
     data_collator=data_collator,
 )
 
 trainer.train()
-
