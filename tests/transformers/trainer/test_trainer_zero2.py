@@ -14,33 +14,27 @@ os.environ["WANDB_DISABLED"] = "true"
 
 oslo_init_dict_form = {
     "data_parallelism": {
-        "stage": "zero2",
-        "data_parallel_size": 4,
-        "sequence_parallel_size": 1
-    },
-    "model_parallelism": {
-        "expert_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "tensor_parallel_size": 1,
-        "tensor_parallel_depth": 1,
-        "tensor_parallel_mode": "1d"
+        "data_parallel_size": 2,
+        "sequence_parallel_size": 2,
+        "zero2": {
+            "broadcast_buffers": True,
+            "sync_models_at_startup": True,
+            "reduce_buffer_size": 0,
+            "auto_refresh_trainable": True,
+            "reduce_fp16": True,
+            "warn_on_trainable_params_changed": True,
+        }
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": False,
         "contiguous_checkpointing": False
     },
-    "kernel_fusion": {
-        "memory_efficient_fusion": False
-    },
     "lazy_initialization": False,
-    "backend": "nccl",
-    "seed": 0
+    "backend": "nccl"
 }
-
 
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
-
 
 dataset = load_dataset("glue", 'cola')
 dataset = dataset.rename_column("sentence", "text")
@@ -59,18 +53,16 @@ valid_dataset = processed_dataset["validation"]
 
 data_collator = DataCollatorForSequenceClassification(processor)
 
-args = TrainingArguments(
-    output_dir="output",
-    evaluation_strategy="steps",
-    eval_steps=500,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=8,
-    num_train_epochs=2,
-    seed=0,
-    optim="adam",
-    load_best_model_at_end=True,
-    oslo_user_config=oslo_init_dict_form
-)
+args = TrainingArguments(output_dir="output",
+                         evaluation_strategy="steps",
+                         eval_steps=500,
+                         per_device_train_batch_size=8,
+                         per_device_eval_batch_size=8,
+                         num_train_epochs=2,
+                         seed=0,
+                         optim="adam",
+                         load_best_model_at_end=True,
+                         oslo_user_config=oslo_init_dict_form)
 #print(args)
 trainer = Trainer(
     args=args,
@@ -83,4 +75,3 @@ trainer = Trainer(
 )
 
 trainer.train()
-

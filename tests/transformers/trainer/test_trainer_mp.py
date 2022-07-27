@@ -13,30 +13,18 @@ from oslo.transformers.tasks.data_sequence_classification import (
 os.environ["WANDB_DISABLED"] = "true"
 
 oslo_init_dict_form = {
-    "data_parallelism": {
-        "stage": "",
-        "data_parallel_size": 1,
-        "sequence_parallel_size": 1
-    },
     "model_parallelism": {
-        "expert_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "tensor_parallel_size": 4,
-        "tensor_parallel_depth": 1,
+        "pipeline_parallel_size": 2,
+        "tensor_parallel_size": 2,
         "tensor_parallel_mode": "1d"
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": False,
         "contiguous_checkpointing": False
     },
-    "kernel_fusion": {
-        "memory_efficient_fusion": False
-    },
     "lazy_initialization": False,
-    "backend": "nccl",
-    "seed": 0
+    "backend": "nccl"
 }
-
 
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")

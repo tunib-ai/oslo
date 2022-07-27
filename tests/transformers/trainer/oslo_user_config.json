@@ -1,23 +1,16 @@
 {
     "data_parallelism": {
-        "stage": "zero2",
-        "data_parallel_size": 1,
-        "sequence_parallel_size": 1
+        "data_parallel_size": 2,
+        "sequence_parallel_size": 2,
+        "zero2": {
+            "broadcast_buffers": true,
+            "sync_models_at_startup": true,
+            "reduce_buffer_size": 0,
+            "auto_refresh_trainable": true,
+            "reduce_fp16": true,
+            "warn_on_trainable_params_changed": true
+        }
     },
-    "model_parallelism": {
-        "expert_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "tensor_parallel_size": 1,
-        "tensor_parallel_depth": 1,
-        "tensor_parallel_mode": "tensor_1d"
-    },
-    "activation_checkpointing": {
-        "partitioned_checkpointing": false,
-        "contiguous_checkpointing": false
-    },
-    "kernel_fusion": {
-        "memory_efficient_fusion": false
-    },
-    "lazy_initialization": false,
-    "backend": "nccl"
+    "backend": "nvcc"
 }
+

@@ -167,7 +167,7 @@ class Trainer:
         self.parallel_context = None
         self.model_wrappers = []
         if args.oslo_user_config:
-            if isinstance(args.oslo_user_config, "str"):
+            if isinstance(args.oslo_user_config, str):
                 import json
 
                 with open(args.oslo_user_config, "r", encoding="utf-8") as f:
@@ -405,7 +405,7 @@ class Trainer:
 
         delay_optimizer_creation = (
             self.args.oslo_user_config
-            and self.args.oslo_config.data_parallel_size > 1
+            and hasattr(self.args.oslo_user_config, "data_parallelism")
             and DistributedDataParallel not in self.model_wrappers
         )
         if not delay_optimizer_creation:
@@ -1303,33 +1303,21 @@ class Trainer:
                 self.args
             )
 
-            if (
-                ShardedDataParallel in self.model_wrappers
-                or FullyShardedDataParallel in self.model_wrappers
-            ):
-                self.optimizer = ZeroRedundancyOptimizer(
-                    parallel_context=self.parallel_context,
-                    params=optimizer_grouped_parameters,
-                    optim=optimizer_cls,
-                    **optimizer_kwargs,
-                )
-            else:
-                self.optimizer = optimizer_cls(
-                    optimizer_grouped_parameters, **optimizer_kwargs
-                )
-                if optimizer_cls.__name__ == "Adam8bit":
-                    import bitsandbytes
+            # if (
+            #     ShardedDataParallel in self.model_wrappers
+            #     or FullyShardedDataParallel in self.model_wrappers
+            # ):
+            #     self.optimizer = ZeroRedundancyOptimizer(
+            #         parallel_context=self.parallel_context,
+            #         params=optimizer_grouped_parameters,
+            #         optim=optimizer_cls,
+            #         **optimizer_kwargs,
+            #     )
+            # else:
+            self.optimizer = optimizer_cls(
+                optimizer_grouped_parameters, **optimizer_kwargs
+            )
 
-                    manager = bitsandbytes.optim.GlobalOptimManager.get_instance()
-
-                    for module in opt_model.modules():
-                        if isinstance(module, nn.Embedding):
-                            manager.register_module_override(
-                                module, "weight", {"optim_bits": 32}
-                            )
-                            logger.debug(
-                                f"bitsandbytes: will optimize {module} in fp32"
-                            )
 
         return self.optimizer
 

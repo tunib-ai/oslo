@@ -14,27 +14,18 @@ os.environ["WANDB_DISABLED"] = "true"
 
 oslo_init_dict_form = {
     "data_parallelism": {
-        "stage": "zero2",
-        "data_parallel_size": 4,
-        "sequence_parallel_size": 1
-    },
-    "model_parallelism": {
-        "expert_parallel_size": 1,
-        "pipeline_parallel_size": 1,
-        "tensor_parallel_size": 1,
-        "tensor_parallel_depth": 1,
-        "tensor_parallel_mode": "1d"
+        "data_parallel_size": 2,
+        "sequence_parallel_size": 2,
+        "distributed": {
+
+        },
     },
     "activation_checkpointing": {
         "partitioned_checkpointing": False,
         "contiguous_checkpointing": False
     },
-    "kernel_fusion": {
-        "memory_efficient_fusion": False
-    },
     "lazy_initialization": False,
-    "backend": "nccl",
-    "seed": 0
+    "backend": "nccl"
 }
 
 
