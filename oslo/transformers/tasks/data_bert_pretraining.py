@@ -5,7 +5,7 @@ import logging
 import torch
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -113,11 +113,13 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
             batch["input_ids"], mask_labels=batch_mask
         )
         if self.label_pad_token_id != -100:
-            batch["label"].masked_fill_(batch["label"] == -100, self.label_pad_token_id)
+            batch["labels"].masked_fill_(
+                batch["labels"] == -100, self.label_pad_token_id
+            )
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.BERT,
+                parallel_keys=ParallelKeys.BERT,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

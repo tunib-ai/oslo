@@ -52,7 +52,6 @@ class TestDataSequenceClassification(TestDataBinarization):
         processed_dataset = dataset.map(
             self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
-        processed_dataset.cleanup_cache_files()
 
         if self.data_collator.tokenizer.pad_token is None:
             self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
@@ -90,30 +89,30 @@ if "__main__" == __name__:
     dataset = dataset.rename_column("sentence", "text")
     dataset = dataset.rename_column("label", "labels")
 
-    gpt2_test = TestDataSequenceClassification("gpt2")
-    gpt2_test(512, dataset, 1024, 3)
-    gpt2_test(24, dataset, 1024)
+    # gpt2_test = TestDataSequenceClassification("gpt2")
+    # gpt2_test(512, dataset, 1024, 3)
+    # gpt2_test(24, dataset, 1024)
 
-    bert_test = TestDataSequenceClassification("bert-base-cased")
-    bert_test(512, dataset, 64, 3)
-    bert_test(16, dataset, 16)
+    # bert_test = TestDataSequenceClassification("bert-base-cased")
+    # bert_test(512, dataset, 64, 3)
+    # bert_test(16, dataset, 16)
 
-    roberta_test = TestDataSequenceClassification("roberta-base")
-    roberta_test(130, dataset, 512, 4)
-    roberta_test(40, dataset, 512)
+    # roberta_test = TestDataSequenceClassification("roberta-base")
+    # roberta_test(130, dataset, 512, 4)
+    # roberta_test(40, dataset, 512)
 
-    albert_test = TestDataSequenceClassification("albert-base-v2")
-    albert_test(24, dataset, 128, 4)
-    albert_test(32, dataset, 128, 4)
+    # albert_test = TestDataSequenceClassification("albert-base-v2")
+    # albert_test(24, dataset, 128, 4)
+    # albert_test(32, dataset, 128, 4)
 
-    bart_test = TestDataSequenceClassification("facebook/bart-base")
-    bart_test(32, dataset, 32, 3)
-    bart_test(64, dataset, 32)
+    # bart_test = TestDataSequenceClassification("facebook/bart-base")
+    # bart_test(32, dataset, 32, 3)
+    # bart_test(64, dataset, 32)
 
-    t5_test = TestDataSequenceClassification("t5-small")
-    t5_test(512, dataset, 1024, 3)
-    t5_test(128, dataset, 1024)
+    # t5_test = TestDataSequenceClassification("t5-small")
+    # t5_test(512, dataset, 1024, 3)
+    # t5_test(128, dataset, 1024)
 
-    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-    # bert_sp_test = TestDataSequenceClassification("bert-base-cased", parallel_context)
-    # bert_sp_test(256, dataset, 1024)
+    parallel_context = ParallelContext.from_torch(sequence_parallel_size=4)
+    bert_sp_test = TestDataSequenceClassification("bert-base-cased", parallel_context)
+    bert_sp_test(253, dataset)

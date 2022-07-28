@@ -2,7 +2,7 @@ import warnings
 import logging
 from typing import Dict, List, Optional, Any
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -108,6 +108,7 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = self.tokenizer.pad(
             examples,
+            return_attention_mask=True if self.local_world_size > 1 else False,
             return_tensors="pt",
             pad_to_multiple_of=self.local_world_size
             if self.local_world_size > 1
@@ -120,11 +121,13 @@ class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
         if self.label_pad_token_id != -100:
-            batch["label"].masked_fill_(batch["label"] == -100, self.label_pad_token_id)
+            batch["labels"].masked_fill_(
+                batch["labels"] == -100, self.label_pad_token_id
+            )
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.MLM,
+                parallel_keys=ParallelKeys.MLM,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

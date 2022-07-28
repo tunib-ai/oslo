@@ -5,7 +5,7 @@ import torch
 from datasets import Dataset, DatasetDict
 from datasets.arrow_dataset import Batch
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys, pad_labels
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
@@ -198,7 +198,7 @@ class DataCollatorForTokenClassification:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.TOKEN_CLS,
+                parallel_keys=ParallelKeys.TOKEN_CLS,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)
@@ -209,6 +209,7 @@ class DataCollatorForTokenClassification:
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
+            return_attention_mask=True,
             pad_to_multiple_of=self.local_world_size
             if self.local_world_size > 1
             else None,
@@ -231,7 +232,7 @@ class DataCollatorForTokenClassification:
 
         batch = {k: torch.tensor(v, dtype=torch.int64) for k, v in batch.items()}
         batch[label_name].masked_fill_(
-            batch[label_name] == self.tokenzier.pad_token_id, self.label_pad_token_id
+            batch[label_name] == self.tokenizer.pad_token_id, self.label_pad_token_id
         )
         return batch
 

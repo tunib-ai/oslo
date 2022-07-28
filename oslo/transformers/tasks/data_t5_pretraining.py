@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -190,16 +190,19 @@ class DataCollatorForT5Pretraining:
                 f"`labels` are incorrectly preprocessed. `labels` length is {batch['labels'].shape[-1]}, but should be"
                 f" {self.target_length}."
             )
-
-        batch = {key: torch.from_numpy(value) for key, value in batch.items()}
-
-        if self.local_world_size > 1:
+        if self.local_world_size <= 1:
+            batch = {key: torch.from_numpy(value) for key, value in batch.items()}
+        else:
+            labels = [label for label in batch["labels"]]
             batch = self.tokenizer.pad(
-                batch, return_tensors="pt", pad_to_multiple_of=self.local_world_size
+                {"input_ids": [input_ids for input_ids in batch["input_ids"]]},
+                return_attention_mask=True,
+                return_tensors="pt",
+                pad_to_multiple_of=self.local_world_size,
             )
 
             batch["labels"] = pad_labels(
-                batch["labels"],
+                labels,
                 self.tokenizer,
                 self.label_pad_token_id,
                 pad_to_multiple_of=self.local_world_size,
@@ -209,7 +212,7 @@ class DataCollatorForT5Pretraining:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.T5,
+                parallel_keys=ParallelKeys.T5,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)
@@ -327,7 +330,7 @@ class DataCollatorForT5Pretraining:
         shifted_labels[..., 0] = self.pad_token_id  # decoder_start_token_id
 
         batch["decoder_input_ids"] = torch.masked_fill(
-            shifted_labels == self.label_pad_token_id, self.pad_token_id
+            shifted_labels, shifted_labels == self.label_pad_token_id, self.pad_token_id
         )
         batch["decoder_attention_mask"] = torch.where(
             shifted_labels == self.label_pad_token_id,

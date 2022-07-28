@@ -23,7 +23,7 @@ class BaseProcessor(ABC):
         pass
 
 
-class ParallelKey:
+class ParallelKeys:
     CLM = ["input_ids", "attention_mask"]
     MLM = ["input_ids", "attention_mask"]
     SEQ_CLS = ["input_ids", "token_type_ids", "attention_mask"]
@@ -44,7 +44,6 @@ class ParallelKey:
     ]
     T5 = [
         "input_ids",
-        "attention_mask",
         "decoder_input_ids",
         "decoder_attention_mask",
     ]
@@ -58,6 +57,8 @@ def pad_labels(
 ):
     labels = tokenizer.pad(
         {"input_ids": labels},
+        padding=True,
+        return_attention_mask=False,
         return_tensors="pt",
         pad_to_multiple_of=pad_to_multiple_of,
     )["input_ids"]

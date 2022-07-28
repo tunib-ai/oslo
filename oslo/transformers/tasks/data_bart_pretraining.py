@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import warnings
 import logging
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey, pad_labels
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys, pad_labels
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -107,6 +107,7 @@ class DataCollatorForBartPretraining:
 
         batch = self.tokenizer.pad(
             examples,
+            return_attention_mask=True,
             return_tensors="pt",
             pad_to_multiple_of=self.local_world_size
             if self.local_world_size > 1
@@ -115,7 +116,7 @@ class DataCollatorForBartPretraining:
 
         if self.local_world_size > 1:
             batch["labels"] = pad_labels(
-                batch["labels"],
+                [example["labels"] for example in examples],
                 self.tokenizer,
                 self.label_pad_token_id,
                 pad_to_multiple_of=self.local_world_size,
@@ -125,7 +126,7 @@ class DataCollatorForBartPretraining:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.BART,
+                parallel_keys=ParallelKeys.BART,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)

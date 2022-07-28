@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 import logging
 import warnings
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKey
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
@@ -59,7 +59,7 @@ class ProcessorForSequenceClassification(BaseProcessor):
 
 class DataCollatorForSequenceClassification:
     """
-    Processing training examples to mini-batch for Gpt2 (sequence classification).
+    Processing training examples to mini-batch for Sequence Classification.
     """
 
     def __init__(
@@ -88,6 +88,7 @@ class DataCollatorForSequenceClassification:
         batch = self.tokenizer.pad(
             features,
             padding=self.padding,
+            return_attention_mask=True,
             return_tensors="pt",
             pad_to_multiple_of=self.local_world_size
             if self.local_world_size > 1
@@ -96,7 +97,7 @@ class DataCollatorForSequenceClassification:
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
-                parallel_key=ParallelKey.SEQ_CLS,
+                parallel_keys=ParallelKeys.SEQ_CLS,
                 parallel_context=self.parallel_context,
             )
             return sp_collate_fn(**batch)
