@@ -1,27 +1,28 @@
 from torch.utils.data import DataLoader
 from oslo.torch.distributed import ParallelContext
-from oslo.transformers.tasks.data_sequence_classification import (
-    ProcessorForSequenceClassification,
-    DataCollatorForSequenceClassification,
+from oslo.transformers.tasks.data_summarization import (
+    ProcessorForSummarization,
+    DataCollatorForSummarization,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
+from datasets import load_dataset, DatasetDict
 
 try:
-    from datasets import load_dataset
+    from transformers import T5ForConditionalGeneration
 except ImportError:
-    print("You have to install 'datasets' to test data_sequence_classification.py")
+    print("You have to install 'transformers' to test data_summarization.py")
 
 
 class TestDataSequenceClassification(TestDataBinarization):
-    def __init__(
-        self,
-        model_name,
-        parallel_context=None,
-    ):
-        self.processor = ProcessorForSequenceClassification(model_name, max_length=128)
-        self.data_collator = DataCollatorForSequenceClassification(self.processor)
-        self.sp_data_collator = DataCollatorForSequenceClassification(
-            self.processor, parallel_context=parallel_context
+    def __init__(self, model_name, parallel_context=None, label_pad_token_id=-100):
+        self.processor = ProcessorForSummarization(model_name, max_length=128)
+        self.data_collator = DataCollatorForSummarization(
+            self.processor, label_pad_token_id=label_pad_token_id
+        )
+        self.sp_data_collator = DataCollatorForSummarization(
+            self.processor,
+            parallel_context=parallel_context,
+            label_pad_token_id=label_pad_token_id,
         )
         self.model_name = model_name
         self.tokenizer = self.processor._tokenizer
@@ -32,21 +33,21 @@ class TestDataSequenceClassification(TestDataBinarization):
         max_length,
         dataset,
         batch_size=1024,
-        pad_to_multiple_of=None,
         batch_check_num_sample=2,
         batch_check_tokens=False,
         must_be_equal_to_max_length=False,
+        model=None,
     ):
         self.processor._chunk_size = max_length
         self.processor._max_length = max_length
-        self.data_collator.pad_to_multiple_of = pad_to_multiple_of
-
+        self.data_collator.model = model
+        if self.sp_data_collator:
+            self.sp_data_collator.model = model
         print(
             "---------- Test Start ----------",
             f"Model: {self.model_name}",
             f"Max Length: {max_length}",
             f"Batch size: {batch_size}",
-            f"Pad to multiple of: {pad_to_multiple_of}\n",
             sep="\n",
         )
         processed_dataset = dataset.map(
@@ -74,7 +75,6 @@ class TestDataSequenceClassification(TestDataBinarization):
             dataloader,
             "input_ids",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
@@ -85,9 +85,19 @@ class TestDataSequenceClassification(TestDataBinarization):
 
 
 if "__main__" == __name__:
-    dataset = load_dataset("glue", "sst2")
-    dataset = dataset.rename_column("sentence", "text")
-    dataset = dataset.rename_column("label", "labels")
+    dataset = load_dataset("xglue", "nc")
+    dataset = dataset.rename_column("news_body", "text")
+    dataset = dataset.rename_column("news_title", "labels")
+    dataset = DatasetDict(
+        {
+            "train": dataset["train"],
+            "validation": dataset["validation.en"],
+            "test": dataset["test.en"],
+        }
+    )
+    dataset["train"] = dataset["train"].shard(20, 1)
+    dataset["validation"] = dataset["validation"].shard(10, 1)
+    dataset["test"] = dataset["test"].shard(10, 1)
 
     # gpt2_test = TestDataSequenceClassification("gpt2")
     # gpt2_test(512, dataset, 1024, 3)
@@ -110,9 +120,19 @@ if "__main__" == __name__:
     # bart_test(64, dataset, 32)
 
     # t5_test = TestDataSequenceClassification("t5-small")
-    # t5_test(512, dataset, 1024, 3)
+    # t5_test(
+    #     512,
+    #     dataset,
+    #     1024,
+    #     3,
+    #     model=T5ForConditionalGeneration.from_pretrained("t5-small"),
+    # )
     # t5_test(128, dataset, 1024)
 
     parallel_context = ParallelContext.from_torch(sequence_parallel_size=4)
-    bert_sp_test = TestDataSequenceClassification("bert-base-cased", parallel_context)
-    bert_sp_test(253, dataset)
+    bert_sp_test = TestDataSequenceClassification(
+        "t5-small", parallel_context, label_pad_token_id=0
+    )
+    bert_sp_test(
+        253, dataset, 1024, model=T5ForConditionalGeneration.from_pretrained("t5-small")
+    )

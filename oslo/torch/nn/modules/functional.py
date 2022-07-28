@@ -463,9 +463,11 @@ def _fused_scale_mask_softmax_cuda(input, scale, use_triang_mask, pad_mask):
         return output.view(bsz, np, sq, sk)
     else:
         if pad_mask is not None:
+            if pad_mask.size(2) == 1:
+                pad_mask = pad_mask.repeat(1, 1, sq, 1)
             return _FusedScaleMaskSoftmaxFunction.apply(
                 input,
-                pad_mask.repeat(1, 1, sq, 1).bool(),
+                pad_mask.bool(),
                 scale,
             )
         else:

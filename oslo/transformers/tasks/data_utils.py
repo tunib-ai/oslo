@@ -6,23 +6,33 @@ from typing import List, Optional, Union
 import datasets
 from datasets import Dataset, DatasetDict, load_dataset, load_from_disk
 from numpy.random import choice
-
-from oslo.transformers.tasks.data_causal_lm import ProcessorForCausalLM
+from oslo.transformers.tasks.data_causal_lm import (
+    ProcessorForCausalLM,
+)
+from oslo.transformers.tasks.data_masked_lm import (
+    ProcessorForMaskedLM,
+)
 from oslo.transformers.tasks.data_sequence_classification import (
     ProcessorForSequenceClassification,
 )
 from oslo.transformers.tasks.data_token_classification import (
     ProcessorForTokenClassification,
 )
-from oslo.transformers.tasks.data_bert_pretraining import ProcessorForBertPretraining
+from oslo.transformers.tasks.data_summarization import (
+    ProcessorForSummarization,
+)
+from oslo.transformers.tasks.data_bert_pretraining import (
+    ProcessorForBertPretraining,
+)
 from oslo.transformers.tasks.data_albert_pretraining import (
     ProcessorForAlbertPretraining,
 )
-from oslo.transformers.tasks.data_roberta_pretraining import (
-    ProcessorForRobertaPretraining,
+from oslo.transformers.tasks.data_bart_pretraining import (
+    ProcessorForBartPretraining,
 )
-from oslo.transformers.tasks.data_bart_pretraining import ProcessorForBartPretraining
-from oslo.transformers.tasks.data_t5_pretraining import ProcessorForT5Pretraining
+from oslo.transformers.tasks.data_t5_pretraining import (
+    ProcessorForT5Pretraining,
+)
 
 try:
     from transformers import AutoTokenizer
@@ -171,9 +181,10 @@ def serialize_corpora(
         "causal_lm": ProcessorForCausalLM,
         "sequence_classification": ProcessorForSequenceClassification,
         "token_classification": ProcessorForTokenClassification,
+        "summarization": ProcessorForSummarization,
         "bert_pretraining": ProcessorForBertPretraining,
         "albert_pretraining": ProcessorForAlbertPretraining,
-        "roberta_pretraining": ProcessorForRobertaPretraining,
+        "roberta_pretraining": ProcessorForMaskedLM,
         "bart_pretraining": ProcessorForBartPretraining,
         "t5_pretraining": ProcessorForT5Pretraining,
     }

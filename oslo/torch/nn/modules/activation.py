@@ -7,7 +7,10 @@ from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
 from torch.nn.parameter import Parameter
 
-from oslo.torch.nn.modules.functional import multi_head_attention_forward
+from oslo.torch.nn.modules.functional import (
+    multi_head_attention_forward,
+    fused_bias_gelu,
+)
 
 
 class MultiheadAttention(nn.Module):
@@ -268,3 +271,8 @@ class MultiheadAttention(nn.Module):
             return attn_output.transpose(1, 0), attn_output_weights
         else:
             return attn_output, attn_output_weights
+
+
+class FusedBiasGeLU(nn.Module):
+    def forward(self, input: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
+        return fused_bias_gelu(input, bias)

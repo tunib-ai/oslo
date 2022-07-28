@@ -2,6 +2,9 @@ from oslo.torch.nn.modules.conv import Conv1D, LazyConv1D
 from oslo.torch.nn.modules.dropout import (
     FusedBiasDropout,
 )
+from oslo.torch.nn.modules.activation import (
+    FusedBiasGeLU,
+)
 from oslo.torch.nn.modules.embedding import (
     Embedding1D,
     Embedding2D,

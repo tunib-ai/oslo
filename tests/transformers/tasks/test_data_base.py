@@ -1,6 +1,5 @@
 from typing import Optional
 from torch.utils.data import DataLoader
-import torch
 from tqdm.auto import tqdm
 
 
@@ -40,7 +39,7 @@ class TestDataBinarization:
         dataloader,
         key,
         max_length,
-        pad_to_multiple_of: Optional[int],
+        pad_to_multiple_of: Optional[int] = None,
         must_be_equal_to_max_length: bool = False,
     ):
         for batch in tqdm(dataloader):
@@ -100,9 +99,10 @@ class TestDataBinarization:
             seq_length = batch["input_ids"].size(1)
             sq_seq_length = sp_batch["input_ids"].size(1)
 
-            sp_desired_length = (seq_length // local_world_size) + 1
-            assert (
-                sp_desired_length == sq_seq_length
-            ), f"Required length for SP({sp_desired_length} doesn't equal to SP sequence length({sq_seq_length}))"
+            if seq_length % sq_seq_length:
+                sp_desired_length = (seq_length // local_world_size) + 1
+                assert (
+                    sp_desired_length == sq_seq_length
+                ), f"Required length for SP({sp_desired_length}) doesn't equal to SP sequence length({sq_seq_length})"
 
         print("---- SP collator test pass ----\n")

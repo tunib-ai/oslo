@@ -18,12 +18,18 @@ class TestDataBartPretraining(TestDataBinarization):
         self,
         model_name,
         parallel_context=None,
+        label_pad_token_id=-100,
     ):
         self.processor = ProcessorForBartPretraining(model_name)
-        self.data_collator = DataCollatorForBartPretraining(self.processor)
-        self.sp_data_collator = DataCollatorForBartPretraining(
-            self.processor, parallel_context=parallel_context
+        self.data_collator = DataCollatorForBartPretraining(
+            self.processor, label_pad_token_id=label_pad_token_id
         )
+        if parallel_context is not None:
+            self.sp_data_collator = DataCollatorForBartPretraining(
+                self.processor,
+                parallel_context=parallel_context,
+                label_pad_token_id=label_pad_token_id,
+            )
         self.model_name = model_name
         self.tokenizer = self.processor._tokenizer
         self.parallel_context = parallel_context
@@ -35,15 +41,16 @@ class TestDataBartPretraining(TestDataBinarization):
         mlm_probability=0.15,
         possion_lambda=3,
         batch_size=1024,
-        pad_to_multiple_of=None,
         batch_check_num_sample=2,
         batch_check_tokens=False,
     ):
         self.processor._chunk_size = max_length - 1
         self.processor._max_length = max_length
-        self.data_collator.pad_to_multiple_of = pad_to_multiple_of
         self.data_collator.mlm_probability = mlm_probability
         self.data_collator.possion_lambda = possion_lambda
+        if self.sp_data_collator:
+            self.sp_data_collator.mlm_probability = mlm_probability
+            self.sp_data_collator.possion_lambda = possion_lambda
 
         print(
             "---------- Test Start ----------",
@@ -52,13 +59,11 @@ class TestDataBartPretraining(TestDataBinarization):
             f"Batch size: {batch_size}",
             f"MLM probability: {mlm_probability}",
             f"Possion Lambda: {possion_lambda}",
-            f"Pad to multiple of: {pad_to_multiple_of}\n",
             sep="\n",
         )
         processed_dataset = dataset.map(
             self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
-        processed_dataset.cleanup_cache_files()
 
         if self.data_collator.tokenizer.pad_token is None:
             self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
@@ -81,7 +86,6 @@ class TestDataBartPretraining(TestDataBinarization):
             dataloader,
             "input_ids",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=False,
         )
 
@@ -89,7 +93,6 @@ class TestDataBartPretraining(TestDataBinarization):
             dataloader,
             "labels",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=True,
         )
 
@@ -103,8 +106,9 @@ class TestDataBartPretraining(TestDataBinarization):
     def mask_ratio_check(self, dataloader):
         mask_token_id = self.tokenizer.mask_token_id
         pad_token_id = self.tokenizer.pad_token_id
-
+        cnt, accum_mlm_prob = 0, 0
         for batch in dataloader:
+            cnt += 1
             batch_size_label, seq_length_label = batch["labels"].size()
             batch_size_input, seq_length_input = batch["input_ids"].size()
 
@@ -121,26 +125,52 @@ class TestDataBartPretraining(TestDataBinarization):
                 torch.tensor(self.data_collator.mlm_probability),
                 atol=0.005,
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.mlm_probability})"
-
-        print(f"MLM Probability: {mlm_probability:.6f}")
+            accum_mlm_prob += mlm_probability
+        avg_mlm_prob = accum_mlm_prob / cnt
+        print(f"MLM Probability: {avg_mlm_prob:.6f}")
         print("---- mask ratio test pass ----\n")
+
+    def _test_sp_collator(
+        self, processed_dataset, batch_size, num_samples=2, check_token=False
+    ):
+        if self.sp_data_collator.tokenizer.pad_token is None:
+            self.sp_data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+            print("pad_token is set. (SP)")
+
+        sp_dataloader = DataLoader(
+            processed_dataset["train"],
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self.sp_data_collator,
+        )
+
+        sp_batch = next(iter(sp_dataloader))
+        print("(SP batch check)")
+        self._batch_check(sp_batch, num_samples=num_samples, check_token=check_token)
+
+        for sp_batch in sp_dataloader:
+            for key, value in sp_batch.items():
+                print(f"{key} size: {value.size()}")
+
+        print("---- SP collator test pass ----\n")
 
 
 if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")
     dataset = dataset.rename_column("sentence", "text")
 
-    bart_test = TestDataBartPretraining("facebook/bart-base")
-    bart_test(1024, dataset)
-    bart_test(512, dataset, pad_to_multiple_of=3)
-    bart_test(512, dataset, 0.2)
-    bart_test(1024, dataset, 0.2, 4)
-    bart_test(512, dataset, 0.2, 2, batch_size=4)
-    bart_test(512, dataset, 0.3, batch_size=4)
-    bart_test(256, dataset, batch_size=4)
-    bart_test(256, dataset, 0.3, batch_size=4)
-    bart_test(256, dataset, 0.3, 2, batch_size=4)
+    # bart_test = TestDataBartPretraining("facebook/bart-base")
+    # bart_test(1024, dataset)
+    # bart_test(512, dataset, 0.2)
+    # bart_test(1024, dataset, 0.2, 4)
+    # bart_test(512, dataset, 0.2, 2, batch_size=4)
+    # bart_test(512, dataset, 0.3, batch_size=4)
+    # bart_test(256, dataset, batch_size=4)
+    # bart_test(256, dataset, 0.3, batch_size=4)
+    # bart_test(256, dataset, 0.3, 2, batch_size=4)
 
-    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-    # bart_sp_test = TestDataBartPretraining("facebook/bart-base", parallel_context)
-    # bart_sp_test(256, dataset, 1024)
+    parallel_context = ParallelContext.from_torch(sequence_parallel_size=4)
+    bart_sp_test = TestDataBartPretraining(
+        "facebook/bart-base", parallel_context, label_pad_token_id=0
+    )
+    bart_sp_test(253, dataset)
