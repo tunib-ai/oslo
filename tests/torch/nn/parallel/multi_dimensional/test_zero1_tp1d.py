@@ -1,3 +1,4 @@
+import torch
 import torch.distributed as dist
 import wandb
 from datasets import load_dataset
@@ -26,17 +27,21 @@ tokenizer.pad_token = tokenizer.eos_token
 model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")).cuda()
 model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
+
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
 # https://github.com/tunib-ai/oslo/blob/307131bbd5ed995ea8dca8ac541bfbce9bfec29b/oslo/pytorch/model_parallelism/model_parallel_engine.py
 
-if dist.get_rank() == 0:
-    print(wrapper_tp)
+# if dist.get_rank() == 0:
+#     print(wrapper_tp)
+
+# print("==================", wrapper_tp.parameters())
 
 # 옵티마이저 생성
 optimizer_zero_tp = ZeroRedundancyOptimizer(
     Adam, wrapper_tp.parameters(), lr=3e-5, parallel_context=parallel_context
 )
+print("==================", optimizer_zero_tp._default_device)
 optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 
 # 데이터셋 생성
@@ -64,9 +69,9 @@ for data in dataloader:
     loss_tp = wrapper_tp(**inputs, labels=inputs["input_ids"]).loss
     loss_no_tp = model_no_tp(**inputs, labels=inputs["input_ids"]).loss
 
-    if dist.get_rank() == 0:
-        print(f"ZERO+TP:{loss_tp}, NOTHING:{loss_no_tp}")
-        wandb.log({"zero+tp": loss_tp, "nothing": loss_no_tp})
+    # if dist.get_rank() == 0:
+    #     print(f"ZERO+TP:{loss_no_tp}, NOTHING:{loss_no_tp}")
+    #     wandb.log({"zero+tp": loss_tp, "nothing": loss_no_tp})
 
     loss_tp.backward()
     loss_no_tp.backward()

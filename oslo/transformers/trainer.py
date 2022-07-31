@@ -20,20 +20,15 @@ from packaging import version
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
-from torch.distributed.optim import DistributedOptimizer
-from torch.distributed import rpc
-from transformers import PreTrainedTokenizerBase, PreTrainedModel
-
-from oslo.torch.nn.parallel.data_parallel import (
-    DistributedDataParallel,
-    ShardedDataParallel,
-    FullyShardedDataParallel,
+from transformers import (
+    PreTrainedTokenizerBase,
+    PreTrainedModel,
+    PretrainedConfig,
+    __version__,
 )
-from oslo.torch.nn.modules.activation import MultiheadAttention
-from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn.parallel.data_parallel.auto_wrap import enable_wrap, wrap, auto_wrap
-
-
+from oslo.torch.optim import ZeroRedundancyOptimizer
+from oslo.torch.nn.parallel.utils import allocate_params
+from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
 from .data.data_collator import (
     DataCollator,
     DataCollatorWithPadding,
@@ -46,7 +41,6 @@ from .trainer_utils import (
     EvalPrediction,
     get_last_checkpoint,
     TrainOutput,
-    ShardedDDPOption,
     speed_metrics,
     unwrap_model,
     PredictionOutput,
@@ -54,11 +48,11 @@ from .trainer_utils import (
     denumpify_detensorize,
     TrainerMemoryTracker,
     PREFIX_CHECKPOINT_DIR,
+    OptimizerNames,
 )
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
-    # PrinterCallback,
     ProgressCallback,
     TrainerCallback,
     TrainerControl,
@@ -68,9 +62,8 @@ from .trainer_pt_utils import (
     LabelSmoother,
     IterableDatasetShard,
     ShardSampler,
-    SequentialDistributedSampler,
-    get_parameter_names,
     LengthGroupedSampler,
+    distributed_broadcast_scalars,
     nested_numpify,
     find_batch_size,
     nested_concat,
@@ -78,8 +71,17 @@ from .trainer_pt_utils import (
     nested_detach,
     distributed_concat,
     DistributedLengthGroupedSampler,
-    distributed_broadcast_scalars,
+    get_parameter_names,
 )
+from oslo.torch.nn.parallel import (
+    PipelineParallel,
+    TensorParallel,
+    ShardedDataParallel,
+    FullyShardedDataParallel,
+    DistributedDataParallel,
+    SequenceDataParallel,
+)
+
 from .integrations import get_reporting_integration_callbacks  # isort: split
 from .utils import (
     logging,
@@ -118,18 +120,12 @@ class Trainer:
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
-        # model_init: Callable[[], PreTrainedModel] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
-            None,
-            None,
-        ),
         preprocess_logits_for_metrics: Callable[
             [torch.Tensor, torch.Tensor], torch.Tensor
         ] = None,
     ):
-        self.deepspeed = None  # temp
         if args is None:
             # No Arguments passed
             output_dir = "tmp_trainer"
@@ -142,6 +138,8 @@ class Trainer:
         set_seed(self.args.seed)
         self.hp_name = None
         self.is_in_train = False
+        self.optimizer = None
+        self.lr_scheduler = None
 
         # memory metrics - must set up as early as possible
         self._memory_tracker = TrainerMemoryTracker(self.args.skip_memory_metrics)
@@ -154,22 +152,7 @@ class Trainer:
         logging.set_verbosity(log_level)
 
         # force device and distributed setup init explicitly
-        args._setup_devices
-
-        # # Remove model_init
-        # if model is None:
-        #     if model_init is not None:
-        #         self.model_init = model_init
-        #         model = self.call_model_init()
-        # else:
-        #     if model_init is not None:
-        #         warnings.warn(
-        #             "`Trainer` requires either a `model` or `model_init` argument, but not both. "
-        #             "`model_init` will overwrite your model when calling the `train` method. This will become a fatal error in the next release.",
-        #             FutureWarning,
-        #         )
-        #     self.model_init = model_init
-
+        # args._setup_devices
         if (
             hasattr(model, "is_parallelizable")
             and model.is_parallelizable
@@ -179,41 +162,13 @@ class Trainer:
         else:
             self.is_model_parallel = False
 
-        # self.sharded_ddp = None
-        self.parallel_mode = None
         self.parallel_context = None
-        self.tensor_parallel_mode = None
-        if len(args.parallel_mode) > 0:
-            if ParallelMode.DATA in args.parallel_mode:
-                self.parallel_mode = ParallelMode.DATA
-                if args.local_rank == -1:
-                    raise ValueError(
-                        "Using sharded DDP only works in distributed training."
-                    )
-                elif ShardedDDPOption.SIMPLE in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.SIMPLE
-                elif ShardedDDPOption.ZERO_DP_2 in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.ZERO_DP_2
-                elif ShardedDDPOption.ZERO_DP_3 in args.sharded_ddp:
-                    self.sharded_ddp = ShardedDDPOption.ZERO_DP_3
-
-                self.parallel_context = ParallelContext.from_torch(
-                    data_parallel_size=args.data_parallel_size,
-                    sequence_parallel_size=args.sequence_parallel_size,
-                    expert_parallel_size=args.expert_parallel_size,
-                    pipeline_parallel_size=args.pipeline_parallel_size,
-                    tensor_parallel_size=args.tensor_parallel_size,
-                    tensor_parallel_depth=args.tensor_parallel_depth,
-                    tensor_parallel_mode=self.tensor_parallel_mode,
-                    backend=args.parallel_backend,  # TODO self?
-                    seed=args.parallel_seed,
-                )
-            elif ParallelMode.MODEL in args.parallel_mode:
-                pass
-            elif ParallelMode.PIPELINE in args.parallel_mode:
-                pass
-            elif ParallelMode.TENSOR in args.parallel_mode:
-                pass
+        self.model_wrappers = []
+        if args.oslo_config:
+            self.parallel_context, self.model_wrappers = (
+                args.parallel_context,
+                args.model_wrappers,
+            )
 
         # one place to sort out whether to place the model on device or not
         # postpone switching model to cuda when:
@@ -222,16 +177,14 @@ class Trainer:
         #    and we only use deepspeed for training at the moment
         # 3. full bf16 or fp16 eval - since the model needs to be cast to the right dtype first
         # 4. Sharded DDP - same as MP
-        self.place_model_on_device = args.place_model_on_device  # GPU에 올릴 것인지 말건지
+        self.place_model_on_device = True
         if (
             self.is_model_parallel
-            # or args.deepspeed
+            or args.oslo_config
             or ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
-            # TODO; or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
         ):
             self.place_model_on_device = False
 
-        # TODO - Task D: Create src/transformers/data related to Trainer
         default_collator = (
             default_data_collator
             if tokenizer is None
@@ -244,13 +197,8 @@ class Trainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        # TODO - Task E: Create self._move_model_to_device
-        # if self.place_model_on_device:
-        #     self._move_model_to_device(model, args.device)
-
-        # Force n_gpu to 1 to avoid DataParallel as MP will manage the GPUs
-        if self.is_model_parallel:
-            self.args._n_gpu = 1
+        if self.place_model_on_device:
+            self._move_model_to_device(model, args.device)
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.model_wrapped = model
@@ -258,13 +206,6 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
-        self.optimizer, self.lr_scheduler = optimizers
-
-        # if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
-        #     raise RuntimeError(
-        #         "Passing a `model_init` is incompatible with providing the `optimizers` argument. "
-        #         "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
-        #     )
 
         # Create all CALLBACKS functions (includes TrainerCallback)
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(
@@ -281,8 +222,6 @@ class Trainer:
 
         # Will be set to True by `self._setup_loggers()` on first call to `self.log()`.
         self._loggers_initialized = False
-
-        # remove push to hub
 
         if self.args.should_save:
             os.makedirs(self.args.output_dir, exist_ok=True)
@@ -329,17 +268,13 @@ class Trainer:
             logger.info(f"Using {args.half_precision_backend} half precision backend")
 
         self.do_grad_scaling = False
-        if (
-            args.fp16 or args.bf16
-        ) and not args.deepspeed:  # deepspeed manages its own half precision
+        if args.fp16 or args.bf16:
             if args.half_precision_backend == "amp":
                 self.use_amp = True
                 self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
                 self.do_grad_scaling = True
-                if self.sharded_ddp is not None:
-                    # TODO change sharded ddp to oslo's
-                    # self.scaler = ShardedGradScaler()
-                    self.scaler = torch.cuda.amp.GradScaler()
+                if self.parallel_context and self.args.oslo_config.zero_stage >= 1:
+                    self.scaler = ShardedGradScaler(self.parallel_context)
                 else:
                     self.scaler = torch.cuda.amp.GradScaler()
             else:
@@ -359,14 +294,7 @@ class Trainer:
             is_world_process_zero=self.is_world_process_zero(),
         )
         self.control = TrainerControl()
-
-        # TODO check should we support count flos ?
-        # Internal variable to count flos in each process, will be accumulated in `self.state.total_flos` then
-        # returned to 0 every time flos need to be logged
         self.current_flos = 0
-        self.hp_search_backend = None
-        self.use_tune_checkpoints = False  # ?
-
         default_label_names = find_labels(self.model.__class__)
         self.label_names = (
             default_label_names
@@ -376,6 +304,9 @@ class Trainer:
         self.control = self.callback_handler.on_init_end(
             self.args, self.state, self.control
         )
+
+        # very last
+        self._memory_tracker.stop_and_update_metrics()
 
     def train(
         self,
@@ -388,11 +319,14 @@ class Trainer:
             None if not resume_from_checkpoint else resume_from_checkpoint
         )
 
-        # TODO memory_tracker
+        # memory metrics - must set up as early as possible
+        self._memory_tracker.start()
+
         args = self.args
         self.is_in_train = True
 
-        # TODO move model to device
+        # if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
+        #     self._move_model_to_device(self.model, args.device)
 
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
@@ -401,9 +335,8 @@ class Trainer:
                 raise ValueError(
                     f"No valid checkpoint found in output directory ({args.output_dir})"
                 )
-
-        # if resume_from_checkpoint is not None:
-        #     self._load_from_checkpoint(resume_from_checkpoint)
+        if resume_from_checkpoint is not None:
+            self._load_from_checkpoint(resume_from_checkpoint)
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
@@ -454,46 +387,23 @@ class Trainer:
                 f"args.max_steps must be set to a positive value if dataloader does not have a length, was {args.max_steps}"
             )
 
-        # delay_optimizer_creation = (
-        #     self.sharded_ddp is not None and self.sharded_ddp != ShardedDDPOption.SIMPLE
-        # )
-
-        # TODO Debugoption
-        # TODO Shareded ddp engine, optimizer, lr_sheduler
-
-        # if args.deepspeed:
-        #     deepspeed_engine, optimizer, lr_scheduler = deepspeed_init(
-        #         self,
-        #         num_training_steps=max_steps,
-        #         resume_from_checkpoint=resume_from_checkpoint)
-        #     self.model = deepspeed_engine.module
-        #     self.model_wrapped = deepspeed_engine
-        #     self.deepspeed = deepspeed_engine
-        #     self.optimizer = optimizer
-        #     self.lr_scheduler = lr_scheduler
-
-        # TODO: delay_optimizer_creation
-        # elif not delay_optimizer_creation:
-        #     self.create_optimizer()
-        #     self.create_scheduler(num_training_steps=max_steps,
-        #                           optimizer=self.optimizer)
-        # shared ddp option
+        delay_optimizer_creation = (
+                self.parallel_context is not None
+        )
+        if not delay_optimizer_creation:
+            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         self.state = TrainerState()
-        # self.state.is_hyper_param_search = trial is not None
 
-        # TODO gradient checkpointing ??
+        # TODO gradient checkpointing
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
 
-        model = self._wrap_model(self.model_wrapped)
+        model = self._wrap_model(self.model_wrappers)
         if model is not self.model:
             self.model_wrapped = model
 
-        # TODO: delay_optimizer_creation
-        # if delay_optimizer_creation:
-        #     self.create_optimizer()
-        #     self.create_scheduler(num_training_steps=max_steps,
-        #                           optimizer=self.optimizer)
+        if delay_optimizer_creation:
+            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -565,12 +475,6 @@ class Trainer:
             self.hp_name(trial) if self.hp_name is not None else None
         )
 
-        # if trial is not None:
-        #     assignments = trial.assignments if self.hp_search_backend == HPSearchBackend.SIGOPT else trial
-        #     self.state.trial_params = hp_params(assignments)
-        # else:
-        #     self.state.trial_params = None
-
         # This should be the same if the state has been saved but in case the training arguments changed, it's safer
         # to set this after the load.
         self.state.max_steps = max_steps
@@ -580,31 +484,33 @@ class Trainer:
 
         # tr_loss is a tensor to avoid synchronization of TPUs through .item()
         tr_loss = torch.tensor(0.0).to(args.device)
-
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
         model.zero_grad()
+        self.optimizer.zero_grad()
 
         # set callback handler
         self.control = self.callback_handler.on_train_begin(
             args, self.state, self.control
         )
 
-        # TODO ?? # Skip the first epochs_trained epochs to get the random state of the dataloader at the right point.
-        # if not args.ignore_data_skip:
-        #     for epoch in range(epochs_trained):
-        #         is_random_sampler = hasattr(train_dataloader, "sampler") and isinstance(
-        #             train_dataloader.sampler, RandomSampler
-        #         )
-        #         if version.parse(torch.__version__) < version.parse("1.11") or not is_random_sampler:
-        #             # We just need to begin an iteration to create the randomization of the sampler.
-        #             # That was before PyTorch 1.11 however...
-        #             for _ in train_dataloader:
-        #                 break
-        #         else:
-        #             # Otherwise we need to call the whooooole sampler cause there is some random operation added
-        #             # AT THE VERY END!
-        #             _ = list(train_dataloader.sampler)
+        if not args.ignore_data_skip:
+            for epoch in range(epochs_trained):
+                is_random_sampler = hasattr(train_dataloader, "sampler") and isinstance(
+                    train_dataloader.sampler, RandomSampler
+                )
+                if (
+                    version.parse(torch.__version__) < version.parse("1.11")
+                    or not is_random_sampler
+                ):
+                    # We just need to begin an iteration to create the randomization of the sampler.
+                    # That was before PyTorch 1.11 however...
+                    for _ in train_dataloader:
+                        break
+                else:
+                    # Otherwise we need to call the whooooole sampler cause there is some random operation added
+                    # AT THE VERY END!
+                    _ = list(train_dataloader.sampler)
 
         for epoch in range(epochs_trained, num_train_epochs):
             if isinstance(train_dataloader, DataLoader) and isinstance(
@@ -631,7 +537,6 @@ class Trainer:
                 args, self.state, self.control
             )
 
-            # step = -1
             for step, inputs in enumerate(epoch_iterator):
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -672,47 +577,29 @@ class Trainer:
                 else:
                     tr_loss += tr_loss_step
 
-                # TODO support calculate count flos per each process
-                # self.current_flos += float(self.floating_point_ops(inputs))
-
-                # ddp
                 # optimizing ddp
                 if (step + 1) % args.gradient_accumulation_steps == 0 or (
                     # last step in epoch but step is always smaller than gradient_accumulation_steps
                     steps_in_epoch <= args.gradient_accumulation_steps
                     and (step + 1) == steps_in_epoch
                 ):
+
                     # Gradient clipping
-                    if (
-                        args.max_grad_norm is not None
-                        and args.max_grad_norm > 0
-                        and not self.deepspeed
-                    ):
-                        # deepspeed does its own clipping
-
+                    if args.max_grad_norm is not None and args.max_grad_norm > 0:
                         if self.do_grad_scaling:
-                            # AMP: gradients need unscaling
                             self.scaler.unscale_(self.optimizer)
-
                         if hasattr(self.optimizer, "clip_grad_norm"):
-                            # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
                             self.optimizer.clip_grad_norm(args.max_grad_norm)
                         elif hasattr(model, "clip_grad_norm_"):
-                            # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
                             model.clip_grad_norm_(args.max_grad_norm)
-                        # else:
-                        #     # Revert to normal clipping otherwise, handling Apex or full precision
-                        #     nn.utils.clip_grad_norm_(
-                        #         amp.master_params(self.optimizer)
-                        #         if self.use_apex else model.parameters(),
-                        #         args.max_grad_norm,
-                        #     )
+                        else:
+                            nn.utils.clip_grad_norm_(
+                                model.parameters(), args.max_grad_norm
+                            )
 
                     # optimizer step
                     optimizer_was_run = True
-                    if self.deepspeed:
-                        pass  # called outside the loop
-                    elif self.do_grad_scaling:
+                    if self.do_grad_scaling:
                         scale_before = self.scaler.get_scale()
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
@@ -721,10 +608,12 @@ class Trainer:
                     else:
                         self.optimizer.step()
 
-                    if optimizer_was_run and not self.deepspeed:
+                    if optimizer_was_run:
                         self.lr_scheduler.step()
 
                     model.zero_grad()
+                    self.optimizer.zero_grad()
+
                     self.state.global_step += 1
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(
@@ -764,9 +653,7 @@ class Trainer:
             # Clean the state at the end of training
             delattr(self, "_past")
 
-        logger.info(
-            "\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n"
-        )
+        logger.info("\n\nTraining completed.\n\n")
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
             # Wait for everyone to get here so we are sure the model has been saved by process 0.
             if args.local_rank != -1:
@@ -784,14 +671,13 @@ class Trainer:
             num_samples=num_train_samples,
             num_steps=self.state.max_steps,
         )
-        # TODO self.store_flos()
+        self.store_flos()
         metrics["total_flos"] = self.state.total_flos
         metrics["train_loss"] = train_loss
 
         self.is_in_train = False
 
-        # TODO _memory_tracker
-        # self._memory_tracker.stop_and_update_metrics(metrics)
+        self._memory_tracker.stop_and_update_metrics(metrics)
 
         self.log(metrics)
 
@@ -851,12 +737,7 @@ class Trainer:
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         start_time = time.time()
 
-        eval_loop = (
-            self.prediction_loop
-            if self.args.use_legacy_prediction_loop
-            else self.evaluation_loop
-        )
-        output = eval_loop(
+        output = self.evaluation_loop(
             eval_dataloader,
             description="Evaluation",
             # No point gathering the predictions if there are no metrics, otherwise we defer to
@@ -1338,7 +1219,6 @@ class Trainer:
                     )
                 else:
                     logits = outputs
-                # TODO: this needs to be fixed and made cleaner later.
                 if self.args.past_index >= 0:
                     self._past = outputs[self.args.past_index - 1]
 
@@ -1351,47 +1231,17 @@ class Trainer:
 
         return (loss, logits, labels)
 
-    def get_test_dataloader(self, test_dataset: Dataset) -> DataLoader:
+    def create_optimizer_and_scheduler(self, num_training_steps: int):
         """
-        Returns the test [`~torch.utils.data.DataLoader`].
+        Setup the optimizer and the learning rate scheduler.
 
-        Subclass and override this method if you want to inject some custom behavior.
-
-        Args:
-            test_dataset (`torch.utils.data.Dataset`, *optional*):
-                The test dataset to use. If it is an `datasets.Dataset`, columns not accepted by the `model.forward()`
-                method are automatically removed. It must implement `__len__`.
+        We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
+        Trainer's init through `optimizers`, or subclass and override this method (or `create_optimizer` and/or
+        `create_scheduler`) in a subclass.
         """
-        if isinstance(test_dataset, datasets.Dataset):
-            test_dataset = self._remove_unused_columns(test_dataset, description="test")
-
-        if isinstance(test_dataset, torch.utils.data.IterableDataset):
-            if self.args.world_size > 1:
-                test_dataset = IterableDatasetShard(
-                    test_dataset,
-                    batch_size=self.args.eval_batch_size,
-                    drop_last=self.args.dataloader_drop_last,
-                    num_processes=self.args.world_size,
-                    process_index=self.args.process_index,
-                )
-            return DataLoader(
-                test_dataset,
-                batch_size=self.args.eval_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                pin_memory=self.args.dataloader_pin_memory,
-            )
-
-        test_sampler = self._get_eval_sampler(test_dataset)
-
-        # We use the same batch_size as for eval.
-        return DataLoader(
-            test_dataset,
-            sampler=test_sampler,
-            batch_size=self.args.eval_batch_size,
-            collate_fn=self.data_collator,
-            drop_last=self.args.dataloader_drop_last,
-            pin_memory=self.args.dataloader_pin_memory,
+        self.create_optimizer()
+        self.create_scheduler(
+            num_training_steps=num_training_steps, optimizer=self.optimizer
         )
 
     def create_optimizer(self):
@@ -1401,28 +1251,142 @@ class Trainer:
         We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
-        """
-        if shared ddp:
-           wrap optimizer
-        """
+        opt_model = self.model_wrapped
+
+        if self.parallel_context or self.optimizer is None:
+            decay_parameters = get_parameter_names(opt_model, [nn.LayerNorm])
+            decay_parameters = [name for name in decay_parameters if "bias" not in name]
+            optimizer_grouped_parameters = [
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if n in decay_parameters
+                    ],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [
+                        p
+                        for n, p in opt_model.named_parameters()
+                        if n not in decay_parameters
+                    ],
+                    "weight_decay": 0.0,
+                },
+            ]
+
+            optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
+                self.args
+            )
+            if (
+                hasattr(self.args.oslo_config, "data_parallelism")
+            ):
+                self.optimizer = ZeroRedundancyOptimizer(
+                    parallel_context=self.parallel_context,
+                    params=opt_model.parameters(),
+                    optim=optimizer_cls,
+                    # **optimizer_kwargs,
+                )
+
+            else:
+                self.optimizer = optimizer_cls(
+                    opt_model.parameters(), **optimizer_kwargs
+                )
+
         return self.optimizer
 
-    # def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
-    #     """
-    #     Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
-    #     passed as an argument.
-    #
-    #     Args:
-    #         num_training_steps (int): The number of training steps to do.
-    #     """
-    #     if self.lr_scheduler is None:
-    #         self.lr_scheduler = get_scheduler(
-    #             self.args.lr_scheduler_type,
-    #             optimizer=self.optimizer if optimizer is None else optimizer,
-    #             num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
-    #             num_training_steps=num_training_steps,
-    #         )
-    #     return self.lr_scheduler
+    @staticmethod
+    def get_optimizer_cls_and_kwargs(args: TrainingArguments) -> Tuple[Any, Any]:
+        """
+        Returns the optimizer class and optimizer parameters based on the training arguments.
+
+        Args:
+            args (`transformers.training_args.TrainingArguments`):
+                The training arguments for the training session.
+
+        """
+        optimizer_kwargs = {"lr": args.learning_rate}
+        adam_kwargs = {
+            "betas": (args.adam_beta1, args.adam_beta2),
+            "eps": args.adam_epsilon,
+        }
+
+        if args.optim == OptimizerNames.ADAFACTOR:
+            from transformers.optimization import Adafactor
+            optimizer_cls = Adafactor
+            optimizer_kwargs.update({"scale_parameter": False, "relative_step": False})
+        elif args.optim == OptimizerNames.ADAMW:
+            from torch.optim import AdamW
+            optimizer_cls = AdamW
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAM:
+            if args.oslo_config and args.oslo_config.cpu_offload:
+                from oslo.torch.optim import CPUAdam
+                optimizer_cls = CPUAdam
+            else:
+                from oslo.torch.optim import FusedAdam
+                optimizer_cls = FusedAdam
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAGRAD:
+            if args.oslo_config and args.oslo_config.cpu_offload:
+                from oslo.torch.optim import CPUAdagrad
+                optimizer_cls = CPUAdagrad
+            else:
+                from oslo.torch.optim import FusedAdagrad
+                optimizer_cls = FusedAdagrad
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADADELTA:
+            from torch.optim import Adadelta
+            optimizer_cls = Adadelta
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.ADAMW_BNB:
+            try:
+                from bitsandbytes.optim import Adam8bit
+                optimizer_cls = Adam8bit
+                optimizer_kwargs.update(adam_kwargs)
+            except ImportError:
+                raise ValueError(
+                    "Trainer tried to instantiate bnb Adam8bit but bnb is not installed!"
+                )
+        elif args.optim == OptimizerNames.SGD:
+            from ..torch.optim import FusedSGD
+            optimizer_cls = FusedSGD
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.NOVOGRAD:
+            from ..torch.optim import FusedNovoGrad
+            optimizer_cls = FusedNovoGrad
+            optimizer_kwargs.update(adam_kwargs)
+        elif args.optim == OptimizerNames.LAMB:
+            from ..torch.optim import FusedLamb
+            optimizer_cls = FusedLamb
+            optimizer_kwargs.update(adam_kwargs)
+        else:
+            raise ValueError(
+                f"Trainer cannot instantiate unsupported optimizer: {args.optim}. Support optimizers: {', '.join([e.value for e in OptimizerNames])}"
+            )
+        return optimizer_cls, optimizer_kwargs
+
+    def create_scheduler(
+        self, num_training_steps: int, optimizer: torch.optim.Optimizer = None
+    ):
+        """
+        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
+        passed as an argument.
+
+        Args:
+            num_training_steps (int): The number of training steps to do.
+        """
+
+        if self.parallel_context or self.lr_scheduler is None:
+            from transformers import get_scheduler
+
+            self.lr_scheduler = get_scheduler(
+                self.args.lr_scheduler_type,
+                optimizer=self.optimizer if optimizer is None else optimizer,
+                num_warmup_steps=self.args.get_warmup_steps(num_training_steps),
+                num_training_steps=num_training_steps,
+            )
+        return self.lr_scheduler
 
     def num_examples(self, dataloader: DataLoader) -> int:
         """
@@ -1437,46 +1401,6 @@ class Trainer:
             TypeError,
         ):  # no dataset or length, estimate by length of dataloader
             return len(dataloader) * self.args.per_device_train_batch_size
-
-    # def _hp_search_setup(self, trial: Union["optuna.Trial", Dict[str, Any]]):
-    #     """HP search setup code"""
-    #     self._trial = trial
-    #
-    #     if self.hp_search_backend is None or trial is None:
-    #         return
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         params = self.hp_space(trial)
-    #     elif self.hp_search_backend == HPSearchBackend.RAY:
-    #         params = trial
-    #         params.pop("wandb", None)
-    #     elif self.hp_search_backend == HPSearchBackend.SIGOPT:
-    #         params = {k: int(v) if isinstance(v, str) else v for k, v in trial.assignments.items()}
-    #     elif self.hp_search_backend == HPSearchBackend.WANDB:
-    #         params = trial
-    #
-    #     for key, value in params.items():
-    #         if not hasattr(self.args, key):
-    #             logger.warning(
-    #                 f"Trying to set {key} in the hyperparameter search but there is no corresponding field in `TrainingArguments`."
-    #             )
-    #             continue
-    #         old_attr = getattr(self.args, key, None)
-    #         # Casting value to the proper type
-    #         if old_attr is not None:
-    #             value = type(old_attr)(value)
-    #         setattr(self.args, key, value)
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         logger.info("Trial:", trial.params)
-    #     if self.hp_search_backend == HPSearchBackend.SIGOPT:
-    #         logger.info(f"SigOpt Assignments: {trial.assignments}")
-    #     if self.hp_search_backend == HPSearchBackend.WANDB:
-    #         logger.info(f"W&B Sweep parameters: {trial}")
-    #     if self.args.deepspeed:
-    #         # Rebuild the deepspeed config to reflect the updated training parameters
-    #         from transformers.deepspeed import HfTrainerDeepSpeedConfig
-    #
-    #         self.args.hf_deepspeed_config = HfTrainerDeepSpeedConfig(self.args.deepspeed)
-    #         self.args.hf_deepspeed_config.trainer_config_process(self.args)
 
     def _maybe_log_save_evaluate(
         self, tr_loss, model, trial, epoch, ignore_keys_for_eval
@@ -1507,7 +1431,6 @@ class Trainer:
         metrics = None
         if self.control.should_evaluate:
             metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
-            # self._report_to_hp_search(trial, epoch, metrics) TODO hp search
 
         if self.control.should_save:
             self._save_checkpoint(model, trial, metrics=metrics)
@@ -1562,50 +1485,19 @@ class Trainer:
         # Save model checkpoint
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
 
-        # TODO Support hp search func later.
-        # if self.hp_search_backend is not None and trial is not None:
-        #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-        #         run_id = trial.number
-        #     elif self.hp_search_backend == HPSearchBackend.RAY:
-        #         from ray import tune
-        #
-        #         run_id = tune.get_trial_id()
-        #     elif self.hp_search_backend == HPSearchBackend.SIGOPT:
-        #         run_id = trial.id
-        #     elif self.hp_search_backend == HPSearchBackend.WANDB:
-        #         import wandb
-        #
-        #         run_id = wandb.run.id
-        #     run_name = self.hp_name(
-        #         trial) if self.hp_name is not None else f"run-{run_id}"
-        #     run_dir = os.path.join(self.args.output_dir, run_name)
-        # else:
-        #     run_dir = self.args.output_dir
-        #     self.store_flos()
         run_dir = self.args.output_dir
-        self.store_flos()
 
         output_dir = os.path.join(run_dir, checkpoint_folder)
         self.save_model(output_dir, _internal_call=True)
-        if self.deepspeed:
-            # under zero3 model file itself doesn't get saved since it's bogus! Unless deepspeed
-            # config `stage3_gather_16bit_weights_on_model_save` is True
-            self.deepspeed.save_checkpoint(output_dir)
 
-        # Save optimizer and scheduler
-        if self.sharded_ddp == ShardedDDPOption.SIMPLE:
+        # TODO check it work
+        if isinstance(self.optimizer, ZeroRedundancyOptimizer):
             self.optimizer.consolidate_state_dict()
 
-        if self.args.should_save and not self.deepspeed:
-            # deepspeed.save_checkpoint above saves model/optim/sched
+        if self.args.should_save:
             torch.save(
                 self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME)
             )
-            # with warnings.catch_warnings(record=True) as caught_warnings:
-            #     torch.save(
-            #         self.lr_scheduler.state_dict(),
-            #         os.path.join(output_dir, SCHEDULER_NAME),
-            #     )
             torch.save(
                 self.lr_scheduler.state_dict(),
                 os.path.join(output_dir, SCHEDULER_NAME),
@@ -1614,6 +1506,8 @@ class Trainer:
                 torch.save(
                     self.scaler.state_dict(), os.path.join(output_dir, SCALER_NAME)
                 )
+
+            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         # Determine the new best metric / best model checkpoint
         if metrics is not None and self.args.metric_for_best_model is not None:
@@ -1631,10 +1525,6 @@ class Trainer:
                 self.state.best_metric = metric_value
                 self.state.best_model_checkpoint = output_dir
 
-        # Save the Trainer state
-        if self.args.should_save:
-            self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
-
         # Save RNG state in non-distributed training
         rng_states = {
             "python": random.getstate(),
@@ -1643,7 +1533,6 @@ class Trainer:
         }
         if torch.cuda.is_available():
             if self.args.local_rank == -1:
-                # In non distributed, we save the global CUDA RNG state (will take care of DataParallel)
                 rng_states["cuda"] = torch.cuda.random.get_rng_state_all()
             else:
                 rng_states["cuda"] = torch.cuda.random.get_rng_state()
@@ -1666,10 +1555,6 @@ class Trainer:
     def _load_optimizer_and_scheduler(self, checkpoint):
         """If optimizer and scheduler states exist, load them."""
         if checkpoint is None:
-            return
-
-        if self.deepspeed:
-            # deepspeed loads optimizer/lr_scheduler together with the model in deepspeed_init
             return
 
         if os.path.isfile(os.path.join(checkpoint, OPTIMIZER_NAME)) and os.path.isfile(
@@ -1696,10 +1581,7 @@ class Trainer:
                 )
 
     def _get_learning_rate(self):
-        if self.deepspeed:
-            # with deepspeed's fp16 and dynamic loss scale enabled the optimizer/scheduler steps may
-            # not run for the first few dozen steps while loss scale is too large, and thus during
-            # that time `get_last_lr` will fail if called during that warm up stage, so work around it:
+        if self.parallel_context:
             try:
                 last_lr = self.lr_scheduler.get_last_lr()[0]
             except AssertionError as e:
@@ -1743,23 +1625,8 @@ class Trainer:
 
         best_model_path = os.path.join(self.state.best_model_checkpoint, WEIGHTS_NAME)
         if os.path.exists(best_model_path):
-            # TODO for shared ddp
-            # if self.deepspeed:
-            #     # temp hack until Deepspeed fixes the problem with resume from an existing engine that did some stepping
-            #     deepspeed_engine, optimizer, lr_scheduler = deepspeed_reinit(self)
-            #     self.model = deepspeed_engine.module
-            #     self.model_wrapped = deepspeed_engine
-            #     self.deepspeed = deepspeed_engine
-            #     self.optimizer = optimizer
-            #     self.lr_scheduler = lr_scheduler
-            #     self.deepspeed.load_checkpoint(
-            #         self.state.best_model_checkpoint, load_optimizer_states=True, load_lr_scheduler_states=True
-            #     )
-            # else:
-
-            # We load the model state dict on the CPU to avoid an OOM error.
+            # load the model state dict on the CPU to avoid an OOM error.
             state_dict = torch.load(best_model_path, map_location="cpu")
-            # If the model is on the GPU, it still works!
             self._load_state_dict_in_model(state_dict)
         else:
             logger.warning(
@@ -1767,54 +1634,104 @@ class Trainer:
                 "on multiple nodes, you should activate `--save_on_each_node`."
             )
 
-    # def _load_from_checkpoint(self, resume_from_checkpoint):
-    #     if not os.path.isfile(os.path.join(resume_from_checkpoint,
-    #                                        WEIGHTS_NAME)):
-    #         raise ValueError(
-    #             f"Can't find a valid checkpoint at {resume_from_checkpoint}")
-    #
-    #     logger.info(f"Loading model from {resume_from_checkpoint}).")
-    #
-    #     if os.path.isfile(os.path.join(resume_from_checkpoint, CONFIG_NAME)):
-    #         config = PretrainedConfig.from_json_file(
-    #             os.path.join(resume_from_checkpoint, CONFIG_NAME))
-    #         checkpoint_version = config.transformers_version
-    #         if checkpoint_version is not None and checkpoint_version != __version__:
-    #             logger.warning(
-    #                 f"You are resuming training from a checkpoint trained with {checkpoint_version} of "
-    #                 f"Transformers but your current version is {__version__}. This is not recommended and could "
-    #                 "yield to errors or unwanted behaviors.")
-    #
-    #     if self.args.deepspeed:
-    #         # will be resumed in deepspeed_init
-    #         pass
-    #     else:
-    #         # We load the model state dict on the CPU to avoid an OOM error.
-    #         state_dict = torch.load(os.path.join(resume_from_checkpoint,
-    #                                              WEIGHTS_NAME),
-    #                                 map_location="cpu")
-    #         # If the model is on the GPU, it still works!
-    #         self._load_state_dict_in_model(state_dict)
-    #
-    #         # release memory
-    #         del state_dict
+    def _load_from_checkpoint(self, resume_from_checkpoint):
+        if not os.path.isfile(os.path.join(resume_from_checkpoint, WEIGHTS_NAME)):
+            raise ValueError(
+                f"Can't find a valid checkpoint at {resume_from_checkpoint}"
+            )
 
-    # def call_model_init(self, trial=None):
-    #     model_init_argcount = number_of_arguments(self.model_init)
-    #     if model_init_argcount == 0:
-    #         model = self.model_init()
-    #     elif model_init_argcount == 1:
-    #         model = self.model_init(trial)
-    #     else:
-    #         raise RuntimeError("model_init should have 0 or 1 argument.")
-    #
-    #     if model is None:
-    #         raise RuntimeError("model_init should not return None.")
-    #
-    #     return model
+        logger.info(f"Loading model from {resume_from_checkpoint}).")
+
+        if os.path.isfile(os.path.join(resume_from_checkpoint, CONFIG_NAME)):
+            config = PretrainedConfig.from_json_file(
+                os.path.join(resume_from_checkpoint, CONFIG_NAME)
+            )
+            checkpoint_version = config.transformers_version
+            if checkpoint_version is not None and checkpoint_version != __version__:
+                logger.warning(
+                    f"You are resuming training from a checkpoint trained with {checkpoint_version} of "
+                    f"Transformers but your current version is {__version__}. This is not recommended and could "
+                    "yield to errors or unwanted behaviors."
+                )
+
+        # We load the model state dict on the CPU to avoid an OOM error.
+        state_dict = torch.load(
+            os.path.join(resume_from_checkpoint, WEIGHTS_NAME), map_location="cpu"
+        )
+        # If the model is on the GPU, it still works!
+        self._load_state_dict_in_model(state_dict)
+
+        # release memory
+        del state_dict
+
+    def _sorted_checkpoints(
+        self, output_dir=None, checkpoint_prefix=PREFIX_CHECKPOINT_DIR, use_mtime=False
+    ) -> List[str]:
+        ordering_and_checkpoint_path = []
+
+        glob_checkpoints = [
+            str(x)
+            for x in Path(output_dir).glob(f"{checkpoint_prefix}-*")
+            if os.path.isdir(x)
+        ]
+
+        for path in glob_checkpoints:
+            if use_mtime:
+                ordering_and_checkpoint_path.append((os.path.getmtime(path), path))
+            else:
+                regex_match = re.match(f".*{checkpoint_prefix}-([0-9]+)", path)
+                if regex_match is not None and regex_match.groups() is not None:
+                    ordering_and_checkpoint_path.append(
+                        (int(regex_match.groups()[0]), path)
+                    )
+
+        checkpoints_sorted = sorted(ordering_and_checkpoint_path)
+        checkpoints_sorted = [checkpoint[1] for checkpoint in checkpoints_sorted]
+        # Make sure we don't delete the best model.
+        if self.state.best_model_checkpoint is not None:
+            best_model_index = checkpoints_sorted.index(
+                str(Path(self.state.best_model_checkpoint))
+            )
+            for i in range(best_model_index, len(checkpoints_sorted) - 2):
+                checkpoints_sorted[i], checkpoints_sorted[i + 1] = (
+                    checkpoints_sorted[i + 1],
+                    checkpoints_sorted[i],
+                )
+        return checkpoints_sorted
+
+    def _rotate_checkpoints(self, use_mtime=False, output_dir=None) -> None:
+        if self.args.save_total_limit is None or self.args.save_total_limit <= 0:
+            return
+
+        # Check if we should delete older checkpoint(s)
+        checkpoints_sorted = self._sorted_checkpoints(
+            use_mtime=use_mtime, output_dir=output_dir
+        )
+        if len(checkpoints_sorted) <= self.args.save_total_limit:
+            return
+
+        # If save_total_limit=1 with load_best_model_at_end=True, we could end up deleting the last checkpoint, which
+        # we don't do to allow resuming.
+        save_total_limit = self.args.save_total_limit
+        if (
+            self.state.best_model_checkpoint is not None
+            and self.args.save_total_limit == 1
+            and checkpoints_sorted[-1] != self.state.best_model_checkpoint
+        ):
+            save_total_limit = 2
+
+        number_of_checkpoints_to_delete = max(
+            0, len(checkpoints_sorted) - save_total_limit
+        )
+        checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
+        for checkpoint in checkpoints_to_be_deleted:
+            logger.info(
+                f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit"
+            )
+            shutil.rmtree(checkpoint)
+
     def _move_model_to_device(self, model, device):
-        model = model.to(device)
-        # Moving a model to an XLA device disconnects the tied weights, so we have to retie them.
+        model.to(device)
 
     def _remove_unused_columns(
         self, dataset: "datasets.Dataset", description: Optional[str] = None
@@ -1911,17 +1828,6 @@ class Trainer:
                 if _is_torch_generator_available:
                     return RandomSampler(self.train_dataset, generator=generator)
                 return RandomSampler(self.train_dataset)
-            # elif (self.args.parallel_mode in [
-            #         ParallelMode.TPU, ParallelMode.SAGEMAKER_MODEL_PARALLEL
-            # ] and not self.args.dataloader_drop_last):
-            #     # Use a loop for TPUs when drop_last is False to have all batches have the same size.
-            #     return DistributedSamplerWithLoop(
-            #         self.train_dataset,
-            #         batch_size=self.args.per_device_train_batch_size,
-            #         num_replicas=self.args.world_size,
-            #         rank=self.args.process_index,
-            #         seed=seed,
-            #     )
             else:
                 return DistributedSampler(
                     self.train_dataset,
@@ -1991,6 +1897,98 @@ class Trainer:
                 process_index=self.args.process_index,
             )
 
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
+        """
+        Returns the evaluation [`~torch.utils.data.DataLoader`].
+
+        Subclass and override this method if you want to inject some custom behavior.
+
+        Args:
+            eval_dataset (`torch.utils.data.Dataset`, *optional*):
+                If provided, will override `self.eval_dataset`. If it is an `datasets.Dataset`, columns not accepted by
+                the `model.forward()` method are automatically removed. It must implement `__len__`.
+        """
+        if eval_dataset is None and self.eval_dataset is None:
+            raise ValueError("Trainer: evaluation requires an eval_dataset.")
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        if isinstance(eval_dataset, datasets.Dataset):
+            eval_dataset = self._remove_unused_columns(
+                eval_dataset, description="evaluation"
+            )
+
+        if isinstance(eval_dataset, torch.utils.data.IterableDataset):
+            if self.args.world_size > 1:
+                eval_dataset = IterableDatasetShard(
+                    eval_dataset,
+                    batch_size=self.args.per_device_eval_batch_size,
+                    drop_last=self.args.dataloader_drop_last,
+                    num_processes=self.args.world_size,
+                    process_index=self.args.process_index,
+                )
+            return DataLoader(
+                eval_dataset,
+                batch_size=self.args.eval_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+            )
+
+        eval_sampler = self._get_eval_sampler(eval_dataset)
+
+        return DataLoader(
+            eval_dataset,
+            sampler=eval_sampler,
+            batch_size=self.args.eval_batch_size,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
+
+    def get_test_dataloader(self, test_dataset: Dataset) -> DataLoader:
+        """
+        Returns the test [`~torch.utils.data.DataLoader`].
+
+        Subclass and override this method if you want to inject some custom behavior.
+
+        Args:
+            test_dataset (`torch.utils.data.Dataset`, *optional*):
+                The test dataset to use. If it is an `datasets.Dataset`, columns not accepted by the `model.forward()`
+                method are automatically removed. It must implement `__len__`.
+        """
+        if isinstance(test_dataset, datasets.Dataset):
+            test_dataset = self._remove_unused_columns(test_dataset, description="test")
+
+        if isinstance(test_dataset, torch.utils.data.IterableDataset):
+            if self.args.world_size > 1:
+                test_dataset = IterableDatasetShard(
+                    test_dataset,
+                    batch_size=self.args.eval_batch_size,
+                    drop_last=self.args.dataloader_drop_last,
+                    num_processes=self.args.world_size,
+                    process_index=self.args.process_index,
+                )
+            return DataLoader(
+                test_dataset,
+                batch_size=self.args.eval_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+            )
+
+        test_sampler = self._get_eval_sampler(test_dataset)
+
+        # We use the same batch_size as for eval.
+        return DataLoader(
+            test_dataset,
+            sampler=test_sampler,
+            batch_size=self.args.eval_batch_size,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            pin_memory=self.args.dataloader_pin_memory,
+        )
+
     def training_step(
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]
     ) -> torch.Tensor:
@@ -2020,16 +2018,13 @@ class Trainer:
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
 
-        if self.args.gradient_accumulation_steps > 1 and not self.deepspeed:
+        if self.args.gradient_accumulation_steps > 1:
+            # TODO check oslo gradient_accumulation_steps
             # deepspeed handles loss scaling by gradient_accumulation_steps in its `backward`
             loss = loss / self.args.gradient_accumulation_steps
 
-        if self.do_grad_scaling:
+        if self.do_grad_scaling:  # TODO check do_grad_scaling is ok with oslo parallel
             self.scaler.scale(loss).backward()
-        # TODO
-        # elif self.deepspeed:
-        #     # loss gets scaled under gradient_accumulation_steps in deepspeed
-        #     loss = self.deepspeed.backward(loss)
         else:
             loss.backward()
 
@@ -2047,11 +2042,6 @@ class Trainer:
             return type(data)(self._prepare_input(v) for v in data)
         elif isinstance(data, torch.Tensor):
             kwargs = dict(device=self.args.device)
-            # if self.deepspeed and data.dtype != torch.int64:
-            #     # NLP models inputs are int64 and those get adjusted to the right dtype of the
-            #     # embedding. Other models such as wav2vec2's inputs are already float and thus
-            #     # may need special handling to match the dtypes of the model
-            #     kwargs.update(dict(dtype=self.args.hf_deepspeed_config.dtype()))
             return data.to(**kwargs)
         return data
 
@@ -2110,66 +2100,43 @@ class Trainer:
 
         return (loss, outputs) if return_outputs else loss
 
-    def _wrap_model(self, model, training=True):
-
-        # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
-        if unwrap_model(model) is not model:
-            return model
-        #
-        # # Mixed precision training with apex (torch < 1.6)
-        # if self.use_apex and training:
-        #     model, self.optimizer = amp.initialize(
-        #         model, self.optimizer, opt_level=self.args.fp16_opt_level)
-
-        # Multi-gpu training (should be after apex fp16 initialization)
-        if self.args.n_gpu > 1:
-            model = nn.DataParallel(model)
-
-        # Note: in torch.distributed mode, there's no point in wrapping the model
-        # inside a DistributedDataParallel as we'll be under `no_grad` anyways.
+    def _wrap_model(self, model_wrappers: List, training: bool = True):
+        model = self.model
         if not training:
-            return model
+            return self.model
+
+        if unwrap_model(self.model) is not self.model:
+            return self.model
 
         # Distributed training (should be after apex fp16 initialization)
-        if self.sharded_ddp is not None:
-            # Sharded DDP!
-            if self.sharded_ddp == ShardedDDPOption.SIMPLE:
-                model = ShardedDataParallel(model, self.optimizer)
-            else:
-                mixed_precision = self.args.fp16 or self.args.bf16
-                cpu_offload = ShardedDDPOption.OFFLOAD in self.args.sharded_ddp
-                zero_3 = self.sharded_ddp == ShardedDDPOption.ZERO_DP_3
-                # XXX: Breaking the self.model convention but I see no way around it for now.
-                if ShardedDDPOption.AUTO_WRAP in self.args.sharded_ddp:
-                    model = auto_wrap(model)
-                # with enable_wrap(wrapper_cls=FSDP, parallel_context=self.parallel_context):
-                #     wrapper_fsdp = wrap(model)
-                self.model = model = FullyShardedDataParallel(
-                    model,
-                    mixed_precision=mixed_precision,
-                    reshard_after_forward=zero_3,
-                    cpu_offload=cpu_offload,
-                ).to(self.args.device)
+        if self.parallel_context is not None:
+            for wrapper in model_wrappers:
+                if isinstance(wrapper, TensorParallel):
+                    model = wrapper(
+                        self.model,
+                        self.parallel_context,
+                        **self.args.oslo_config.tensor_parallelism["params"],
+                    )
+                elif isinstance(wrapper, PipelineParallel):
+                    model = wrapper(
+                        self.model,
+                        self.parallel_context,
+                        **self.args.oslo_config.pipeline_parallelism["params"],
+                    )
+                elif isinstance(wrapper, SequenceDataParallel):
+                    model = wrapper(
+                        self.model,
+                        self.parallel_context,
+                        **self.args.oslo_config.sequence_parallelism["params"],
+                    )
+                elif type(wrapper) in [DistributedDataParallel, ShardedDataParallel, FullyShardedDataParallel]:
+                    model = wrapper(
+                        self.model,
+                        self.parallel_context,
+                        **self.args.oslo_config.data_parallelism["params"],
+                    )
 
-        elif self.args.local_rank != -1:
-            kwargs = {}
-            # if self.args.ddp_find_unused_parameters is not None:
-            #     kwargs[
-            #         "find_unused_parameters"] = self.args.ddp_find_unused_parameters
-            # elif isinstance(model, PreTrainedModel):
-            #     kwargs[
-            #         "find_unused_parameters"] = not model.is_gradient_checkpointing
-            # else:
-            #     kwargs["find_unused_parameters"] = True
-            # if self.args.ddp_bucket_cap_mb is not None:
-            #     kwargs["bucket_cap_mb"] = self.args.ddp_bucket_cap_mb
-            model = DistributedDataParallel(
-                model,
-                device_ids=[self.args.local_rank] if self.args._n_gpu != 0 else None,
-                output_device=self.args.local_rank if self.args._n_gpu != 0 else None,
-                **kwargs,
-            )
-
+            allocate_params(model, self.parallel_context)
         return model
 
     def log(self, logs: Dict[str, float]) -> None:
@@ -2196,49 +2163,11 @@ class Trainer:
     ):
         """
         Will save the model, so you can reload it using `from_pretrained()`.
-
-        Will only save from the main process.
         """
-
-        if output_dir is None:
-            output_dir = self.args.output_dir
-
-        if (
-            ShardedDDPOption.ZERO_DP_2 in self.args.sharded_ddp
-            or ShardedDDPOption.ZERO_DP_3 in self.args.sharded_ddp
-        ):
-            state_dict = self.model.state_dict()
-
-            if self.args.should_save:
+        if self.args.should_save:
+            if self.parallel_context:
+                state_dict = self.model.state_dict()
                 self._save(output_dir, state_dict=state_dict)
-        # elif self.deepspeed:
-        #
-        #     # this takes care of everything as long as we aren't under zero3
-        #     if self.args.should_save:
-        #         self._save(output_dir)
-        #
-        #     if is_deepspeed_zero3_enabled():
-        #         # It's too complicated to try to override different places where the weights dump gets
-        #         # saved, so since under zero3 the file is bogus, simply delete it. The user should
-        #         # either user deepspeed checkpoint to resume or to recover full weights use
-        #         # zero_to_fp32.py stored in the checkpoint.
-        #         if self.args.should_save:
-        #             file = os.path.join(output_dir, WEIGHTS_NAME)
-        #             if os.path.isfile(file):
-        #                 # logger.info(f"deepspeed zero3: removing {file}, see zero_to_fp32.py to recover weights")
-        #                 os.remove(file)
-        #
-        #         # now save the real model if stage3_gather_16bit_weights_on_model_save=True
-        #         # if false it will not be saved.
-        #         # This must be called on all ranks
-        #         if not self.deepspeed.save_16bit_model(output_dir, WEIGHTS_NAME):
-        #             logger.warning(
-        #                 "deepspeed.save_16bit_model didn't save the model, since stage3_gather_16bit_weights_on_model_save=false. "
-        #                 "Saving the full checkpoint instead, use zero_to_fp32.py to recover weights"
-        #             )
-        #             self.deepspeed.save_checkpoint(output_dir)
-
-        elif self.args.should_save:
             self._save(output_dir)
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
@@ -2266,9 +2195,7 @@ class Trainer:
             self.model.save_pretrained(output_dir, state_dict=state_dict)
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
-
-        # Good practice: save your training arguments together with the trained model
-        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
+        # torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
     def store_flos(self):
         # Storing the number of floating-point operations that went into the model
@@ -2284,69 +2211,3 @@ class Trainer:
         else:
             self.state.total_flos += self.current_flos
             self.current_flos = 0
-
-    def _sorted_checkpoints(
-        self, output_dir=None, checkpoint_prefix=PREFIX_CHECKPOINT_DIR, use_mtime=False
-    ) -> List[str]:
-        ordering_and_checkpoint_path = []
-
-        glob_checkpoints = [
-            str(x)
-            for x in Path(output_dir).glob(f"{checkpoint_prefix}-*")
-            if os.path.isdir(x)
-        ]
-
-        for path in glob_checkpoints:
-            if use_mtime:
-                ordering_and_checkpoint_path.append((os.path.getmtime(path), path))
-            else:
-                regex_match = re.match(f".*{checkpoint_prefix}-([0-9]+)", path)
-                if regex_match is not None and regex_match.groups() is not None:
-                    ordering_and_checkpoint_path.append(
-                        (int(regex_match.groups()[0]), path)
-                    )
-
-        checkpoints_sorted = sorted(ordering_and_checkpoint_path)
-        checkpoints_sorted = [checkpoint[1] for checkpoint in checkpoints_sorted]
-        # Make sure we don't delete the best model.
-        if self.state.best_model_checkpoint is not None:
-            best_model_index = checkpoints_sorted.index(
-                str(Path(self.state.best_model_checkpoint))
-            )
-            for i in range(best_model_index, len(checkpoints_sorted) - 2):
-                checkpoints_sorted[i], checkpoints_sorted[i + 1] = (
-                    checkpoints_sorted[i + 1],
-                    checkpoints_sorted[i],
-                )
-        return checkpoints_sorted
-
-    def _rotate_checkpoints(self, use_mtime=False, output_dir=None) -> None:
-        if self.args.save_total_limit is None or self.args.save_total_limit <= 0:
-            return
-
-        # Check if we should delete older checkpoint(s)
-        checkpoints_sorted = self._sorted_checkpoints(
-            use_mtime=use_mtime, output_dir=output_dir
-        )
-        if len(checkpoints_sorted) <= self.args.save_total_limit:
-            return
-
-        # If save_total_limit=1 with load_best_model_at_end=True, we could end up deleting the last checkpoint, which
-        # we don't do to allow resuming.
-        save_total_limit = self.args.save_total_limit
-        if (
-            self.state.best_model_checkpoint is not None
-            and self.args.save_total_limit == 1
-            and checkpoints_sorted[-1] != self.state.best_model_checkpoint
-        ):
-            save_total_limit = 2
-
-        number_of_checkpoints_to_delete = max(
-            0, len(checkpoints_sorted) - save_total_limit
-        )
-        checkpoints_to_be_deleted = checkpoints_sorted[:number_of_checkpoints_to_delete]
-        for checkpoint in checkpoints_to_be_deleted:
-            logger.info(
-                f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit"
-            )
-            shutil.rmtree(checkpoint)

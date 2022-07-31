@@ -547,7 +547,6 @@ class ZeroRedundancyOptimizer(Optimizer):
 
         # Make sure that we capture the current default device
         self._default_device = list(self._per_device_params.keys())[0]
-
         # Create the optim which will work on the param shard
         if not hasattr(self, "optim"):
             self._clear_cache()
@@ -627,6 +626,7 @@ class ZeroRedundancyOptimizer(Optimizer):
             # Go through all params, log them per device
             # The ordering is important here, needs to be the same on all ranks
             # So that ulterior broadcast calls are matching
+
             for param_group in self.param_groups:
                 for param in param_group["params"]:
                     device = param.device

@@ -7,3 +7,6 @@ from oslo.torch.nn.parallel.data_parallel.fully_sharded_data_parallel import (
 from oslo.torch.nn.parallel.data_parallel.sharded_data_parallel import (
     ShardedDataParallel,
 )
+from oslo.torch.nn.parallel.data_parallel.sequence_data_parallel import (
+    SequenceDataParallel,
+)

@@ -1,0 +1,15 @@
+{
+    "data_parallelism": {
+        "data_parallel_size": 2,
+        "sequence_parallel_size": 2,
+        "zero2": {
+            "broadcast_buffers": true,
+            "sync_models_at_startup": true,
+            "reduce_buffer_size": 0,
+            "auto_refresh_trainable": true,
+            "reduce_fp16": true,
+            "warn_on_trainable_params_changed": true
+        }
+    },
+    "backend": "nvcc"
+}

@@ -56,7 +56,7 @@ class DataCollatorForSequenceClassification:
                 "DataCollatorForSequenceClassification is suitable for ProcessorForSequenceClassification."
             )
 
-        if self.tokenizer.pad_token is None:
+        if processor._tokenizer.pad_token is None:
             warnings.warn(
                 "If pad token doesn't exist in tokenizer, it can be a problem when applying padding."
             )
