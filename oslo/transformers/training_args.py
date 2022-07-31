@@ -278,7 +278,7 @@ class TrainingArguments:
 
             If a string is passed, it will be split on space. If a bool is passed, it will be converted to an empty
             list for `False` and `["simple"]` for `True`.
-        oslo_user_config (`str` or `dict`):
+        oslo_config_path_or_dict (`str` or `dict`):
             The value is either the location of oslo parallel json config file (e.g.,`ds_config.json`) or an already loaded json file as a `dict`"
         label_smoothing_factor (`float`, *optional*, defaults to 0.0):
             The label smoothing factor to use. Zero means no label smoothing, otherwise the underlying onehot-encoded
@@ -413,9 +413,9 @@ class TrainingArguments:
             "help": "If > 0: set total number of training steps to perform. Override num_train_epochs."
         },
     )
-    lr_scheduler_type: SchedulerType = field(
+    lr_scheduler_type: Union[str, SchedulerType] = field(
         default="linear",
-        metadata={"help": "The scheduler type to use."},
+        metadata={"help": f"The scheduler type ({', '.join([e.value for e in SchedulerType])})to use "},
     )
     warmup_ratio: float = field(
         default=0.0,
@@ -589,7 +589,7 @@ class TrainingArguments:
             "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
         },
     )
-    oslo_user_config: Union[str, dict] = field(
+    oslo_config_path_or_dict: Union[str, dict] = field(
         default=None,
         metadata={
             "help": "Enable oslo features and pass the path to json config file (e.g. ds_config.json) or an already loaded json file as a dict"
@@ -601,7 +601,7 @@ class TrainingArguments:
             "help": "The label smoothing epsilon to apply (zero means no label smoothing)."
         },
     )
-    optim: OptimizerNames = field(
+    optim: Union[str, OptimizerNames] = field(
         default="adam",
         metadata={
             "help": "The optimizer to use. Choose one of oslo.transformers.OptimizerNames"
@@ -778,13 +778,11 @@ class TrainingArguments:
         # if isinstance(self.debug, str):
         #     self.debug = [DebugOption(s) for s in self.debug.split()]
         self.oslo_config, self.parallel_context, self.model_wrappers = None, None, None
-        if self.oslo_user_config:
+        if self.oslo_config_path_or_dict:
             from oslo.transformers.oslo_init import OsloTrainerConfig
             from .oslo_init import init_oslo_features
-
             # will be used later by the Trainer
-            self.oslo_config = OsloTrainerConfig(self.oslo_user_config)
-            # self.oslo_config.adjust_train_args(self)
+            self.oslo_config = OsloTrainerConfig(self.oslo_config_path_or_dict)
             self.parallel_context, self.model_wrappers = init_oslo_features(
                 self.oslo_config
             )
@@ -948,7 +946,7 @@ class TrainingArguments:
         TODO
         Whether or not to use no_sync for the gradients when doing gradient accumulation.
         """
-        return not self.oslo_user_config
+        return not self.oslo_config_path_or_dict
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):

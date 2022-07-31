@@ -64,7 +64,6 @@ trainer = Trainer(
     args=args,
     model=model,
     tokenizer=tokenizer,
-    # optimizers=(optim, scheduler),
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
     data_collator=data_collator,

@@ -26,7 +26,7 @@ from transformers import (
     PretrainedConfig,
     __version__,
 )
-from ..torch.optim import ZeroRedundancyOptimizer
+from oslo.torch.optim import ZeroRedundancyOptimizer
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.optim.sharded_grad_scaler import ShardedGradScaler
 from .data.data_collator import (
@@ -122,10 +122,6 @@ class Trainer:
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
-            None,
-            None,
-        ),
         preprocess_logits_for_metrics: Callable[
             [torch.Tensor, torch.Tensor], torch.Tensor
         ] = None,
@@ -142,6 +138,8 @@ class Trainer:
         set_seed(self.args.seed)
         self.hp_name = None
         self.is_in_train = False
+        self.optimizer = None
+        self.lr_scheduler = None
 
         # memory metrics - must set up as early as possible
         self._memory_tracker = TrainerMemoryTracker(self.args.skip_memory_metrics)
@@ -166,14 +164,7 @@ class Trainer:
 
         self.parallel_context = None
         self.model_wrappers = []
-        if args.oslo_user_config:
-            if isinstance(args.oslo_user_config, str):
-                import json
-
-                with open(args.oslo_user_config, "r", encoding="utf-8") as f:
-                    self.oslo_user_config = json.load(f)
-            else:
-                self.oslo_user_config = args.oslo_user_config
+        if args.oslo_config:
             self.parallel_context, self.model_wrappers = (
                 args.parallel_context,
                 args.model_wrappers,
@@ -189,7 +180,7 @@ class Trainer:
         self.place_model_on_device = True
         if (
             self.is_model_parallel
-            or args.oslo_user_config
+            or args.oslo_config
             or ((args.fp16_full_eval or args.bf16_full_eval) and not args.do_train)
         ):
             self.place_model_on_device = False
@@ -215,13 +206,6 @@ class Trainer:
 
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
-        self.optimizer, self.lr_scheduler = optimizers
-
-        # if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
-        #     raise RuntimeError(
-        #         "Passing a `model_init` is incompatible with providing the `optimizers` argument. "
-        #         "You should subclass `Trainer` and override the `create_optimizer_and_scheduler` method."
-        #     )
 
         # Create all CALLBACKS functions (includes TrainerCallback)
         default_callbacks = DEFAULT_CALLBACKS + get_reporting_integration_callbacks(
@@ -289,7 +273,7 @@ class Trainer:
                 self.use_amp = True
                 self.amp_dtype = torch.float16 if args.fp16 else torch.bfloat16
                 self.do_grad_scaling = True
-                if self.parallel_context is not None:
+                if self.parallel_context and self.args.oslo_config.zero_stage >= 1:
                     self.scaler = ShardedGradScaler(self.parallel_context)
                 else:
                     self.scaler = torch.cuda.amp.GradScaler()
@@ -341,8 +325,8 @@ class Trainer:
         args = self.args
         self.is_in_train = True
 
-        if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
-            self._move_model_to_device(self.model, args.device)
+        # if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
+        #     self._move_model_to_device(self.model, args.device)
 
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
@@ -404,15 +388,10 @@ class Trainer:
             )
 
         delay_optimizer_creation = (
-            self.args.oslo_user_config
-            and hasattr(self.args.oslo_user_config, "data_parallelism")
-            and DistributedDataParallel not in self.model_wrappers
+                self.parallel_context is not None
         )
         if not delay_optimizer_creation:
             self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-            # self.create_optimizer()
-            # self.create_scheduler(num_training_steps=max_steps,
-            #                       optimizer=self.optimizer)
 
         self.state = TrainerState()
 
@@ -425,9 +404,6 @@ class Trainer:
 
         if delay_optimizer_creation:
             self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-            # self.create_optimizer()
-            # self.create_scheduler(num_training_steps=max_steps,
-            #                       optimizer=self.optimizer)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -1302,21 +1278,20 @@ class Trainer:
             optimizer_cls, optimizer_kwargs = Trainer.get_optimizer_cls_and_kwargs(
                 self.args
             )
+            if (
+                hasattr(self.args.oslo_config, "data_parallelism")
+            ):
+                self.optimizer = ZeroRedundancyOptimizer(
+                    parallel_context=self.parallel_context,
+                    params=opt_model.parameters(),
+                    optim=optimizer_cls,
+                    # **optimizer_kwargs,
+                )
 
-            # if (
-            #     ShardedDataParallel in self.model_wrappers
-            #     or FullyShardedDataParallel in self.model_wrappers
-            # ):
-            #     self.optimizer = ZeroRedundancyOptimizer(
-            #         parallel_context=self.parallel_context,
-            #         params=optimizer_grouped_parameters,
-            #         optim=optimizer_cls,
-            #         **optimizer_kwargs,
-            #     )
-            # else:
-            self.optimizer = optimizer_cls(
-                optimizer_grouped_parameters, **optimizer_kwargs
-            )
+            else:
+                self.optimizer = optimizer_cls(
+                    opt_model.parameters(), **optimizer_kwargs
+                )
 
         return self.optimizer
 
@@ -1335,69 +1310,59 @@ class Trainer:
             "betas": (args.adam_beta1, args.adam_beta2),
             "eps": args.adam_epsilon,
         }
+
         if args.optim == OptimizerNames.ADAFACTOR:
             from transformers.optimization import Adafactor
-
             optimizer_cls = Adafactor
             optimizer_kwargs.update({"scale_parameter": False, "relative_step": False})
         elif args.optim == OptimizerNames.ADAMW:
             from torch.optim import AdamW
-
             optimizer_cls = AdamW
             optimizer_kwargs.update(adam_kwargs)
         elif args.optim == OptimizerNames.ADAM:
-            from torch.optim import Adam
-
-            optimizer_cls = Adam
+            if args.oslo_config and args.oslo_config.cpu_offload:
+                from oslo.torch.optim import CPUAdam
+                optimizer_cls = CPUAdam
+            else:
+                from oslo.torch.optim import FusedAdam
+                optimizer_cls = FusedAdam
             optimizer_kwargs.update(adam_kwargs)
         elif args.optim == OptimizerNames.ADAGRAD:
-            from torch.optim import Adagrad
-
-            optimizer_cls = Adagrad
+            if args.oslo_config and args.oslo_config.cpu_offload:
+                from oslo.torch.optim import CPUAdagrad
+                optimizer_cls = CPUAdagrad
+            else:
+                from oslo.torch.optim import FusedAdagrad
+                optimizer_cls = FusedAdagrad
             optimizer_kwargs.update(adam_kwargs)
         elif args.optim == OptimizerNames.ADADELTA:
             from torch.optim import Adadelta
-
             optimizer_cls = Adadelta
             optimizer_kwargs.update(adam_kwargs)
         elif args.optim == OptimizerNames.ADAMW_BNB:
             try:
                 from bitsandbytes.optim import Adam8bit
-
                 optimizer_cls = Adam8bit
                 optimizer_kwargs.update(adam_kwargs)
             except ImportError:
                 raise ValueError(
                     "Trainer tried to instantiate bnb Adam8bit but bnb is not installed!"
                 )
-        elif args.optim == OptimizerNames.FUSEDADAM:
-            from ..torch.optim import FusedAdam
-
-            optimizer_cls = FusedAdam
-            optimizer_kwargs.update(adam_kwargs)
-        elif args.optim == OptimizerNames.FUSEDADAGRAD:
-            from ..torch.optim import FusedAdagrad
-
-            optimizer_cls = FusedAdagrad
-            optimizer_kwargs.update(adam_kwargs)
-        elif args.optim == OptimizerNames.FUSEDSGD:
+        elif args.optim == OptimizerNames.SGD:
             from ..torch.optim import FusedSGD
-
             optimizer_cls = FusedSGD
             optimizer_kwargs.update(adam_kwargs)
-        elif args.optim == OptimizerNames.FUSEDNOVOGRAD:
+        elif args.optim == OptimizerNames.NOVOGRAD:
             from ..torch.optim import FusedNovoGrad
-
             optimizer_cls = FusedNovoGrad
             optimizer_kwargs.update(adam_kwargs)
-        elif args.optim == OptimizerNames.FUSEDLAMB:
+        elif args.optim == OptimizerNames.LAMB:
             from ..torch.optim import FusedLamb
-
             optimizer_cls = FusedLamb
             optimizer_kwargs.update(adam_kwargs)
         else:
             raise ValueError(
-                f"Trainer cannot instantiate unsupported optimizer: {args.optim}"
+                f"Trainer cannot instantiate unsupported optimizer: {args.optim}. Support optimizers: {', '.join([e.value for e in OptimizerNames])}"
             )
         return optimizer_cls, optimizer_kwargs
 
@@ -2150,38 +2115,25 @@ class Trainer:
                     model = wrapper(
                         self.model,
                         self.parallel_context,
-                        **self.oslo_user_config["model_parallelism"]["tensor"],
-                    )
-                elif isinstance(wrapper, SequenceDataParallel):
-                    model = wrapper(
-                        self.model,
-                        self.parallel_context,
-                        **self.oslo_user_config["data_parallelism"]["sequence"],
+                        **self.args.oslo_config.tensor_parallelism["params"],
                     )
                 elif isinstance(wrapper, PipelineParallel):
                     model = wrapper(
                         self.model,
                         self.parallel_context,
-                        **self.oslo_user_config["model_parallelism"]["pipeline"],
+                        **self.args.oslo_config.pipeline_parallelism["params"],
                     )
-                elif isinstance(wrapper, DistributedDataParallel):
+                elif isinstance(wrapper, SequenceDataParallel):
                     model = wrapper(
                         self.model,
                         self.parallel_context,
-                        **self.oslo_user_config["data_parallelism"]["distributed"],
+                        **self.args.oslo_config.sequence_parallelism["params"],
                     )
-                elif isinstance(wrapper, ShardedDataParallel):
-                    model = wrapper(
-                        self.model,
-                        self.optimizer,
-                        self.parallel_context,
-                        **self.oslo_user_config["data_parallelism"]["zero2"],
-                    )
-                elif isinstance(wrapper, FullyShardedDataParallel):
+                elif type(wrapper) in [DistributedDataParallel, ShardedDataParallel, FullyShardedDataParallel]:
                     model = wrapper(
                         self.model,
                         self.parallel_context,
-                        **self.oslo_user_config["data_parallelism"]["zero3"],
+                        **self.args.oslo_config.data_parallelism["params"],
                     )
 
             allocate_params(model, self.parallel_context)

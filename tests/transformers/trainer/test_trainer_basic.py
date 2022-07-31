@@ -12,9 +12,6 @@ from oslo.transformers.tasks.data_sequence_classification import (
 model = BertForSequenceClassification.from_pretrained("bert-base-uncased")
 tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
 
-optim = torch.optim.Adam(params=model.parameters(), lr=3e-5)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer=optim, T_0=1)
-
 dataset = load_dataset("glue", "cola")
 dataset = dataset.rename_column("sentence", "text")
 dataset = dataset.rename_column("label", "labels")
@@ -37,6 +34,8 @@ args = TrainingArguments(
     output_dir="output",
     evaluation_strategy="steps",
     eval_steps=500,
+    optim="adam",
+    lr_scheduler_type="linear",
     per_device_train_batch_size=8,
     per_device_eval_batch_size=8,
     num_train_epochs=3,
@@ -47,7 +46,6 @@ args = TrainingArguments(
 trainer = Trainer(
     model=model,
     tokenizer=tokenizer,
-    optimizers=(optim, scheduler),
     train_dataset=train_dataset,
     eval_dataset=valid_dataset,
     data_collator=data_collator,
