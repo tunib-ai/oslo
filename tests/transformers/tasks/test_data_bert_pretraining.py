@@ -142,4 +142,4 @@ if "__main__" == __name__:
     bert_sp_test = TestDataBertPretraining(
         "bert-base-cased", parallel_context, label_pad_token_id=0
     )
-    bert_sp_test(256, dataset, 1024)
+    bert_sp_test(253, dataset)

@@ -65,17 +65,6 @@ class DistilBertPreTrainedModel(PreTrainedModel, OsloModel):
 
 
 def create_sinusoidal_embeddings(n_pos: int, dim: int, out: torch.Tensor):
-    if is_deepspeed_zero3_enabled():
-        import deepspeed
-
-        with deepspeed.zero.GatheredParameters(out, modifier_rank=0):
-            if torch.distributed.get_rank() == 0:
-                _create_sinusoidal_embeddings(n_pos=n_pos, dim=dim, out=out)
-    else:
-        _create_sinusoidal_embeddings(n_pos=n_pos, dim=dim, out=out)
-
-
-def _create_sinusoidal_embeddings(n_pos: int, dim: int, out: torch.Tensor):
     position_enc = np.array(
         [
             [pos / np.power(10000, 2 * (j // 2) / dim) for j in range(dim)]

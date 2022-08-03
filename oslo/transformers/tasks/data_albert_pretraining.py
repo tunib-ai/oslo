@@ -86,7 +86,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         self.label_pad_token_id = label_pad_token_id
         self.local_world_size = 1
         if parallel_context is not None:
-            self.set_parallel_context(parallel_context)
+            self._set_parallel_context(parallel_context)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_sop_from_examples(examples)
@@ -155,6 +155,6 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
             )
         return output_examples
 
-    def set_parallel_context(self, parallel_context: ParallelContext):
+    def _set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

@@ -77,6 +77,7 @@ class DataCollatorForBartPretraining:
         possion_lambda: float = 3.0,
         permute_sentence: bool = True,
         label_pad_token_id: int = -100,
+        decoder_start_token_id: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if mlm_probability >= 1.0:
@@ -91,12 +92,16 @@ class DataCollatorForBartPretraining:
         self.possion_lambda = possion_lambda
         self.permute_sentence = permute_sentence
         self.pad_token_id = self.tokenizer.pad_token_id
-        self.label_pad_token_id = label_pad_token_id
-        self.decoder_start_token_id = self.tokenizer.eos_token_id
         self.mask_token_id = processor._tokenizer.mask_token_id
+        self.label_pad_token_id = label_pad_token_id
+        self.decoder_start_token_id = (
+            decoder_start_token_id
+            if decoder_start_token_id
+            else self.tokenizer.eos_token_id
+        )
         self.local_world_size = 1
         if parallel_context is not None:
-            self.set_parallel_context(parallel_context)
+            self._set_parallel_context(parallel_context)
         self.get_start_indices = {
             max_idx: np.random.choice(max_idx, size=(max_idx,), replace=False)
             for max_idx in range(processor._chunk_size, 0, -1)
@@ -122,7 +127,7 @@ class DataCollatorForBartPretraining:
                 pad_to_multiple_of=self.local_world_size,
             )
 
-        batch = self.prepare_decoder_inputs_from_labels(batch)
+        batch = self._prepare_decoder_inputs_from_labels(batch)
 
         if self.local_world_size > 1:
             sp_collate_fn = SequenceDataParallelCollator(
@@ -157,7 +162,7 @@ class DataCollatorForBartPretraining:
 
         return output_examples
 
-    def _text_infilling(self, input_ids: list):
+    def _text_infilling(self, input_ids: List[int]) -> List[int]:
         length = len(input_ids)
         num_noise_tokens = int(np.round(length * self.mlm_probability))
 
@@ -202,7 +207,7 @@ class DataCollatorForBartPretraining:
 
         return input_ids
 
-    def _sentence_permutation(self, input_ids):
+    def _sentence_permutation(self, input_ids: List[int]) -> List[int]:
         ref_tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
 
         split_sentences = []
@@ -226,7 +231,7 @@ class DataCollatorForBartPretraining:
 
         return input_ids
 
-    def prepare_decoder_inputs_from_labels(self, batch):
+    def _prepare_decoder_inputs_from_labels(self, batch):
         # Shift input ids one token to the right
         shifted_input_ids = batch["labels"].new_zeros(batch["labels"].shape)
         shifted_input_ids[:, 1:] = batch["labels"][:, :-1].clone()
@@ -245,6 +250,6 @@ class DataCollatorForBartPretraining:
         )
         return batch
 
-    def set_parallel_context(self, parallel_context: ParallelContext):
+    def _set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

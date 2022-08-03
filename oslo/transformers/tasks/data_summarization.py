@@ -81,7 +81,7 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
         self.pad_to_multiple_of = pad_to_multiple_of
         self.local_world_size = 1
         if parallel_context is not None:
-            self.set_parallel_context(parallel_context)
+            self._set_parallel_context(parallel_context)
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = self.tokenizer.pad(
@@ -129,6 +129,6 @@ class DataCollatorForSummarization(DataCollatorForSeq2Seq):
 
         return batch
 
-    def set_parallel_context(self, parallel_context: ParallelContext):
+    def _set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

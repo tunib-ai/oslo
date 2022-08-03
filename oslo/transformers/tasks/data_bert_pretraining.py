@@ -2,7 +2,6 @@ from typing import Any, Dict, List, Optional
 import random
 import warnings
 import logging
-import torch
 from datasets.arrow_dataset import Batch
 
 from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys, pad_labels
@@ -87,10 +86,11 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         self.label_pad_token_id = label_pad_token_id
         self.local_world_size = 1
         if parallel_context is not None:
-            self.set_parallel_context(parallel_context)
+            self._set_parallel_context(parallel_context)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_wwm_and_sop_from_examples(examples)
+
         batch = self.tokenizer.pad(
             examples,
             return_tensors="pt",
@@ -98,16 +98,16 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
             if self.local_world_size > 1
             else None,
         )
+        del batch["mask_label"]
 
-        batch_mask = batch.pop("mask_label")
-
-        if self.local_world_size > 1:
-            batch_mask = pad_labels(
-                batch_mask,
-                self.tokenizer,
-                label_pad_token_id=0,
-                pad_to_multiple_of=self.local_world_size,
-            )
+        batch_mask = pad_labels(
+            [example["mask_label"] for example in examples],
+            self.tokenizer,
+            label_pad_token_id=0,
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
+        )
 
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], mask_labels=batch_mask
@@ -164,6 +164,6 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
             )
         return output_examples
 
-    def set_parallel_context(self, parallel_context: ParallelContext):
+    def _set_parallel_context(self, parallel_context: ParallelContext):
         self.parallel_context = parallel_context
         self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)
