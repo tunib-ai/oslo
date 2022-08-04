@@ -28,7 +28,6 @@ from oslo.torch.nn.parallel.data_parallel._params import (
     get_global_rank,
 )
 from oslo.torch.nn.parallel.utils import ParallelWrapper, get_parallel_context
-from oslo.torch.optim import ZeroRedundancyOptimizer
 
 
 def _trainable(param: torch.Tensor) -> bool:
@@ -99,9 +98,7 @@ class ShardedDataParallel(ParallelWrapper):
     def __init__(
         self,
         module: nn.Module,
-        sharded_optimizer: Union[
-            ZeroRedundancyOptimizer, List[ZeroRedundancyOptimizer]
-        ],
+        sharded_optimizer,
         parallel_context: Optional[ParallelContext] = None,
         broadcast_buffers: bool = True,
         sync_models_at_startup: bool = True,

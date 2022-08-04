@@ -36,13 +36,12 @@ from oslo.torch.distributed._initializers.initializer_tensor_3d import (
 from oslo.torch.distributed._seed.helper import add_seed, set_mode
 from oslo.torch.distributed.parallel_mode import ParallelMode
 
-TensorParallelGroupInitializerByMode = {
+TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE = {
     None: None,
-    "1d": TensorParallel1DGroupInitializer,
-    "2d": TensorParallel2DGroupInitializer,
-    "2.5d": TensorParallel2p5DGroupInitializer,
-    "3d": TensorParallel3DGroupInitializer,
-    "sequence": SequenceParallelGroupInitializer,
+    ParallelMode.TENSOR_1D: TensorParallel1DGroupInitializer,
+    ParallelMode.TENSOR_2D: TensorParallel2DGroupInitializer,
+    ParallelMode.TENSOR_2P5D: TensorParallel2p5DGroupInitializer,
+    ParallelMode.TENSOR_3D: TensorParallel3DGroupInitializer,
 }
 
 
@@ -55,10 +54,12 @@ class ParallelContext(object):
 
     Args:
         data_parallel_size (int): data parallel size
+        sequence_parallel_size (int): sequence data parallel size
+        expert_parallel_size (int): expert parallel size
         pipeline_parallel_size (int): pipeline parallel size
         tensor_parallel_size (int): tensor parallel size
+        tensor_parallel_depth (int): tensor depth for tensor 2.5 parallelism
         tensor_parallel_mode (str): tensor parallel mode
-        tensor_parallel_depth (int): tesseract depth for tensor 2.5 parallelism
         backend (str): distributed backend
         seed (int): random seed value
 
@@ -87,14 +88,14 @@ class ParallelContext(object):
         data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
              tensor  | g01 |  |   g01    |  |   g05    |  |   g09    |  |   g13    |  | g13 |
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-                    pipeline    pipeline      pipeline      pipeline      pipeline    pipeline
+                     pipeline   pipeline      pipeline      pipeline      pipeline    pipeline
 
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
              tensor  | g02 |  |   g02    |  |   g06    |  |   g10    |  |   g14    |  | g14 |
         data         +-----+  +----------+  +----------+  +----------+  +----------+  +-----+  ===> forward
              tensor  | g03 |  |   g03    |  |   g07    |  |   g11    |  |   g15    |  | g15 |
                      +-----+  +----------+  +----------+  +----------+  +----------+  +-----+
-                    pipeline    pipeline      pipeline      pipeline      pipeline    pipeline
+                     pipeline   pipeline      pipeline      pipeline      pipeline    pipeline
 
     Examples:
         >>> from oslo.torch.distributed import ParallelContext
@@ -102,6 +103,8 @@ class ParallelContext(object):
         >>> # Initialize from torch.distributed.launch
         >>> parallel_context = ParallelContext.from_torch(
         ...     data_parallel_size=1,
+        ...     sequence_parallel_size=1,
+        ...     expert_parallel_size=1,
         ...     pipeline_parallel_size=1,
         ...     tensor_parallel_size=1,
         ... )
@@ -111,6 +114,8 @@ class ParallelContext(object):
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
+        ...     sequence_parallel_size=1,
+        ...     expert_parallel_size=1,
         ...     pipeline_parallel_size=1,
         ...     tensor_parallel_size=1,
         ... )
@@ -120,6 +125,8 @@ class ParallelContext(object):
         ...     host="MY_HOST",
         ...     port=1234,
         ...     data_parallel_size=1,
+        ...     sequence_parallel_size=1,
+        ...     expert_parallel_size=1,
         ...     pipeline_parallel_size=1,
         ...     tensor_parallel_size=1,
         ... )
@@ -150,10 +157,12 @@ class ParallelContext(object):
     def from_torch(
         cls,
         data_parallel_size: int = 1,
+        sequence_parallel_size: int = 1,
+        expert_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: Optional[str] = "1d",
         tensor_parallel_depth: Optional[int] = None,
+        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
         backend: str = "nccl",
         seed: bool = 42,
     ):
@@ -162,10 +171,12 @@ class ParallelContext(object):
 
         Args:
             data_parallel_size (int): data parallel size
+            sequence_parallel_size (int): sequence data parallel size
+            expert_parallel_size (int): expert parallel size
             pipeline_parallel_size (int): pipeline parallel size
             tensor_parallel_size (int): tensor parallel size
-            tensor_parallel_mode (Optional[str]): tensor parallel mode
-            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
+            tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
             backend (str): distributed backend
             seed (int): random seed value
 
@@ -176,6 +187,8 @@ class ParallelContext(object):
             >>> # Initialize from torch.distributed.launch
             >>> parallel_context = ParallelContext.from_torch(
             ...     data_parallel_size=1,
+            ...     sequence_parallel_size=1,
+            ...     expert_parallel_size=1,
             ...     pipeline_parallel_size=1,
             ...     tensor_parallel_size=1,
             ... )
@@ -183,6 +196,7 @@ class ParallelContext(object):
         rank = int(os.environ["RANK"])
         local_rank = int(os.environ["LOCAL_RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
+        local_world_size = int(os.environ["LOCAL_WORLD_SIZE"])
         host = os.environ["MASTER_ADDR"]
         port = int(os.environ["MASTER_PORT"])
 
@@ -190,9 +204,12 @@ class ParallelContext(object):
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
+            sequence_parallel_size=sequence_parallel_size,
+            expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
@@ -207,10 +224,12 @@ class ParallelContext(object):
         host: str,
         port: int,
         data_parallel_size: int = 1,
+        sequence_parallel_size: int = 1,
+        expert_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: Optional[str] = None,
         tensor_parallel_depth: Optional[int] = None,
+        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
         backend: str = "nccl",
         seed: bool = 42,
         local_rank: Optional[int] = None,
@@ -222,10 +241,12 @@ class ParallelContext(object):
             host (str): host server
             port (int): communication port
             data_parallel_size (int): data parallel size
+            sequence_parallel_size (int): sequence data parallel size
+            expert_parallel_size (int): expert parallel size
             pipeline_parallel_size (int): pipeline parallel size
             tensor_parallel_size (int): tensor parallel size
-            tensor_parallel_mode (Optional[str]): tensor parallel mode
-            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
+            tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
             backend (str): distributed backend
             seed (int): random seed value
             local_rank (Optional[int]): local rank
@@ -239,20 +260,26 @@ class ParallelContext(object):
             ...     host="MY_HOST",
             ...     port=1234,
             ...     data_parallel_size=1,
+            ...     sequence_parallel_size=1,
+            ...     expert_parallel_size=1,
             ...     pipeline_parallel_size=1,
             ...     tensor_parallel_size=1,
             ... )
         """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
+        local_world_size = int(os.environ["SLURM_JOB_NUMNODES"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
+            sequence_parallel_size=sequence_parallel_size,
+            expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
@@ -267,10 +294,12 @@ class ParallelContext(object):
         host: str,
         port: int,
         data_parallel_size: int = 1,
+        sequence_parallel_size: int = 1,
+        expert_parallel_size: int = 1,
         pipeline_parallel_size: int = 1,
         tensor_parallel_size: int = 1,
-        tensor_parallel_mode: Optional[str] = None,
         tensor_parallel_depth: Optional[int] = None,
+        tensor_parallel_mode: Optional[ParallelMode] = ParallelMode.TENSOR_1D,
         backend: str = "nccl",
         seed: bool = 42,
     ):
@@ -281,10 +310,12 @@ class ParallelContext(object):
             host (str): host server
             port (int): communication port
             data_parallel_size (int): data parallel size
+            sequence_parallel_size (int): sequence data parallel size
+            expert_parallel_size (int): expert parallel size
             pipeline_parallel_size (int): pipeline parallel size
             tensor_parallel_size (int): tensor parallel size
-            tensor_parallel_mode (Optional[str]): tensor parallel mode
-            tensor_parallel_depth (Optional[int]): tesseract depth for tensor 2.5 parallelism
+            tensor_parallel_depth (Optional[int]): tensor depth for tensor 2.5 parallelism
+            tensor_parallel_mode (Optional[ParallelMode]): tensor parallel mode
             backend (str): distributed backend
             seed (int): random seed value
 
@@ -297,6 +328,8 @@ class ParallelContext(object):
             ...     host="MY_HOST",
             ...     port=1234,
             ...     data_parallel_size=1,
+            ...     sequence_parallel_size=1,
+            ...     expert_parallel_size=1,
             ...     pipeline_parallel_size=1,
             ...     tensor_parallel_size=1,
             ... )
@@ -304,14 +337,18 @@ class ParallelContext(object):
         rank = int(os.environ["OMPI_COMM_WORLD_RANK"])
         local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])
         world_size = int(os.environ["OMPI_COMM_WORLD_SIZE"])
+        local_world_size = int(os.environ["OMPI_COMM_WORLD_LOCAL_SIZE"])
 
         return cls(
             rank=rank,
             local_rank=local_rank,
             world_size=world_size,
+            local_world_size=local_world_size,
             host=host,
             port=port,
             data_parallel_size=data_parallel_size,
+            sequence_parallel_size=sequence_parallel_size,
+            expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
@@ -325,9 +362,12 @@ class ParallelContext(object):
         rank: int,
         local_rank: Optional[int],
         world_size: int,
+        local_world_size: int,
         host: str,
         port: int,
         data_parallel_size: int,
+        sequence_parallel_size: int,
+        expert_parallel_size: int,
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
         tensor_parallel_mode: Optional[str],
@@ -335,30 +375,57 @@ class ParallelContext(object):
         backend: str,
         seed: int,
     ):
-        assert tensor_parallel_mode in TensorParallelGroupInitializerByMode, (
-            f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
-            f"currently, we supports {list(TensorParallelGroupInitializerByMode.keys())}."
-        )
+        if sequence_parallel_size > 1:
+            assert tensor_parallel_size == 1, (
+                "Sequence data parallelism is not compatible with tensor model parallelism. "
+                "So if you set sequence parallel size > 1, tensor parallel size must be 1."
+            )
+
+        if expert_parallel_size > 1:
+            assert tensor_parallel_size == 1, (
+                "Expert parallelism is not compatible with tensor model parallelism. "
+                "So if you set expert parallel size > 1, tensor parallel size must be 1."
+            )
 
         if tensor_parallel_size > 1:
+            assert sequence_parallel_size == 1, (
+                "Tensor model parallelism is not compatible with sequence data parallelism. "
+                "So if you set tensor parallel size > 1, sequence parallel size must be 1."
+            )
+            assert expert_parallel_size == 1, (
+                "Tensor model parallelism is not compatible with expert parallelism. "
+                "So if you set tensor parallel size > 1, expert parallel size must be 1."
+            )
+
             assert tensor_parallel_mode is not None, (
                 "param `tensor_parallel_mode` must not be None "
                 "if param `tensor_parallel_size` > 1."
             )
 
-        if tensor_parallel_mode == "2.5d":
+        assert tensor_parallel_mode in TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE, (
+            f"param `tensor_parallel_mode` {tensor_parallel_mode} is not available. "
+            f"currently, we supports {list(TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE.keys())}."
+        )
+
+        if tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
             assert tensor_parallel_depth is not None, (
                 "param `tensor_parallel_depth` must not be None "
-                "if param `tensor_parallel_mode` is '2.5d'."
+                "if param `tensor_parallel_mode` is `ParallelMode.TENSOR_2P5D`."
             )
 
         assert (
             world_size
-            == data_parallel_size * pipeline_parallel_size * tensor_parallel_size
+            == data_parallel_size
+            * pipeline_parallel_size
+            * tensor_parallel_size
+            * sequence_parallel_size
+            * expert_parallel_size
         ), (
             f"Expected the world size {world_size} to be equal to data"
             f" parallel size ({data_parallel_size}) * pipeline parallel size "
-            f"({pipeline_parallel_size}) * tensor parallel size ({tensor_parallel_size})."
+            f"({pipeline_parallel_size}) * tensor parallel size ({tensor_parallel_size}) "
+            f"* sequence parallel size ({sequence_parallel_size}) * "
+            f"expert parallel size ({expert_parallel_size})."
         )
 
         self._global_ranks = {}
@@ -368,17 +435,19 @@ class ParallelContext(object):
         self._cpu_groups = {}
         self._ranks_in_group = {}
         self._ranks_to_device = {}
+        self._expert_parallel_info = {}
 
         self.data_parallel_size = data_parallel_size
+        self.sequence_parallel_size = sequence_parallel_size
+        self.expert_parallel_size = expert_parallel_size
         self.pipeline_parallel_size = pipeline_parallel_size
         self.tensor_parallel_size = tensor_parallel_size
-        self.tensor_parallel_mode = (
-            tensor_parallel_mode.lower()
-            if isinstance(tensor_parallel_mode, str)
-            else None
-        )
-        # tesseract depth for 2.5d parallelism
+        self.tensor_parallel_mode = tensor_parallel_mode
+
+        # tensor parallel depth for 2.5d parallelism
         self.tensor_parallel_depth = tensor_parallel_depth
+
+        self.local_world_size = local_world_size
 
         self.init_global_dist(rank, world_size, backend, host, port)
         self.init_parallel_groups()
@@ -388,6 +457,7 @@ class ParallelContext(object):
             self.set_device(local_rank)
 
         self.set_seed(seed)
+        self.seed = seed
         self._make_ranks_to_devices()
 
     # sanity check
@@ -415,6 +485,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_world_size(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         return self._world_sizes[parallel_mode]
 
@@ -429,6 +500,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_world_size(ParallelMode.DATA, world_size=16)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._world_sizes[parallel_mode] = world_size
 
@@ -446,6 +518,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_local_rank(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         return self._local_ranks[parallel_mode]
 
@@ -460,6 +533,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_local_rank(ParallelMode.DATA, rank=4)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._local_ranks[parallel_mode] = rank
 
@@ -487,6 +561,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_global_rank(ParallelMode.DATA, rank=4)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._global_ranks[parallel_mode] = rank
 
@@ -503,6 +578,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_next_global_rank(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
 
         local_rank = self.get_local_rank(parallel_mode)
@@ -524,6 +600,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_prev_global_rank(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
 
         local_rank = self.get_local_rank(parallel_mode)
@@ -545,6 +622,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.is_first_rank(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         return self.get_local_rank(parallel_mode) == 0
 
     def is_last_rank(self, parallel_mode):
@@ -560,6 +638,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.is_last_rank(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         return (
             self.get_local_rank(parallel_mode) == self.get_world_size(parallel_mode) - 1
         )
@@ -578,6 +657,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_group(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         return self._groups[parallel_mode]
 
@@ -592,6 +672,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_global_rank(ParallelMode.DATA, rank=4)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._groups[parallel_mode] = group
 
@@ -612,6 +693,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_group(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         return self._cpu_groups[parallel_mode]
 
@@ -628,6 +710,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_cpu_group(ParallelMode.DATA, group=MY_GROUP)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._cpu_groups[parallel_mode] = group
 
@@ -645,6 +728,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.get_ranks_in_group(ParallelMode.DATA)
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         return self._ranks_in_group[parallel_mode]
 
@@ -659,6 +743,7 @@ class ParallelContext(object):
         Examples:
             >>> parallel_context.add_ranks_in_group(ParallelMode.DATA, ranks=[0, 2, 5, 8])
         """
+        parallel_mode = self._convert_tensor_parallel_groups(parallel_mode)
         self._check_parallel_mode(parallel_mode)
         self._ranks_in_group[parallel_mode] = ranks
 
@@ -732,6 +817,7 @@ class ParallelContext(object):
             "rank": rank,
             "world_size": world_size,
             "data_parallel_size": self.data_parallel_size,
+            "sequence_parallel_size": self.sequence_parallel_size,
             "pipeline_parallel_size": self.pipeline_parallel_size,
             "tensor_parallel_size": self.tensor_parallel_size,
         }
@@ -741,16 +827,21 @@ class ParallelContext(object):
             ModelParallelGroupInitializer(**initializer_param).init_dist_group(),
             TensorParallelGroupInitializer(**initializer_param).init_dist_group(),
             PipelineParallelGroupInitializer(**initializer_param).init_dist_group(),
+            SequenceParallelGroupInitializer(**initializer_param).init_dist_group(),
         ]
 
-        tensor_parallel_initializer_cls = TensorParallelGroupInitializerByMode[
+        tensor_parallel_initializer_cls = TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE[
             self.tensor_parallel_mode
         ]
 
-        if tensor_parallel_initializer_cls is not None:
+        if (
+            tensor_parallel_initializer_cls is not None
+            and self.tensor_parallel_mode != ParallelMode.TENSOR_1D
+            # tensor parallel 1d is same with total tensor parallel
+        ):
             _initializer_param = initializer_param.copy()
 
-            if self.tensor_parallel_mode == "2.5d":
+            if self.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
                 _initializer_param["depth"] = self.tensor_parallel_depth
 
             tensor_parallel_initializer = tensor_parallel_initializer_cls(
@@ -790,7 +881,7 @@ class ParallelContext(object):
         Examples:
             ranks:
                 {
-                    <ParallelMode.TENSOR_1D: 'tensor_1d'>: 1
+                    <ParallelMode.TENSOR: 'tensor'>: 1
                     <ParallelMode.DATA: 'data'>: 0
                 }
 
@@ -801,14 +892,12 @@ class ParallelContext(object):
                     (<ParallelMode.DATA: 'data'>, 0),
                     (<ParallelMode.MODEL: 'model'>, 0),
                     (<ParallelMode.TENSOR: 'tensor'>, 0),
-                    (<ParallelMode.TENSOR_1D: 'tensor_1d'>, 0)
                 ): 0,
                 (
                     (<ParallelMode.GLOBAL: 'global'>, 1),
                     (<ParallelMode.DATA: 'data'>, 0),
                     (<ParallelMode.MODEL: 'model'>, 1),
                     (<ParallelMode.TENSOR: 'tensor'>, 1),
-                    (<ParallelMode.TENSOR_1D: 'tensor_1d'>, 1)
                 ): 1,
                 ...
             }
@@ -823,7 +912,12 @@ class ParallelContext(object):
             else:
                 ranks_key[mode] = self.get_local_rank(mode)
 
-        return self._ranks_to_device[tuple(ranks_key.items())]
+        ranks_key = tuple(ranks_key.items())
+
+        if ranks_key in self._ranks_to_device:
+            return self._ranks_to_device[ranks_key]
+        else:
+            return None
 
     def is_initialized(self, parallel_mode: ParallelMode):
         """
@@ -889,3 +983,23 @@ class ParallelContext(object):
                 add_seed(ParallelMode.TENSOR, tp_seed)
 
             set_mode(ParallelMode.DATA)
+
+    @staticmethod
+    def _convert_tensor_parallel_groups(parallel_mode: ParallelMode):
+        """
+        Convert ND Tensor parallel mode to tensor parallel
+
+        Args:
+            parallel_mode (ParallelMode): parallel mode
+
+        Returns:
+            ParallelMode: converted parallel mode
+        """
+
+        if parallel_mode is None:
+            raise ValueError("parallel mode must not be None.")
+
+        if parallel_mode in TENSOR_PARALLEL_GROUP_INITIALIZERS_BY_MODE:
+            return ParallelMode.TENSOR
+
+        return parallel_mode
