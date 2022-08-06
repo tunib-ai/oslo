@@ -122,7 +122,7 @@ class TensorParallel(ParallelWrapper):
 
             module.weight.data = new_embeddings
             module.num_embeddings = new_vocab_size
-            setattr(unwrapped_model, "orig_vocab_size", vocab_size)
+        setattr(unwrapped_model, "orig_vocab_size", vocab_size)
         return model
 
     @staticmethod

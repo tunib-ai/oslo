@@ -360,6 +360,7 @@ class Linear2D(Linear):
                 parallel_mode=ParallelMode.TENSOR_2D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
+            outputs = outputs.contiguous()
         return outputs
 
 
@@ -502,6 +503,7 @@ class Linear2p5D(Linear):
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
                 parallel_context=self.parallel_context,
             ).clone()
+            output = output.contiguous()
         return output
 
 
