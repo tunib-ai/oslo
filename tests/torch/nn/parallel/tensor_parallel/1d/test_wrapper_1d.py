@@ -72,7 +72,7 @@ for data in dataloader:
     inputs = tokenizer(
         data,
         return_tensors="pt",
-        padding='max_length',
+        padding="max_length",
         truncation=True,
         max_length=seq_length,
     ).to("cuda")

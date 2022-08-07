@@ -65,7 +65,9 @@ optimizer.step()
 pout_update = vocab_embedding_1d(input_)
 if args.memory_priority:
     pout = gather_1d(pout, world_size, dim=1, parallel_context=parallel_context)
-    pout_update = gather_1d(pout_update, world_size, dim=1, parallel_context=parallel_context)
+    pout_update = gather_1d(
+        pout_update, world_size, dim=1, parallel_context=parallel_context
+    )
 
 if parallel_context.get_global_rank() == 0:
     print(f"parallel output: \n{pout}\n")

@@ -5,7 +5,12 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from oslo.torch.distributed import ParallelMode, ParallelContext
-from oslo.torch.distributed.nn.functional import all_gather, all_reduce, reduce_scatter, scatter
+from oslo.torch.distributed.nn.functional import (
+    all_gather,
+    all_reduce,
+    reduce_scatter,
+    scatter,
+)
 
 
 class _BroadcastTensor1D(torch.autograd.Function):
@@ -101,6 +106,7 @@ class _ScatterTensor1D(torch.autograd.Function):
             None,
         )
 
+
 class _ReduceScatterTensor1D(torch.autograd.Function):
     @staticmethod
     def forward(ctx: Any, inputs: Tensor, dim: int, parallel_context: ParallelContext):
@@ -130,11 +136,13 @@ class _ReduceScatterTensor1D(torch.autograd.Function):
 
 class _MemoryPriorityLinear(torch.autograd.Function):
     @staticmethod
-    def forward(ctx: Any, inputs: Tensor, weight: Tensor, parallel_context: ParallelContext):
+    def forward(
+        ctx: Any, inputs: Tensor, weight: Tensor, parallel_context: ParallelContext
+    ):
         if ctx:
             ctx.save_for_backward(inputs, weight)
             ctx.parallel_context = parallel_context
-        
+
         total_inputs = all_gather(
             inputs,
             dim=1,
@@ -143,7 +151,7 @@ class _MemoryPriorityLinear(torch.autograd.Function):
         )
         outputs = F.linear(total_inputs, weight)
         return outputs
-    
+
     @staticmethod
     def backward(ctx: Any, grad_outputs: Tensor):
         inputs, weight = ctx.saved_tensors
@@ -155,12 +163,16 @@ class _MemoryPriorityLinear(torch.autograd.Function):
             parallel_context=ctx.parallel_context,
             parallel_mode=ParallelMode.TENSOR_1D,
         )
-        
+
         grad_inputs = grad_outputs.matmul(weight)
         handle.wait()
 
-        grad_outputs = grad_outputs.reshape(grad_outputs.shape[0] * grad_outputs.shape[1], grad_outputs.shape[2])
-        total_inputs = total_inputs.reshape(total_inputs.shape[0] * total_inputs.shape[1], total_inputs.shape[2])
+        grad_outputs = grad_outputs.reshape(
+            grad_outputs.shape[0] * grad_outputs.shape[1], grad_outputs.shape[2]
+        )
+        total_inputs = total_inputs.reshape(
+            total_inputs.shape[0] * total_inputs.shape[1], total_inputs.shape[2]
+        )
 
         sub_grad_inputs, handle = reduce_scatter(
             grad_inputs,
@@ -171,7 +183,7 @@ class _MemoryPriorityLinear(torch.autograd.Function):
         )
 
         grad_weight = grad_outputs.t().matmul(total_inputs)
-        
+
         handle.wait()
         return sub_grad_inputs, grad_weight, None
 
@@ -192,9 +204,13 @@ def scatter_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelContex
     return _ScatterTensor1D.apply(inputs, dim, parallel_context)
 
 
-def reduce_scatter_tensor_1d(inputs: Tensor, dim: int, parallel_context: ParallelContext):
+def reduce_scatter_tensor_1d(
+    inputs: Tensor, dim: int, parallel_context: ParallelContext
+):
     return _ReduceScatterTensor1D.apply(inputs, dim, parallel_context)
 
 
-def memory_priority_linear(inputs: Tensor, weight: Tensor, parallel_context: ParallelContext):
+def memory_priority_linear(
+    inputs: Tensor, weight: Tensor, parallel_context: ParallelContext
+):
     return _MemoryPriorityLinear.apply(inputs, weight, parallel_context)

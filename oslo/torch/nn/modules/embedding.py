@@ -147,9 +147,13 @@ class Embedding1D(nn.Embedding):
         from oslo.torch.distributed.nn.functional import (
             all_gather,
         )
+
         if self.parallel_context.memory_priority:
             input = all_gather(
-                input, dim=1, parallel_context=self.parallel_context, parallel_mode=ParallelMode.TENSOR_1D,
+                input,
+                dim=1,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             )
 
         output = F.embedding(
@@ -168,7 +172,9 @@ class Embedding1D(nn.Embedding):
             self.parallel_context,
         )
         if self.parallel_context.memory_priority:
-            output = scatter_tensor_1d(output, dim=1, parallel_context=self.parallel_context)
+            output = scatter_tensor_1d(
+                output, dim=1, parallel_context=self.parallel_context
+            )
         return output
 
 
@@ -208,9 +214,13 @@ class VocabParallelEmbedding1D(nn.Embedding):
         from oslo.torch.distributed.nn.functional import (
             all_gather,
         )
+
         if self.parallel_context.memory_priority:
             input = all_gather(
-                input, dim=1, parallel_context=self.parallel_context, parallel_mode=ParallelMode.TENSOR_1D,
+                input,
+                dim=1,
+                parallel_context=self.parallel_context,
+                parallel_mode=ParallelMode.TENSOR_1D,
             )
 
         if self.world_size > 1:
@@ -238,7 +248,9 @@ class VocabParallelEmbedding1D(nn.Embedding):
         # Reduce across all the model parallel GPUs.
         output = reduce_tensor_1d(output_parallel, self.parallel_context)
         if self.parallel_context.memory_priority:
-            output = scatter_tensor_1d(output, dim=1, parallel_context=self.parallel_context)
+            output = scatter_tensor_1d(
+                output, dim=1, parallel_context=self.parallel_context
+            )
         return output
 
 

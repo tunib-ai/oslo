@@ -432,9 +432,15 @@ class _TensorParallel2p5D(ParallelWrapper):
                     module.bias.data = bias_list[row_rank].contiguous()
 
                     if hasattr(module.bias, "oslo_parallel"):
-                        module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_ROW] = row_rank
-                        module.bias.oslo_parallel[ParallelMode.TENSOR_2P5D_COL] = col_rank
-                        module.weight.oslo_parallel[ParallelMode.TENSOR_2P5D_DEP] = dep_rank
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_2P5D_ROW
+                        ] = row_rank
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_2P5D_COL
+                        ] = col_rank
+                        module.weight.oslo_parallel[
+                            ParallelMode.TENSOR_2P5D_DEP
+                        ] = dep_rank
                     else:
                         module.bias.oslo_parallel = {
                             ParallelMode.TENSOR_2P5D_ROW: row_rank,

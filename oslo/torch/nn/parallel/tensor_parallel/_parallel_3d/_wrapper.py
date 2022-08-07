@@ -414,7 +414,9 @@ class _TensorParallel3D(ParallelWrapper):
             cubic_dim = self.parallel_context.get_world_size(
                 ParallelMode.TENSOR_3D_INPUT
             )
-            input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
+            input_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_3D_INPUT
+            )
             output_rank = self.parallel_context.get_local_rank(
                 ParallelMode.TENSOR_3D_OUTPUT
             )
@@ -428,7 +430,9 @@ class _TensorParallel3D(ParallelWrapper):
                     module.bias.data = bias_list[input_rank].contiguous()
 
                     if hasattr(module.bias, "oslo_parallel"):
-                        module.bias.oslo_parallel[ParallelMode.TENSOR_3D_INPUT] = input_rank
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_3D_INPUT
+                        ] = input_rank
                         module.bias.oslo_parallel[
                             ParallelMode.TENSOR_3D_OUTPUT
                         ] = output_rank

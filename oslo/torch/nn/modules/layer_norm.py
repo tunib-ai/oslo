@@ -81,7 +81,7 @@ class LayerNorm1D(LayerNorm):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
-        
+
         super().__init__(
             normalized_shape=normalized_shape,
             partitioned_dim=normalized_shape,
@@ -94,6 +94,7 @@ class LayerNorm1D(LayerNorm):
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
             broadcast_tensor_1d,
         )
+
         weight = (
             broadcast_tensor_1d(self.weight, parallel_context=self.parallel_context)
             if self.parallel_context.memory_priority

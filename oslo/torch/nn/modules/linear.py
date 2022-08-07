@@ -156,6 +156,7 @@ class ColLinear1D(Linear):
             scatter_tensor_1d,
             memory_priority_linear,
         )
+
         if self.parallel_context.memory_priority:
             outputs = memory_priority_linear(input, self.weight, self.parallel_context)
         else:
@@ -229,8 +230,9 @@ class RowLinear1D(Linear):
         )
 
         if not self.parallel_input:
-            assert not self.parallel_context.memory_priority, \
-                "Input must be parallelized when using memory priority."
+            assert (
+                not self.parallel_context.memory_priority
+            ), "Input must be parallelized when using memory priority."
             input = scatter_tensor_1d(
                 input,
                 dim=-1,

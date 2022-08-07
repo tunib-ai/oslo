@@ -13,10 +13,21 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--model", default="gpt2", choices=[
-    "bart", "bert", "blenderbot", "blenderbot-small",
-    "gpt2", "gptneo", "gptj", "electra", "roberta",
-])
+parser.add_argument(
+    "--model",
+    default="gpt2",
+    choices=[
+        "bart",
+        "bert",
+        "blenderbot",
+        "blenderbot-small",
+        "gpt2",
+        "gptneo",
+        "gptj",
+        "electra",
+        "roberta",
+    ],
+)
 parser.add_argument("--memory", action="store_true", default=False)
 args = parser.parse_args()
 
@@ -43,7 +54,9 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
-model_no_tp = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(model_name)).cuda()
+model_no_tp = AutoModelForCausalLM.from_config(
+    AutoConfig.from_pretrained(model_name)
+).cuda()
 model_tp = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(model_name))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
 allocate_params(wrapper_tp, parallel_context)
@@ -78,7 +91,7 @@ for data in dataloader:
     inputs = tokenizer(
         data,
         return_tensors="pt",
-        padding='max_length',
+        padding="max_length",
         truncation=True,
         max_length=seq_length,
     ).to("cuda")

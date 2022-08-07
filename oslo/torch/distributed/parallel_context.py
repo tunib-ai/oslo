@@ -218,7 +218,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
-            memory_priority = memory_priority,
+            memory_priority=memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -291,7 +291,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
-            memory_priority = memory_priority,
+            memory_priority=memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -363,7 +363,7 @@ class ParallelContext(object):
             tensor_parallel_size=tensor_parallel_size,
             tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
-            memory_priority = memory_priority,
+            memory_priority=memory_priority,
             backend=backend,
             seed=seed,
         )
@@ -413,7 +413,7 @@ class ParallelContext(object):
                 "param `tensor_parallel_mode` must not be None "
                 "if param `tensor_parallel_size` > 1."
             )
-        
+
         if tensor_parallel_mode != ParallelMode.TENSOR_1D:
             if memory_priority and tensor_parallel_size > 1:
                 warnings.warn(

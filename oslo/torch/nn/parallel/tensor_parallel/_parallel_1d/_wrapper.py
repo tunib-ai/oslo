@@ -73,9 +73,13 @@ class _TensorParallel1D(ParallelWrapper):
             "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
         )
         if self.parallel_context.memory_priority and not is_oslo_model(self.module):
-            assert "past_key_values" not in kwargs, "``past_key_values`` argument is forbidden with memory priority."
+            assert (
+                "past_key_values" not in kwargs
+            ), "``past_key_values`` argument is forbidden with memory priority."
             if "position_ids" not in kwargs:
-                kwargs["position_ids"] = torch.arange(kwargs["input_ids"].shape[-1], device=kwargs["input_ids"].device).unsqueeze(0)
+                kwargs["position_ids"] = torch.arange(
+                    kwargs["input_ids"].shape[-1], device=kwargs["input_ids"].device
+                ).unsqueeze(0)
             kwargs = {
                 key: scatter(
                     value,
@@ -127,7 +131,9 @@ class _TensorParallel1D(ParallelWrapper):
 
     def _parallelize_linear(self):
         for module_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(self.module, module_name):
+            if self.tensor_parallel_mapping.is_column_parallel(
+                self.module, module_name
+            ):
                 self._column_slice_linear(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed(
