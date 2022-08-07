@@ -161,7 +161,6 @@ class ColLinear1D(Linear):
         else:
             input = broadcast_tensor_1d(input, self.parallel_context)
             outputs = F.linear(input, self.weight)
-        torch.distributed.barrier()
 
         if self.bias is not None:
             if self.skip_bias_add:

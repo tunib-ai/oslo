@@ -19,13 +19,11 @@ class TensorParallelInfo(object):
         combined_qkv: bool = False,
         reversed: bool = False,
         gather_output: bool = False,
-        scatter_output: bool = False,
     ):
         self.name = name
         self.combined_qkv = combined_qkv
         self.reversed = reversed
         self.gather_output = gather_output
-        self.scatter_output = scatter_output
 
     def __str__(self):
         return f"{self.__class__.__qualname__}({self.name})"
@@ -224,21 +222,6 @@ class TensorParallelMapping(object):
         elem = self.search(model, module_name)
         if elem is not None:
             return elem.gather_output
-
-    def is_scatter_output(self, model, module_name):
-        """
-        Check whether the module is scatter output or not
-
-        Args:
-            model (PreTrainedModel): model obj
-            module_name (str): name of module
-
-        Returns:
-            bool: whether the module is combined qkv or not
-        """
-        elem = self.search(model, module_name)
-        if elem is not None:
-            return elem.scatter_output
 
     def is_column_parallel(self, model, module_name):
         """

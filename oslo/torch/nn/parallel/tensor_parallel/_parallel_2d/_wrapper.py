@@ -408,6 +408,7 @@ class _TensorParallel2D(ParallelWrapper):
                             ParallelMode.TENSOR_2D_ROW: row_rank,
                             ParallelMode.TENSOR_2D_COL: col_rank,
                         }
+                        
             _update_module_arguments(
                 module=module,
                 in_features=module.weight.size()[1],

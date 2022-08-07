@@ -139,7 +139,7 @@ class _TensorParallel1D(ParallelWrapper):
                     gather_output=self.tensor_parallel_mapping.is_gather_output(
                         self.module, module_name
                     ),
-                    scatter_output=self.tensor_parallel_mapping.is_scatter_output(
+                    scatter_output=self.tensor_parallel_mapping.is_gather_output(
                         self.module, module_name
                     ),
                 )

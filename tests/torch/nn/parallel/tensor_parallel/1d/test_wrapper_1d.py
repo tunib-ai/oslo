@@ -6,7 +6,7 @@ import torch.distributed as dist
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from datasets import load_dataset
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, GPTJConfig, GPTJForCausalLM
+from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -18,7 +18,7 @@ args = parser.parse_args()
 tp_size = 4
 batch_size = 16
 seq_length = 128
-model_name = "hf-internal-testing/tiny-random-gptj"
+model_name = "gpt2"
 
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
@@ -37,10 +37,8 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
-# model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name)).cuda()
-# model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name))
-model_no_tp = GPTJForCausalLM(GPTJConfig.from_pretrained(model_name)).cuda()
-model_tp = GPTJForCausalLM(GPTJConfig.from_pretrained(model_name))
+model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name)).cuda()
+model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
