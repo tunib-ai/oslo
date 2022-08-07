@@ -1,3 +1,4 @@
+import imp
 from typing import Union, Optional, Callable
 
 import os
@@ -210,9 +211,11 @@ class TensorParallel(ParallelWrapper):
             new_module = unwrapped_model.__class__(self.module.config)
         else:
             new_module = unwrapped_model.__class__(**self.module.config)
+
         new_module = self._resize_vocab_size(new_module, self.parallel_context)
         new_module = self._resize_num_classes(new_module, self.parallel_context, mapping)
-        return self.module.save_parallelized(
+
+        new_module = self.module.save_parallelized(
             new_module,
             save_directory,
             save_config,
@@ -222,6 +225,8 @@ class TensorParallel(ParallelWrapper):
             mapping,
             **kwargs,
         )
+
+        return new_module
 
     @staticmethod
     def get_module_args(module):

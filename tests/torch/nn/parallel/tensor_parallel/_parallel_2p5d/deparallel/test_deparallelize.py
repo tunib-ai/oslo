@@ -64,8 +64,9 @@ def bw(tensors):
 tp_size = 8
 tp_depth = 2
 
-model_name = "jason9693/soongsil-bert-base"
+model_name = "bert-base-uncased"
 mkwargs = {
+    'pad_token': '[PAD]'
 }
 dataset_name = "squad"
 
@@ -80,7 +81,7 @@ parallel_context = ParallelContext.from_torch(
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
-tokenizer.pad_token = tokenizer.eos_token
+# tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
 model_no_tp = AutoModelForCausalLM.from_config(

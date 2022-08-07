@@ -6,6 +6,7 @@ import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, AutoModelForCausalLM, AutoConfig
+from transformers import AutoModelForMaskedLM
 
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
@@ -66,8 +67,10 @@ tp_depth = 1
 
 model_name = "jason9693/soongsil-bert-base"
 mkwargs = {
+    'pad_token': '[PAD]'
 }
 dataset_name = "squad"
+
 
 # parallel context 생성
 parallel_context = ParallelContext.from_torch(
@@ -80,11 +83,11 @@ parallel_context = ParallelContext.from_torch(
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
-tokenizer.pad_token = tokenizer.eos_token
+# tokenizer.pad_token = tokenizer.eos_token
 
-# 모델 생성 및 병렬화 수행
-model_no_tp = AutoModelForCausalLM.from_config(
-    AutoConfig.from_pretrained(model_name)).cuda()
+# # 모델 생성 및 병렬화 수행
+# model_no_tp = AutoModelForCausalLM.from_config(
+#     AutoConfig.from_pretrained(model_name)).cuda()
 model_tp = AutoModelForCausalLM.from_config(
     AutoConfig.from_pretrained(model_name))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
@@ -97,7 +100,7 @@ if dist.get_rank() == 0:
 
 # 옵티마이저 생성
 optimizer_tp = Adam(wrapper_tp.parameters(), lr=3e-5)
-optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
+# optimizer_no_tp = Adam(model_no_tp.parameters(), lr=3e-5)
 
 # 데이터셋 생성
 batch_size = 16
@@ -107,7 +110,7 @@ dataloader = DataLoader(datasets, batch_size=batch_size)
 
 # 모니터링 생성
 if dist.get_rank() == 0:
-    wandb.init(project="oslo", name=f"{model_name}_tp2d_bs{batch_size}")
+    wandb.init(project="oslo", name=f"{model_name}_tp1d_bs{batch_size}")
     cur = time.time()
 
 # 저장
@@ -116,17 +119,17 @@ wrapper_tp.save_parallelized('test/', merge_checkpoints=True)
 # 모니터링 생성 대기
 dist.barrier()
 
-# 로드
-model_gathered = AutoModelForCausalLM.from_pretrained("test/").cuda()
-optimizer_gathered = Adam(model_gathered.parameters(), lr=3e-5)
+# # 로드
+# model_gathered = AutoModelForCausalLM.from_pretrained("test/").cuda()
+# optimizer_gathered = Adam(model_gathered.parameters(), lr=3e-5)
 
 dist.barrier()
 
 # 학습 시작
 for data in dataloader:
     optimizer_tp.zero_grad()
-    optimizer_no_tp.zero_grad()
-    optimizer_gathered.zero_grad()
+    # optimizer_no_tp.zero_grad()
+    # optimizer_gathered.zero_grad()
 
     inputs = tokenizer(
         data,
@@ -136,33 +139,33 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp, notp_fw_time = \
-        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    # loss_no_tp, notp_fw_time = \
+    #     fw(model_no_tp, **inputs, labels=inputs["input_ids"])
     loss_tp, tp_fw_time = \
         fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
-    loss_gathered, gathered_fw_time = \
-        fw(model_gathered, **inputs, labels=inputs["input_ids"])
+    # loss_gathered, gathered_fw_time = \
+    #     fw(model_gathered, **inputs, labels=inputs["input_ids"])
 
-    if dist.get_rank() == 0:
-        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, GATHRED:{loss_gathered}")
-        wandb.log({"tp": loss_tp, "notp": loss_no_tp, "GATHRED": loss_gathered})
+    # if dist.get_rank() == 0:
+    #     print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, GATHRED:{loss_gathered}")
+    #     wandb.log({"tp": loss_tp, "notp": loss_no_tp, "GATHRED": loss_gathered})
 
-    _, notp_bw_time = bw(loss_no_tp)
+    # _, notp_bw_time = bw(loss_no_tp)
     _, tp_bw_time = bw(loss_tp)
-    _, gathered_bw_time = bw(loss_gathered)
+    # _, gathered_bw_time = bw(loss_gathered)
 
     optimizer_tp.step()
-    optimizer_no_tp.step()
-    optimizer_gathered.step()
+    # optimizer_no_tp.step()
+    # optimizer_gathered.step()
 
     if dist.get_rank() == 0:
         wandb.log({
             "tp.forward.time:": tp_fw_time,
             "tp.backward.time:": tp_bw_time,
-            "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time,
-            "gathered.forward.time:": gathered_fw_time,
-            "gathered.backward.time:": gathered_bw_time
+            # "notp.forward.time:": notp_fw_time,
+            # "notp.backward.time:": notp_bw_time,
+            # "gathered.forward.time:": gathered_fw_time,
+            # "gathered.backward.time:": gathered_bw_time
         })
 
 dist.barrier()

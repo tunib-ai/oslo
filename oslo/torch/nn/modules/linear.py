@@ -165,6 +165,7 @@ class ColumnParallelLinear(Linear):
 
         if self.gather_output:
             outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
+            outputs = outputs.contiguous()
 
         return outputs
 
@@ -221,7 +222,7 @@ class RowParallelLinear(Linear):
             else:
                 return outputs + self.bias
 
-        return outputs
+        return outputs.contiguous()
 
 
 class Linear2D(Linear):

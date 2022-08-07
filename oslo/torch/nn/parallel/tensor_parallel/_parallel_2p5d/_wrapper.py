@@ -529,9 +529,9 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             assert hasattr(
                 self.module, "orig_vocab_size"
             ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
-            orig_vocab_size = self.module.orig_vocab_size
+            # orig_vocab_size = self.module.orig_vocab_size
 
-            module.weight.data = w[:orig_vocab_size, :]
+            # module.weight.data = w[:orig_vocab_size, :]
 
             _update_module_arguments(
                 module=module,

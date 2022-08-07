@@ -133,8 +133,8 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                 self._slice_head(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed(
-                        self.module, param_name
-                    ),
+                        self.module, param_name, 
+                    )
                 )
 
     @staticmethod
@@ -170,6 +170,32 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                 orig_module=copy.deepcopy(module.__class__),
             )
             module.__class__ = VocabParallelEmbedding1D
+
+            for name, module_head in self.module.named_modules():
+                if (
+                    hasattr(module_head, "weight")
+                    and module_head.weight is module.weight
+                    and not isinstance(module_head, nn.Embedding)
+                    and not self.tensor_parallel_mapping.is_head(
+                        self.module, name
+                    )
+                ):
+                    _update_module_arguments(
+                        module=module_head,
+                        parallel_context=self.parallel_context,
+                        reversed=self.tensor_parallel_mapping.is_reversed(self.module, name),
+                        fusion_degree=1,
+                        orig_module=copy.deepcopy(module_head.__class__),
+                        out_features=module.weight.size()[0],
+                        # in_features=module.weight.size()[1],
+                        gather_output=not is_oslo_model(self.module),
+                        skip_bias_add=module.skip_bias_add
+                            if hasattr(module, "skip_bias_add")
+                            else False,
+                    )
+
+                    if isinstance(module_head, nn.Linear) or isinstance(module_head, nn.Conv1D):
+                        module_head.__class__ = ColumnParallelLinear
         else:
             weight_list = module.weight.data.chunk(world_size, dim=1)
             module.weight.data = weight_list[rank].contiguous()
@@ -290,13 +316,13 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         )
         module.__class__ = RowParallelLinear
 
-    def _slice_head(self, module, reversed):
+    def _slice_head(self, module, reversed, gather_output=True):
         if module.weight is not self.module.get_input_embeddings().weight:
             self._column_slice_linear(
                 module=module,
                 reversed=reversed,
                 fusion_degree=1,
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
             )
         else:
             world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -318,7 +344,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                 reversed=reversed,
                 fusion_degree=1,
                 orig_module=copy.deepcopy(module.__class__),
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
                 skip_bias_add=module.skip_bias_add
                 if hasattr(module, "skip_bias_add")
                 else False,
@@ -350,10 +376,10 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
+            if module.__class__ == ColumnParallelLinear:
                 self._gather_column_linear(module)
 
-            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+            elif module.__class__ == RowParallelLinear:
                 self._gather_row_linear(module)
 
     def _gather_embedding(self, module):

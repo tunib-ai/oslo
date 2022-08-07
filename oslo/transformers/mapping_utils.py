@@ -151,13 +151,13 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
         "Roberta": [
             Column("query", "key", "value", "intermediate.dense"),
             Column(
-                "lm_head.dense",
                 "classifier.dense",
                 "roberta.pooler",
                 gather_output=True,
             ),
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
+            Head("lm_head.dense"),
             Head("lm_head.decoder", "classifier.out_proj", "classifier", "qa_outputs",
                 gather_output=True
             ),
