@@ -19,7 +19,9 @@ class TestDataTokenClassification(TestDataBinarization):
         dataset,
         parallel_context=None,
     ):
-        self.processor = ProcessorForTokenClassification(model_name, dataset=dataset)
+        self.processor = ProcessorForTokenClassification(
+            model_name, max_length=128, dataset=dataset
+        )
         self.data_collator = DataCollatorForTokenClassification(self.processor)
         self.sp_data_collator = DataCollatorForTokenClassification(
             self.processor, parallel_context=parallel_context

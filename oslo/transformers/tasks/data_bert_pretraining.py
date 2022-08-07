@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Optional
 import random
+import warnings
+import logging
 import torch
 from datasets.arrow_dataset import Batch
 
@@ -8,13 +10,25 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 
 try:
     from transformers import DataCollatorForWholeWordMask
+    from transformers import (
+        BertTokenizer,
+        BertTokenizerFast,
+    )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForBertPretraining(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
+
+        if not isinstance(self._tokenizer, (BertTokenizer, BertTokenizerFast)):
+            warnings.warn(
+                "PorcessorForBertPretraining is suitable for BertTokenizer-like tokenizers."
+            )
+
         self._chunk_size = max_length - 3
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
@@ -58,16 +72,25 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        assert isinstance(
+            processor, ProcessorForBertPretraining
+        ), "DataCollatorForBertPretraining is only suitable for ProcessorForBertPretraining."
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.pad_to_multiple_of = pad_to_multiple_of
         self.pad_token_id = self.tokenizer.pad_token_id
+        self.pad_token_type_id = self.tokenizer.pad_token_type_id
         self.parallel_context = parallel_context
         if parallel_context is not None:
             self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_wwm_and_sop_from_examples(examples)
@@ -92,41 +115,10 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
             batch["input_ids"], batch_mask
         )
 
-        if self.parallel_context is None:
-            return batch
-        else:
+        if self.parallel_context is not None:
             for key, value in batch.items():
-                if value.dim() < 2:
+                if key == "next_sentence_label":
                     continue
-
-                batch_size, seq_length = value.size()
-
-                if seq_length % self.local_world_size != 0:
-                    required_length = (
-                        (seq_length // self.local_world_size) + 1
-                    ) * self.local_world_size
-                    difference = required_length - seq_length
-
-                    if key == "labels":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=-100, dtype=value.dtype
-                        )
-                    elif key == "token_type_ids":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=1, dtype=value.dtype
-                        )
-                    elif key == "attention_mask":
-                        pads = torch.full(
-                            [batch_size, difference], fill_value=0, dtype=value.dtype
-                        )
-                    else:
-                        pads = torch.full(
-                            [batch_size, difference],
-                            fill_value=self.pad_token_id,
-                            dtype=value.dtype,
-                        )
-
-                    value = torch.cat([value, pads], axis=1)
 
                 value = value.chunk(
                     self.local_world_size,
@@ -138,7 +130,7 @@ class DataCollatorForBertPretraining(DataCollatorForWholeWordMask):
 
                 batch[key] = value
 
-            return batch
+        return batch
 
     def _prepare_wwm_and_sop_from_examples(
         self, examples: List[Dict[str, Any]]

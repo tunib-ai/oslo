@@ -1,6 +1,6 @@
+from copy import deepcopy
 import torch
 import torch.distributed as dist
-
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import Linear2p5D
 
@@ -21,13 +21,18 @@ parallel_context = ParallelContext.from_torch(
 
 torch.set_printoptions(sci_mode=False)
 torch.manual_seed(0)
+
+batch_size = 4
+seq_len = 2
+input_dim = 4
+hidden_dim = 8
 tesseract_dim = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-input_ = torch.randn((4, 3, 4)).cuda()
-target = torch.randn((4, 3, 4)).cuda()
+input_ = torch.randn((batch_size, seq_len, input_dim)).cuda()
+target = torch.randn((batch_size, seq_len, hidden_dim)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-linear = torch.nn.Linear(4, 4).cuda()
+linear = torch.nn.Linear(input_dim, hidden_dim).cuda()
 w = deepcopy(linear.weight.data)
 b = deepcopy(linear.bias.data)
 
@@ -93,7 +98,9 @@ if parallel_context.get_global_rank() == 0:
 
 
 
-linear_2p5d = Linear2p5D(4, 4, gather_output=True, parallel_context=parallel_context)
+linear_2p5d = Linear2p5D(
+    input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context
+)
 linear_2p5d.weight.data.copy_(w)
 linear_2p5d.bias.data.copy_(b)
 

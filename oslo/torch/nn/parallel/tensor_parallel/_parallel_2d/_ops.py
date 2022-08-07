@@ -9,56 +9,6 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.distributed.nn.functional import all_gather, all_reduce, reduce_scatter
 
 
-def matmul_2d(
-    a: Tensor,
-    b: Tensor,
-    summa_dim: int,
-    out_shape: Tuple[int, ...],
-    row_rank: int = None,
-    col_rank: int = None,
-    parallel_context: Optional[ParallelContext] = None,
-    row_parallel_mode: ParallelMode = ParallelMode.TENSOR_2D_ROW,
-    col_parallel_mode: ParallelMode = ParallelMode.TENSOR_2D_COL,
-):
-    if row_rank is None:
-        row_rank = parallel_context.get_local_rank(row_parallel_mode)
-    if col_rank is None:
-        col_rank = parallel_context.get_local_rank(col_parallel_mode)
-
-    data_parallel_rank = (
-        0
-        if not parallel_context.is_initialized(ParallelMode.DATA)
-        else parallel_context.get_local_rank(ParallelMode.DATA)
-    )
-    pipeline_parallel_rank = (
-        0
-        if not parallel_context.is_initialized(ParallelMode.PIPELINE)
-        else parallel_context.get_local_rank(ParallelMode.PIPELINE)
-    )
-    pipeline_parallel_size = (
-        1
-        if not parallel_context.is_initialized(ParallelMode.PIPELINE)
-        else parallel_context.get_world_size(ParallelMode.PIPELINE)
-    )
-    tensor_parallel_size = summa_dim**2
-
-    return Matmul_AB_2D(
-        a,
-        b,
-        summa_dim,
-        out_shape,
-        row_rank,
-        col_rank,
-        data_parallel_rank,
-        pipeline_parallel_rank,
-        pipeline_parallel_size,
-        tensor_parallel_size,
-        parallel_context,
-        row_parallel_mode,
-        col_parallel_mode,
-    )
-
-
 def add_bias_2d(
     inputs: Tensor,
     bias: Tensor,
@@ -362,10 +312,10 @@ class Matmul_AB_2D(torch.autograd.Function):
 
         if ctx:
             ctx.summa_dim = summa_dim
-            ctx.row_rank = row_rank
-            ctx.col_rank = col_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size
@@ -524,10 +474,10 @@ class Matmul_ABT_2D(torch.autograd.Function):
 
         if ctx:
             ctx.summa_dim = summa_dim
-            ctx.row_rank = row_rank
-            ctx.col_rank = col_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size
@@ -685,10 +635,10 @@ class Matmul_ATB_2D(torch.autograd.Function):
 
         if ctx:
             ctx.summa_dim = summa_dim
-            ctx.row_rank = row_rank
-            ctx.col_rank = col_rank
             ctx.A_shape = A_shape
             ctx.B_shape = B_shape
+            ctx.row_rank = row_rank
+            ctx.col_rank = col_rank
             ctx.data_parallel_rank = data_parallel_rank
             ctx.pipeline_parallel_rank = pipeline_parallel_rank
             ctx.pipeline_parallel_size = pipeline_parallel_size

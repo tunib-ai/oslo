@@ -120,7 +120,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                     )
                     assert (
                         getattr(module, elem.name) % summa_dim == 0
-                    ), f"{elem.name} must be divisible by summa_dim."
+                    ), f"{elem.name} ({getattr(module, elem.name)}) must be divisible by summa_dim ({summa_dim})."
                     reduced_arg = getattr(module, elem.name) // summa_dim
                     setattr(module, elem.name, reduced_arg)
 
@@ -208,6 +208,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                 vocab_start_index=vocab_start_index,
                 vocab_end_index=vocab_end_index,
                 parallel_context=self.parallel_context,
+                summa_dim=summa_dim,
                 num_embeddings=module.weight.size()[0],
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
@@ -221,6 +222,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
+                summa_dim=summa_dim,
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
             )
@@ -277,7 +279,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
 
         if hasattr(module, "bias") and module.bias is not None:
             if slice_bias is True and module.bias.dim() >= 1:
-                bias_list = module.bias.chunk(summa_dim, dim=0)
+                bias_list = module.bias.data.chunk(summa_dim, dim=0)
                 bias_list = [
                     bias.chunk(fusion_degree * summa_dim, dim=0) for bias in bias_list
                 ]
@@ -305,9 +307,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            summa_dim=summa_dim,
             row_rank=row_rank,
             col_rank=col_rank,
-            summa_dim=summa_dim,
             data_parallel_rank=data_parallel_rank,
             pipeline_parallel_rank=pipeline_parallel_rank,
             tensor_parallel_size=tensor_parallel_size,
@@ -372,9 +374,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             normalized_shape=module.weight.size()[0] * (summa_dim**2),
             partitioned_dim=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            summa_dim=summa_dim,
             row_rank=row_rank,
             col_rank=col_rank,
-            summa_dim=summa_dim,
             data_parallel_rank=data_parallel_rank,
             pipeline_parallel_rank=pipeline_parallel_rank,
             tensor_parallel_size=tensor_parallel_size,
@@ -433,9 +435,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                 in_features=module.weight.size()[1],
                 out_features=module.weight.size()[0],
                 parallel_context=self.parallel_context,
+                summa_dim=summa_dim,
                 row_rank=row_rank,
                 col_rank=col_rank,
-                summa_dim=summa_dim,
                 data_parallel_rank=data_parallel_rank,
                 pipeline_parallel_rank=pipeline_parallel_rank,
                 tensor_parallel_size=tensor_parallel_size,

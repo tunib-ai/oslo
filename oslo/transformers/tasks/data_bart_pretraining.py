@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from typing import Any, Dict, List, Optional
 import warnings
+import logging
 from datasets.arrow_dataset import Batch
 from oslo.transformers.tasks.data_base import BaseProcessor
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -14,6 +15,8 @@ try:
     )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
+
+logging.captureWarnings(True)
 
 
 class ProcessorForBartPretraining(BaseProcessor):
@@ -74,6 +77,13 @@ class DataCollatorForBartPretraining:
         pad_to_multiple_of: Optional[int] = None,
         parallel_context: Optional[ParallelContext] = None,
     ):
+        if mlm_probability >= 1.0:
+            warnings.warn("MLM Probability is greater than 1.0")
+
+        assert isinstance(
+            processor, ProcessorForBartPretraining
+        ), "DataCollatorForBartPretraining is only suitable for ProcessorForBartPretraining."
+
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
         self.possion_lambda = possion_lambda
@@ -86,40 +96,28 @@ class DataCollatorForBartPretraining:
             self.local_world_size = parallel_context.get_world_size(
                 ParallelMode.SEQUENCE
             )
+            self.pad_to_multiple_of = self.local_world_size
+
+        self.get_start_indices = {
+            max_idx: np.random.choice(max_idx, size=(max_idx,), replace=False).tolist()
+            for max_idx in range(processor._chunk_size, 0, -1)
+        }
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_noise_text_from_examples(examples)
 
-        if self.parallel_context is None:
-            batch = self.tokenizer.pad(
-                examples,
-                return_tensors="pt",
-                pad_to_multiple_of=self.pad_to_multiple_of,
-            )
-            if self.pad_to_multiple_of:
-                batch_size, label_seq_length = batch["labels"].size()
-                if label_seq_length % self.pad_to_multiple_of != 0:
-                    label_required_length = (
-                        (label_seq_length // self.pad_to_multiple_of) + 1
-                    ) * self.pad_to_multiple_of
+        batch = self.tokenizer.pad(
+            examples,
+            return_tensors="pt",
+            pad_to_multiple_of=self.pad_to_multiple_of,
+        )
 
-                    difference = label_required_length - label_seq_length
-                    label_pads = torch.full(
-                        (batch_size, difference),
-                        fill_value=self.pad_token_id,
-                        dtype=batch["labels"].dtype,
-                    )
-                    batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
-        else:
-            batch = self.tokenizer.pad(
-                examples, return_tensors="pt", pad_to_multiple_of=self.local_world_size
-            )
-
+        if self.pad_to_multiple_of is not None:
             batch_size, label_seq_length = batch["labels"].size()
-            if label_seq_length % self.local_world_size != 0:
+            if label_seq_length % self.pad_to_multiple_of != 0:
                 label_required_length = (
-                    (label_seq_length // self.local_world_size) + 1
-                ) * self.local_world_size
+                    (label_seq_length // self.pad_to_multiple_of) + 1
+                ) * self.pad_to_multiple_of
 
                 difference = label_required_length - label_seq_length
                 label_pads = torch.full(
@@ -129,6 +127,7 @@ class DataCollatorForBartPretraining:
                 )
                 batch["labels"] = torch.cat([batch["labels"], label_pads], axis=1)
 
+        if self.parallel_context is not None:
             for key, value in batch.items():
                 value = value.chunk(
                     self.local_world_size,
@@ -178,6 +177,7 @@ class DataCollatorForBartPretraining:
 
             difference = sum(segment_lengths) - num_noise_tokens
             segment_lengths[-1] = segment_lengths[-1] - difference
+            segment_lengths.sort(reverse=True)
             return segment_lengths
 
         temp_ids = input_ids
@@ -187,17 +187,24 @@ class DataCollatorForBartPretraining:
 
             for noise_span_length in noise_span_lengths:
                 max_idx = len(temp_ids) - noise_span_length + 1
-                start_idx = np.random.choice(max_idx)
-                while (
-                    self.mask_token_id
-                    in temp_ids[start_idx : start_idx + noise_span_length]
-                ):
-                    start_idx = np.random.choice(max_idx)
-                temp_ids = (
-                    temp_ids[:start_idx]
-                    + [self.mask_token_id]
-                    + temp_ids[start_idx + noise_span_length :]
-                )
+                start_indice = self.get_start_indices[max_idx]
+                for start_idx in start_indice:
+                    if (
+                        self.mask_token_id
+                        in temp_ids[start_idx : start_idx + noise_span_length]
+                    ):
+                        continue
+                    else:
+                        temp_ids = (
+                            temp_ids[:start_idx]
+                            + [self.mask_token_id]
+                            + temp_ids[start_idx + noise_span_length :]
+                        )
+                        # Rotate
+                        self.get_start_indices[max_idx] = [
+                            start_indice[-1]
+                        ] + start_indice[:-1]
+                        break
 
         input_ids = temp_ids
 
