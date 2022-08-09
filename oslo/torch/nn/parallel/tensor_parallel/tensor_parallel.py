@@ -98,6 +98,7 @@ class TensorParallel(ParallelWrapper):
         self.parallel_context = get_parallel_context(module, parallel_context)
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
+        module = self._resize_head_bias_size(module, self.parallel_context, mapping)
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(module, self.parallel_context, mapping, module_args)
@@ -146,8 +147,8 @@ class TensorParallel(ParallelWrapper):
 
             module.weight.data = new_embeddings
             module.num_embeddings = new_vocab_size
-            setattr(module, "orig_num_classes", vocab_size)
-            setattr(unwrapped_model, "orig_vocab_size", vocab_size)
+        setattr(module, "orig_num_classes", vocab_size)
+        setattr(unwrapped_model, "orig_vocab_size", vocab_size)
         return model
 
     @staticmethod
@@ -172,6 +173,17 @@ class TensorParallel(ParallelWrapper):
                 if module.weight is unwrapped_model.get_input_embeddings().weight:
                     module.out_features = (
                         unwrapped_model.get_input_embeddings().num_embeddings
+                    )
+
+                    assert hasattr(unwrapped_model.get_input_embeddings(), "orig_num_classes"), (
+                        "call _resize_vocab before _resize_num_classes"
+                    )
+                    out_features = unwrapped_model.get_input_embeddings().orig_num_classes
+                    setattr(module, "orig_num_classes", out_features)
+                    setattr(
+                        unwrapped_model,
+                        f"orig_{param_name.split('.')[-1]}_num_classes",
+                        out_features,
                     )
                 else:
                     out_features, in_features = module.weight.size()
@@ -214,11 +226,45 @@ class TensorParallel(ParallelWrapper):
                         )
         return model
 
-    def _restore_vocab_size(self, model, parallel_context):
-        pass
+    @staticmethod
+    def _resize_head_bias_size(model, parallel_context, mapping):
+        unwrapped_model = unwrap_parallel(model)
+        divisible_by = get_divisible_by(parallel_context)
 
-    def _restore_num_classes(self, model, parallel_context):
-        pass
+        if mapping is None:
+            if is_huggingface_model(unwrapped_model):
+                mapping = _TensorParallelMappingForHuggingFace().get_mapping(
+                    unwrapped_model
+                )
+            else:
+                raise ValueError(
+                    "`mapping` must be input if the model is not huggingface model."
+                )
+        tensor_parallel_mapping = TensorParallelMapping(mapping)
+        divisible_by = get_divisible_by(parallel_context)
+
+        for param_name, module in unwrapped_model.named_modules():
+            if tensor_parallel_mapping.is_head(unwrapped_model, param_name
+            ) and unwrapped_model.get_input_embeddings().weight is module.weight \
+            and hasattr(module, "bias") and module.bias is not None:
+                out_features = module.bias.size()[0]
+                new_out_features = out_features
+
+                while new_out_features % divisible_by != 0:
+                    new_out_features += 1
+
+                if new_out_features != out_features:
+                    padding = torch.zeros(
+                        new_out_features - out_features,
+                        dtype=module.bias.dtype,
+                        device=module.bias.device,
+                    )
+                    new_bias = torch.cat(
+                        tensors=[module.bias.data, padding],
+                        dim=0,
+                    )
+                    module.bias.data = new_bias
+        return model
 
     @torch.no_grad()
     def save_parallelized(
@@ -239,6 +285,7 @@ class TensorParallel(ParallelWrapper):
 
         new_module = self._resize_vocab_size(new_module, self.parallel_context)
         new_module = self._resize_num_classes(new_module, self.parallel_context, mapping)
+        new_module = self._resize_head_bias_size(new_module, self.parallel_context, mapping)
 
         new_module = self.module.save_parallelized(
             new_module,

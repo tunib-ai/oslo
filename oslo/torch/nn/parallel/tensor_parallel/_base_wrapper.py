@@ -77,10 +77,6 @@ class BaseTensorParallelWrapper(ParallelWrapper):
                 mapping=mapping,
                 module_args=self.config
             ).eval()
-            # model_to_save = self.clone()
-            ## resize vocab & num_class
-
-
 
             if state_dict is None:
                 state_dict = self.state_dict()
@@ -223,4 +219,3 @@ class BaseTensorParallelWrapper(ParallelWrapper):
     @torch.no_grad()
     def deparallelize(self):
         return NotImplementedError
-
