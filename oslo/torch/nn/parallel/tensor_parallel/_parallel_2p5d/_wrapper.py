@@ -626,7 +626,6 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
 
         module.__class__ = nn.Linear
 
-
     def _gather_linear(self, module: Linear2p5D):
         is_reversed = module.reversed
         fusion_degree = module.fusion_degree

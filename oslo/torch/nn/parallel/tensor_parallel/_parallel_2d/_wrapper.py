@@ -10,6 +10,7 @@ from oslo.torch.nn.modules.embedding import (
     VocabUtility,
 )
 from oslo.torch.nn.modules.linear import (
+    Linear,
     Linear2D,
 )
 from oslo.torch.nn.modules.layer_norm import (
@@ -450,12 +451,34 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             )
         module.__class__ = Linear2D
 
+    def _zero_rank_log(self, txt):
+        import torch.distributed as dist
+        if dist.get_rank() == 0:
+            print(txt)
+        # 모니터링 생성 대기
+        dist.barrier()
+
     @torch.no_grad()
     def deparallelize(self):
-        self._deparallelize_linear()
-        self._deparallelize_layernorm()
+        # must deparallelize embedding first than linear
+        self._zero_rank_log("deparallelize embedding start")
         self._deparallelize_embedding()
+        self._zero_rank_log("deparallelize embedding end")
+
+        self._zero_rank_log("deparallelize linear start")
+        self._deparallelize_linear()
+        self._zero_rank_log("deparallelize linear end")
+
+        self._zero_rank_log("deparallelize layernorm start")
+        self._deparallelize_layernorm()
+        self._zero_rank_log("deparallelize layernorm end")
+
+        self._zero_rank_log("deparallelize head start")
+        self._deparallelize_head()
+        self._zero_rank_log("deparallelize head end")
+
         self._rollback_mp_arguments()
+
 
     def _rollback_mp_arguments(self):
         for module in self.module.modules():
@@ -474,8 +497,18 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
-            if module.__class__ == Linear2D:
+            if self.tensor_parallel_mapping.is_column_parallel(
+                    self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._gather_linear(module)
+
+    def _deparallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                    self.module, param_name
+            ) and isinstance(module, Linear2D):
+                self._zero_rank_log(f"deparallelize head {param_name}")
+                self._gather_head(module)
 
     def _deparallelize_layernorm(self):
         for param_name, module in self.module.named_modules():
@@ -516,6 +549,43 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                 embedding_dim=module.weight.size()[1]
             )
         module.__class__ = nn.Embedding
+
+    def _gather_head(self, module: Linear2D):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            return self._gather_linear(module)
+        elif hasattr(module, "bias") and module.bias is not None:
+            self._zero_rank_log("before gathering bias")
+            tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+
+            b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+
+            module.bias.data = b[:module.weight.size()[0]]
+            self._zero_rank_log("after gathering bias")
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.gather_output
+        del module.parallel_context
+
+        module.__class__ = nn.Linear
 
     def _gather_linear(self, module: Linear2D):
         is_reversed = module.reversed
