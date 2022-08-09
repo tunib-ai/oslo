@@ -555,9 +555,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             return self._gather_linear(module)
         elif hasattr(module, "bias") and module.bias is not None:
             self._zero_rank_log("before gathering bias")
-            tesseract_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
+            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D)
 
-            b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+            b = gather_1d(self.parallel_context, module.bias.data, summa_dim, 0)
 
             module.bias.data = b[:module.weight.size()[0]]
             self._zero_rank_log("after gathering bias")
@@ -573,8 +573,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         )
         del module.row_rank
         del module.col_rank
-        del module.dep_rank
-        del module.tesseract_dim
+        del module.summa_dim
         del module.data_parallel_rank
         del module.pipeline_parallel_rank
         del module.tensor_parallel_size

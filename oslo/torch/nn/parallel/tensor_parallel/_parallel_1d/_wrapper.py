@@ -385,10 +385,28 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
             )
         module.__class__ = ColLinear1D
 
+    def _zero_rank_log(self, txt):
+        import torch.distributed as dist
+        if dist.get_rank() == 0:
+            print(txt)
+        # 모니터링 생성 대기
+        dist.barrier()
+
     @torch.no_grad()
     def deparallelize(self):
-        self._deparallelize_linear()
+        # must deparallelize embedding first than linear
+        self._zero_rank_log("deparallelize embedding start")
         self._deparallelize_embedding()
+        self._zero_rank_log("deparallelize embedding end")
+
+        self._zero_rank_log("deparallelize linear start")
+        self._deparallelize_linear()
+        self._zero_rank_log("deparallelize linear end")
+
+        self._zero_rank_log("deparallelize head start")
+        self._deparallelize_head()
+        self._zero_rank_log("deparallelize head end")
+
         self._rollback_mp_arguments()
 
     def _rollback_mp_arguments(self):
@@ -410,11 +428,23 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
-            if module.__class__ == ColLinear1D:
+            if self.tensor_parallel_mapping.is_column_parallel(
+                    self.module, param_name
+            ):
                 self._gather_column_linear(module)
 
-            elif module.__class__ == RowLinear1D:
+            elif self.tensor_parallel_mapping.is_row_parallel(
+                    self.module, param_name
+            ):
                 self._gather_row_linear(module)
+
+    def _deparallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                    self.module, param_name
+            ) and isinstance(module, ColLinear1D):
+                self._zero_rank_log(f"deparallelize head {param_name}")
+                self._gather_head(module)
 
     def _gather_embedding(self, module):
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -497,6 +527,34 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
     def _gather_row_linear(self, module):
         self._gather_linear(module, dim=1)
+
+    def _gather_head(self, module: ColLinear1D):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            return self._gather_column_linear(module)
+        elif hasattr(module, "bias") and module.bias is not None:
+            self._zero_rank_log("before gathering head bias")
+            world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+
+            b = self._reconstruct_combined_qkv(module.bias, world_size, 1, 0)
+
+            module.bias.data = b[:module.weight.size()[0]]
+            self._zero_rank_log("after gathering head bias")
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.parallel_context
+
+        module.__class__ = nn.Linear
 
     def _reconstruct_combined_qkv(self, tensor, world_size, fusion_degree, dim: int):
         tensor_list = tensor.chunk(fusion_degree, dim=dim)
