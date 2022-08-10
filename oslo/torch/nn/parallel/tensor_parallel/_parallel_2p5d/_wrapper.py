@@ -159,7 +159,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
                     reversed=self.tensor_parallel_mapping.is_reversed(
                         self.module, param_name
                     ),
-                    gathered=self.tensor_parallel_mapping.is_gather_output(
+                    gather_output=self.tensor_parallel_mapping.is_gather_output(
                         self.module, param_name
                     ),
                 )
@@ -408,7 +408,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         module.__class__ = LayerNorm2p5D
         return module
 
-    def _slice_head(self, module, reversed, gathered):
+    def _slice_head(self, module, reversed, gather_output):
         if module.weight is not self.module.get_input_embeddings().weight:
             self._slice_linear(
                 module=module,
@@ -418,7 +418,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             )
             _update_module_arguments(
                 module=module,
-                gather_output=not is_oslo_model(self.module) and gathered,
+                gather_output=not is_oslo_model(self.module) and gather_output,
             )
         else:
             row_rank = self.parallel_context.get_local_rank(
@@ -484,7 +484,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
                 reversed=reversed,
                 fusion_degree=1,
                 skip_bias_add=False,
-                gather_output=not is_oslo_model(self.module) and gathered,
+                gather_output=not is_oslo_model(self.module) and gather_output,
                 orig_module=copy.deepcopy(module.__class__),
             )
         module.__class__ = Linear2p5D

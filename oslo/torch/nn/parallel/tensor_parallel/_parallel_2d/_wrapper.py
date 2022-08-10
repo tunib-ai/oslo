@@ -164,6 +164,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                     reversed=self.tensor_parallel_mapping.is_reversed(
                         self.module, param_name
                     ),
+                    gather_output=self.tensor_parallel_mapping.is_gather_output(
+                        self.module, param_name
+                    ),
                 )
 
     @staticmethod
@@ -385,7 +388,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         )
         module.__class__ = LayerNorm2D
 
-    def _slice_head(self, module, reversed):
+    def _slice_head(self, module, reversed, gather_output):
         if module.weight is not self.module.get_input_embeddings().weight:
             self._slice_linear(
                 module=module,
@@ -395,7 +398,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             )
             _update_module_arguments(
                 module=module,
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
             )
         else:
             row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
@@ -443,7 +446,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                 reversed=reversed,
                 fusion_degree=1,
                 skip_bias_add=False,
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
                 orig_module=copy.deepcopy(module.__class__),
             )
         module.__class__ = Linear2D
@@ -515,12 +518,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
     def _gather_embedding(self, module):
         summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
-            w = module.weight.data
-
-            if module.embedding_dim == module.weight.size()[0]:
-                w = gather_2d(
-                    self.parallel_context, module.weight.data, summa_dim, col_first=True
-                )
+            w = gather_2d(
+                self.parallel_context, module.weight.data, summa_dim, col_first=True
+            )
 
             assert hasattr(
                 self.module, "orig_vocab_size"
@@ -554,9 +554,11 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             return self._gather_linear(module)
         elif hasattr(module, "bias") and module.bias is not None:
             self._zero_rank_log("before gathering bias")
-            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D)
+            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_ROW)
 
-            b = gather_1d(self.parallel_context, module.bias.data, summa_dim, 0)
+            b = gather_1d_twice(
+                self.parallel_context, module.bias.data, summa_dim=summa_dim, dim=0
+            )
 
             module.bias.data = b[: module.weight.size()[0]]
             self._zero_rank_log("after gathering bias")
@@ -570,6 +572,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
+        
         del module.row_rank
         del module.col_rank
         del module.summa_dim

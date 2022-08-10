@@ -100,7 +100,6 @@ class TensorParallel(ParallelWrapper):
         self.parallel_context = get_parallel_context(module, parallel_context)
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
-        module = self._resize_head_bias_size(module, self.parallel_context, mapping)
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(
@@ -193,6 +192,25 @@ class TensorParallel(ParallelWrapper):
                         f"orig_{param_name.split('.')[-1]}_num_classes",
                         out_features,
                     )
+
+                    if hasattr(module, "bias") and module.bias is not None:
+                        out_features = module.bias.size()[0]
+                        new_out_features = out_features
+
+                        while new_out_features % divisible_by != 0:
+                            new_out_features += 1
+
+                        if new_out_features != out_features:
+                            padding = torch.zeros(
+                                new_out_features - out_features,
+                                dtype=module.bias.dtype,
+                                device=module.bias.device,
+                            )
+                            new_bias = torch.cat(
+                                tensors=[module.bias.data, padding],
+                                dim=0,
+                            )
+                            module.bias.data = new_bias
                 else:
                     out_features, in_features = module.weight.size()
                     new_out_features = out_features
@@ -234,49 +252,6 @@ class TensorParallel(ParallelWrapper):
                         )
         return model
 
-    @staticmethod
-    def _resize_head_bias_size(model, parallel_context, mapping):
-        unwrapped_model = unwrap_parallel(model)
-        divisible_by = get_divisible_by(parallel_context)
-
-        if mapping is None:
-            if is_huggingface_model(unwrapped_model):
-                mapping = _TensorParallelMappingForHuggingFace().get_mapping(
-                    unwrapped_model
-                )
-            else:
-                raise ValueError(
-                    "`mapping` must be input if the model is not huggingface model."
-                )
-        tensor_parallel_mapping = TensorParallelMapping(mapping)
-        divisible_by = get_divisible_by(parallel_context)
-
-        for param_name, module in unwrapped_model.named_modules():
-            if (
-                tensor_parallel_mapping.is_head(unwrapped_model, param_name)
-                and unwrapped_model.get_input_embeddings().weight is module.weight
-                and hasattr(module, "bias")
-                and module.bias is not None
-            ):
-                out_features = module.bias.size()[0]
-                new_out_features = out_features
-
-                while new_out_features % divisible_by != 0:
-                    new_out_features += 1
-
-                if new_out_features != out_features:
-                    padding = torch.zeros(
-                        new_out_features - out_features,
-                        dtype=module.bias.dtype,
-                        device=module.bias.device,
-                    )
-                    new_bias = torch.cat(
-                        tensors=[module.bias.data, padding],
-                        dim=0,
-                    )
-                    module.bias.data = new_bias
-        return model
-
     @torch.no_grad()
     def save_parallelized(
         self,
@@ -298,9 +273,9 @@ class TensorParallel(ParallelWrapper):
         new_module = self._resize_num_classes(
             new_module, self.parallel_context, mapping
         )
-        new_module = self._resize_head_bias_size(
-            new_module, self.parallel_context, mapping
-        )
+        # new_module = self._resize_head_bias_size(
+        #     new_module, self.parallel_context, mapping
+        # )
 
         new_module = self.module.save_parallelized(
             new_module,

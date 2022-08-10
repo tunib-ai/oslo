@@ -72,7 +72,7 @@ def bw(tensors):
 tp_size = 4
 tp_depth = 1
 
-model_name = "gpt2"
+model_name = "roberta-base"
 mkwargs = {
     # 'pad_token': '[PAD]'
 }
@@ -83,13 +83,13 @@ parallel_context = ParallelContext.from_torch(
     data_parallel_size=1,
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
-    tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
+    tensor_parallel_mode=ParallelMode.TENSOR_2D,
     tensor_parallel_depth=tp_depth,
 )
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
-tokenizer.pad_token = tokenizer.eos_token
+# tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
 model_no_tp = AutoModelForCausalLM.from_config(
