@@ -572,7 +572,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             if hasattr(module, "skip_bias_add")
             else False,
         )
-        
+
         del module.row_rank
         del module.col_rank
         del module.summa_dim
