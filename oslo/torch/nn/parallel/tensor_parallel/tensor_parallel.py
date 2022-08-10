@@ -36,7 +36,7 @@ from oslo.torch.nn.parallel.utils import (
     get_parallel_context,
     is_huggingface_model,
     allocate_params,
-    get_parameter_dtype
+    get_parameter_dtype,
 )
 
 
@@ -87,11 +87,13 @@ class TensorParallel(ParallelWrapper):
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
-        module_args: dict = None
+        module_args: dict = None,
     ):
         super().__init__()
         if is_huggingface_model(module):
-            assert module_args is None, "module_args must not be provided in huggingface module."
+            assert (
+                module_args is None
+            ), "module_args must not be provided in huggingface module."
         else:
             assert isinstance(module_args, dict), "module_args must be a dict."
 
@@ -101,9 +103,13 @@ class TensorParallel(ParallelWrapper):
         module = self._resize_head_bias_size(module, self.parallel_context, mapping)
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context, mapping, module_args)
+            self.module = _TensorParallel1D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context, mapping, module_args)
+            self.module = _TensorParallel2D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
             self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
@@ -175,10 +181,12 @@ class TensorParallel(ParallelWrapper):
                         unwrapped_model.get_input_embeddings().num_embeddings
                     )
 
-                    assert hasattr(unwrapped_model.get_input_embeddings(), "orig_num_classes"), (
-                        "call _resize_vocab before _resize_num_classes"
+                    assert hasattr(
+                        unwrapped_model.get_input_embeddings(), "orig_num_classes"
+                    ), "call _resize_vocab before _resize_num_classes"
+                    out_features = (
+                        unwrapped_model.get_input_embeddings().orig_num_classes
                     )
-                    out_features = unwrapped_model.get_input_embeddings().orig_num_classes
                     setattr(module, "orig_num_classes", out_features)
                     setattr(
                         unwrapped_model,
@@ -244,9 +252,12 @@ class TensorParallel(ParallelWrapper):
         divisible_by = get_divisible_by(parallel_context)
 
         for param_name, module in unwrapped_model.named_modules():
-            if tensor_parallel_mapping.is_head(unwrapped_model, param_name
-            ) and unwrapped_model.get_input_embeddings().weight is module.weight \
-            and hasattr(module, "bias") and module.bias is not None:
+            if (
+                tensor_parallel_mapping.is_head(unwrapped_model, param_name)
+                and unwrapped_model.get_input_embeddings().weight is module.weight
+                and hasattr(module, "bias")
+                and module.bias is not None
+            ):
                 out_features = module.bias.size()[0]
                 new_out_features = out_features
 
@@ -268,14 +279,14 @@ class TensorParallel(ParallelWrapper):
 
     @torch.no_grad()
     def save_parallelized(
-            self,
-            save_directory: Union[str, os.PathLike],
-            save_config: bool = True,
-            state_dict: Optional[dict] = None,
-            save_function: Callable = torch.save,
-            merge_checkpoints: bool = False,
-            mapping: Optional[dict] = None,
-            **kwargs,
+        self,
+        save_directory: Union[str, os.PathLike],
+        save_config: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        merge_checkpoints: bool = False,
+        mapping: Optional[dict] = None,
+        **kwargs,
     ):
         unwrapped_model = unwrap_parallel(self.module.module)
         if is_huggingface_model(unwrapped_model):
@@ -284,8 +295,12 @@ class TensorParallel(ParallelWrapper):
             new_module = unwrapped_model.__class__(**self.module.config)
 
         new_module = self._resize_vocab_size(new_module, self.parallel_context)
-        new_module = self._resize_num_classes(new_module, self.parallel_context, mapping)
-        new_module = self._resize_head_bias_size(new_module, self.parallel_context, mapping)
+        new_module = self._resize_num_classes(
+            new_module, self.parallel_context, mapping
+        )
+        new_module = self._resize_head_bias_size(
+            new_module, self.parallel_context, mapping
+        )
 
         new_module = self.module.save_parallelized(
             new_module,
@@ -303,9 +318,7 @@ class TensorParallel(ParallelWrapper):
     @staticmethod
     def get_module_args(module):
         state_dict = module.state_dict()
-        return {
-            key: value.shape for key, value in state_dict.items()
-        }
+        return {key: value.shape for key, value in state_dict.items()}
 
     def from_parallelized(self, path):
         return self.module.from_parallelized(path)

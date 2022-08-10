@@ -5,7 +5,11 @@ from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn import VocabParallelEmbedding2p5D
 from oslo.torch.nn.parallel import utils
 
-from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import split_batch_2d, split_2d, gather_2d
+from oslo.torch.nn.parallel.tensor_parallel._parallel_2p5d._ops import (
+    split_batch_2d,
+    split_2d,
+    gather_2d,
+)
 
 from copy import deepcopy
 

@@ -16,7 +16,8 @@ def latency_trace(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        return result, end-start
+        return result, end - start
+
     return wrapper
 
 
@@ -34,8 +35,7 @@ tp_size = 8
 tp_depth = 2
 
 model_name = "gpt2"
-mkwargs = {
-}
+mkwargs = {}
 dataset_name = "squad"
 
 # parallel context 생성
@@ -78,18 +78,17 @@ if dist.get_rank() == 0:
     cur = time.time()
 
 # 저장
-wrapper_tp.save_parallelized('test/', merge_checkpoints=False)
+wrapper_tp.save_parallelized("test/", merge_checkpoints=False)
 
 # 모니터링 생성 대기
 dist.barrier()
 
 # 로드
 model_reparallel = TensorParallel(
-    GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")),
-    parallel_context
+    GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")), parallel_context
 )
 allocate_params(model_reparallel, parallel_context)
-model_reparallel.from_parallelized('test/')
+model_reparallel.from_parallelized("test/")
 optimizer_reparallel = Adam(model_reparallel.parameters(), lr=3e-5)
 
 dist.barrier()
@@ -108,12 +107,11 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp, notp_fw_time = \
-        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
-    loss_tp, tp_fw_time = \
-        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
-    loss_reparallel, reparallel_fw_time = \
-        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_no_tp, notp_fw_time = fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    loss_tp, tp_fw_time = fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_reparallel, reparallel_fw_time = fw(
+        wrapper_tp, **inputs, labels=inputs["input_ids"]
+    )
 
     if dist.get_rank() == 0:
         print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, reparallel:{loss_reparallel}")
@@ -128,13 +126,15 @@ for data in dataloader:
     optimizer_reparallel.step()
 
     if dist.get_rank() == 0:
-        wandb.log({
-            "tp.forward.time:": tp_fw_time,
-            "tp.backward.time:": tp_bw_time,
-            "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time,
-            "reparallel.forward.time:": reparallel_fw_time,
-            "reparallel.backward.time:": reparallel_bw_time
-        })
+        wandb.log(
+            {
+                "tp.forward.time:": tp_fw_time,
+                "tp.backward.time:": tp_bw_time,
+                "notp.forward.time:": notp_fw_time,
+                "notp.backward.time:": notp_bw_time,
+                "reparallel.forward.time:": reparallel_fw_time,
+                "reparallel.backward.time:": reparallel_bw_time,
+            }
+        )
 
 dist.barrier()

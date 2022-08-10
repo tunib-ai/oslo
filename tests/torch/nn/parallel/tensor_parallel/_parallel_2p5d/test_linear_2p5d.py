@@ -1,4 +1,3 @@
-from copy import deepcopy
 import torch
 import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
@@ -96,8 +95,6 @@ if parallel_context.get_global_rank() == 0:
     print(f"next output min: \n{minmax_update.min()}\n")
 
 
-
-
 linear_2p5d = Linear2p5D(
     input_dim, hidden_dim, gather_output=True, parallel_context=parallel_context
 )
@@ -124,9 +121,10 @@ if parallel_context.get_global_rank() == 0:
     print(f"output sse (gather_output=True): \n{sse}\n")
     print(f"next output sse (gather_output=True): \n{sse_update}\n")
     import pprint
+
     # top5 = torch.clamp(minmax_update.flatten(), 1e-8)
     top5 = minmax_update.flatten()
     top5 = [t.item() for t in top5]
-    top5 = [top5[i:i+4] for i in range(0, len(top5), 4)]
+    top5 = [top5[i : i + 4] for i in range(0, len(top5), 4)]
     pprint.pprint(top5)
     print(f"next output min: \n{minmax_update.min()}\n")

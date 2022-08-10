@@ -48,7 +48,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
-        module_args: dict = None
+        module_args: dict = None,
     ):
         super().__init__(module, parallel_context)
         self.module = module
@@ -142,13 +142,14 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
     def _parallelize_head(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_head(
-                    self.module, param_name
+                self.module, param_name
             ) and isinstance(module, nn.Linear):
                 self._slice_head(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed(
-                        self.module, param_name, 
-                    )
+                        self.module,
+                        param_name,
+                    ),
                 )
 
     @staticmethod
@@ -191,25 +192,27 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                     hasattr(module_head, "weight")
                     and module_head.weight is module.weight
                     and not isinstance(module_head, nn.Embedding)
-                    and not self.tensor_parallel_mapping.is_head(
-                        self.module, name
-                    )
+                    and not self.tensor_parallel_mapping.is_head(self.module, name)
                 ):
                     _update_module_arguments(
                         module=module_head,
                         parallel_context=self.parallel_context,
-                        reversed=self.tensor_parallel_mapping.is_reversed(self.module, name),
+                        reversed=self.tensor_parallel_mapping.is_reversed(
+                            self.module, name
+                        ),
                         fusion_degree=1,
                         orig_module=copy.deepcopy(module_head.__class__),
                         out_features=module.weight.size()[0],
                         # in_features=module.weight.size()[1],
                         gather_output=not is_oslo_model(self.module),
                         skip_bias_add=module.skip_bias_add
-                            if hasattr(module, "skip_bias_add")
-                            else False,
+                        if hasattr(module, "skip_bias_add")
+                        else False,
                     )
 
-                    if isinstance(module_head, nn.Linear) or isinstance(module_head, nn.Conv1D):
+                    if isinstance(module_head, nn.Linear) or isinstance(
+                        module_head, nn.Conv1D
+                    ):
                         module_head.__class__ = ColLinear1D
         else:
             weight_list = module.weight.data.chunk(world_size, dim=1)
@@ -387,6 +390,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
     def _zero_rank_log(self, txt):
         import torch.distributed as dist
+
         if dist.get_rank() == 0:
             print(txt)
         # 모니터링 생성 대기
@@ -428,20 +432,16 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
     def _deparallelize_linear(self):
         for param_name, module in self.module.named_modules():
-            if self.tensor_parallel_mapping.is_column_parallel(
-                    self.module, param_name
-            ):
+            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
                 self._gather_column_linear(module)
 
-            elif self.tensor_parallel_mapping.is_row_parallel(
-                    self.module, param_name
-            ):
+            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
                 self._gather_row_linear(module)
 
     def _deparallelize_head(self):
         for param_name, module in self.module.named_modules():
             if self.tensor_parallel_mapping.is_head(
-                    self.module, param_name
+                self.module, param_name
             ) and isinstance(module, ColLinear1D):
                 self._zero_rank_log(f"deparallelize head {param_name}")
                 self._gather_head(module)
@@ -450,7 +450,9 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
             # w = gather_2d(self.parallel_context, module.weight.data, world_size, col_first=True)
-            tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
+            tensor_list = [
+                torch.zeros_like(module.weight.data) for _ in range(world_size)
+            ]
             dist.all_gather(
                 tensor_list,
                 module.weight.data.contiguous(),
@@ -472,10 +474,12 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
                 parallel_context=None,
                 num_embeddings=module.weight.size()[0],
                 embedding_dim=module.weight.size()[1],
-                orig_module=None
+                orig_module=None,
             )
         else:
-            tensor_list = [torch.zeros_like(module.weight.data) for _ in range(world_size)]
+            tensor_list = [
+                torch.zeros_like(module.weight.data) for _ in range(world_size)
+            ]
             dist.all_gather(
                 tensor_list,
                 module.weight.data.contiguous(),
@@ -487,7 +491,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=None,
-                embedding_dim = module.weight.size()[1]
+                embedding_dim=module.weight.size()[1],
             )
         module.__class__ = nn.Embedding
 
@@ -497,13 +501,17 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
         world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
 
-        w = self._reconstruct_combined_qkv(module.weight, world_size, fusion_degree, dim)
+        w = self._reconstruct_combined_qkv(
+            module.weight, world_size, fusion_degree, dim
+        )
         if is_reversed:
             w = w.t()
         module.weight.data = w
 
         if hasattr(module, "bias") and module.bias is not None and dim != 1:
-            b = self._reconstruct_combined_qkv(module.bias, world_size, fusion_degree, dim)
+            b = self._reconstruct_combined_qkv(
+                module.bias, world_size, fusion_degree, dim
+            )
             module.bias.data = b
 
         _update_module_arguments(
@@ -537,7 +545,7 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
 
             b = self._reconstruct_combined_qkv(module.bias, world_size, 1, 0)
 
-            module.bias.data = b[:module.weight.size()[0]]
+            module.bias.data = b[: module.weight.size()[0]]
             self._zero_rank_log("after gathering head bias")
 
         _update_module_arguments(
@@ -561,6 +569,8 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         result_list = []
         for w in tensor_list:
             w_list = [torch.zeros_like(w) for _ in range(world_size)]
-            dist.all_gather(w_list, w, self.parallel_context.get_group(ParallelMode.TENSOR_1D))
+            dist.all_gather(
+                w_list, w, self.parallel_context.get_group(ParallelMode.TENSOR_1D)
+            )
             result_list.append(torch.cat(w_list, dim=dim))
         return torch.cat(result_list, dim=dim)

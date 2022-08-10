@@ -18,7 +18,7 @@ from oslo.torch.nn.parallel.utils import (
     is_oslo_model,
     allocate_params,
     unwrap_parallel,
-    get_parameter_dtype
+    get_parameter_dtype,
 )
 
 
@@ -32,32 +32,32 @@ class BaseTensorParallelWrapper(ParallelWrapper):
     """
 
     def __init__(
-            self,
-            module: nn.Module,
-            parallel_context: ParallelContext,
-            mapping: dict = None,
-            module_args: dict = None
+        self,
+        module: nn.Module,
+        parallel_context: ParallelContext,
+        mapping: dict = None,
+        module_args: dict = None,
     ):
         super().__init__()
 
     @torch.no_grad()
     def save_parallelized(
-            self,
-            new_module,
-            save_directory: Union[str, os.PathLike],
-            save_config: bool = True,
-            state_dict: Optional[dict] = None,
-            save_function: Callable = torch.save,
-            merge_checkpoints: bool = False,
-            mapping: Optional[dict] = None,
-            **kwargs,
+        self,
+        new_module,
+        save_directory: Union[str, os.PathLike],
+        save_config: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        merge_checkpoints: bool = False,
+        mapping: Optional[dict] = None,
+        **kwargs,
     ):
         logger = getLogger("TensorParallel")
         PARALLELIZED_WEIGHTS_NAME = "pytorch_model_tp_0_pp_0.bin"
 
         if (
-                self.parallel_context.get_world_size(ParallelMode.TENSOR) == 1
-                and self.parallel_context.get_world_size(ParallelMode.PIPELINE) == 1
+            self.parallel_context.get_world_size(ParallelMode.TENSOR) == 1
+            and self.parallel_context.get_world_size(ParallelMode.PIPELINE) == 1
         ):
             if dist.get_rank() == 0:
                 self.save_pretrained(
@@ -75,7 +75,7 @@ class BaseTensorParallelWrapper(ParallelWrapper):
                 module=new_module,
                 parallel_context=self.parallel_context,
                 mapping=mapping,
-                module_args=self.config
+                module_args=self.config,
             ).eval()
 
             if state_dict is None:
@@ -97,7 +97,9 @@ class BaseTensorParallelWrapper(ParallelWrapper):
                     )
                 else:
                     if save_config:
-                        with open(os.path.join(save_directory, "config.json"), "w") as f:
+                        with open(
+                            os.path.join(save_directory, "config.json"), "w"
+                        ) as f:
                             json.dump(self.config, f)
                     save_function(
                         model_to_save,
@@ -138,7 +140,9 @@ class BaseTensorParallelWrapper(ParallelWrapper):
         # Handle the case where some state_dict keys shouldn't be saved
         if getattr(self, "_keys_to_ignore_on_save", None) is not None:
             state_dict = {
-                k: v for k, v in state_dict.items() if k not in self._keys_to_ignore_on_save
+                k: v
+                for k, v in state_dict.items()
+                if k not in self._keys_to_ignore_on_save
             }
 
         # If we save using the predefined names, we can load using `from_pretrained`

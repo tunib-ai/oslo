@@ -72,7 +72,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
                 "sop_classifier.classifier",
                 "classifier",
                 "qa_outputs",
-                gather_output=True
+                gather_output=True,
             ),
         ],
         "Bart": [
@@ -80,7 +80,12 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("classification_head.dense", gather_output=True),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            Head("lm_head", "classification_head.out_proj", "qa_outputs", gather_output=True),
+            Head(
+                "lm_head",
+                "classification_head.out_proj",
+                "qa_outputs",
+                gather_output=True,
+            ),
         ],
         "Bert": [
             Column("query", "key", "value", "intermediate.dense"),
@@ -88,7 +93,13 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
             Head("transform.dense", gather_output=False),
-            Head("decoder", "seq_relationship", "classifier", "qa_outputs", gather_output=True),
+            Head(
+                "decoder",
+                "seq_relationship",
+                "classifier",
+                "qa_outputs",
+                gather_output=True,
+            ),
         ],
         "Blenderbot": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
@@ -145,7 +156,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
                 "classifier",
                 "qa_outputs",
                 "summary",
-                gather_output=True
+                gather_output=True,
             ),
         ],
         "Roberta": [
@@ -158,8 +169,12 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Row("output.dense"),
             Update("num_attention_heads", "all_head_size"),
             Head("lm_head.dense"),
-            Head("lm_head.decoder", "classifier.out_proj", "classifier", "qa_outputs",
-                gather_output=True
+            Head(
+                "lm_head.decoder",
+                "classifier.out_proj",
+                "classifier",
+                "qa_outputs",
+                gather_output=True,
             ),
         ],
     }

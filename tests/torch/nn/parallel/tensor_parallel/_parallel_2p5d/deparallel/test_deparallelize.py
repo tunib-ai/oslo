@@ -5,7 +5,13 @@ from datasets import load_dataset
 import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, AutoModelForCausalLM, AutoConfig
+from transformers import (
+    AutoTokenizer,
+    GPT2Config,
+    GPT2LMHeadModel,
+    AutoModelForCausalLM,
+    AutoConfig,
+)
 
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
@@ -22,13 +28,13 @@ def seed_all(seed: int = 1930):
     print("Using Seed Number {}".format(seed))
 
     os.environ["PYTHONHASHSEED"] = str(
-        seed)  # set PYTHONHASHSEED env var at fixed value
+        seed
+    )  # set PYTHONHASHSEED env var at fixed value
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed(seed)  # pytorch (both CPU and CUDA)
     np.random.seed(seed)  # for numpy pseudo-random generator
-    random.seed(
-        seed)  # set fixed value for python built-in pseudo-random generator
+    random.seed(seed)  # set fixed value for python built-in pseudo-random generator
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.enabled = False
@@ -38,7 +44,8 @@ def seed_worker(_worker_id):
     worker_seed = torch.initial_seed() % 2**32
     np.random.seed(worker_seed)
     random.seed(worker_seed)
-    
+
+
 seed_all(seed=1994)
 
 
@@ -47,7 +54,8 @@ def latency_trace(func):
         start = time.time()
         result = func(*args, **kwargs)
         end = time.time()
-        return result, end-start
+        return result, end - start
+
     return wrapper
 
 
@@ -65,9 +73,7 @@ tp_size = 8
 tp_depth = 2
 
 model_name = "bert-base-uncased"
-mkwargs = {
-    'pad_token': '[PAD]'
-}
+mkwargs = {"pad_token": "[PAD]"}
 dataset_name = "squad"
 
 # parallel context 생성
@@ -85,9 +91,9 @@ tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
 
 # 모델 생성 및 병렬화 수행
 model_no_tp = AutoModelForCausalLM.from_config(
-    AutoConfig.from_pretrained(model_name)).cuda()
-model_tp = AutoModelForCausalLM.from_config(
-    AutoConfig.from_pretrained(model_name))
+    AutoConfig.from_pretrained(model_name)
+).cuda()
+model_tp = AutoModelForCausalLM.from_config(AutoConfig.from_pretrained(model_name))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
@@ -112,7 +118,7 @@ if dist.get_rank() == 0:
     cur = time.time()
 
 # 저장
-wrapper_tp.save_parallelized('test/', merge_checkpoints=True)
+wrapper_tp.save_parallelized("test/", merge_checkpoints=True)
 
 # 모니터링 생성 대기
 dist.barrier()
@@ -137,12 +143,11 @@ for data in dataloader:
         max_length=512,
     ).to("cuda")
 
-    loss_no_tp, notp_fw_time = \
-        fw(model_no_tp, **inputs, labels=inputs["input_ids"])
-    loss_tp, tp_fw_time = \
-        fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
-    loss_gathered, gathered_fw_time = \
-        fw(model_gathered, **inputs, labels=inputs["input_ids"])
+    loss_no_tp, notp_fw_time = fw(model_no_tp, **inputs, labels=inputs["input_ids"])
+    loss_tp, tp_fw_time = fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_gathered, gathered_fw_time = fw(
+        model_gathered, **inputs, labels=inputs["input_ids"]
+    )
 
     if dist.get_rank() == 0:
         print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, GATHRED:{loss_gathered}")
@@ -157,17 +162,15 @@ for data in dataloader:
     optimizer_gathered.step()
 
     if dist.get_rank() == 0:
-        wandb.log({
-            "tp.forward.time:": tp_fw_time,
-            "tp.backward.time:": tp_bw_time,
-            "notp.forward.time:": notp_fw_time,
-            "notp.backward.time:": notp_bw_time,
-            "gathered.forward.time:": gathered_fw_time,
-            "gathered.backward.time:": gathered_bw_time,
-        })
+        wandb.log(
+            {
+                "tp.forward.time:": tp_fw_time,
+                "tp.backward.time:": tp_bw_time,
+                "notp.forward.time:": notp_fw_time,
+                "notp.backward.time:": notp_bw_time,
+                "gathered.forward.time:": gathered_fw_time,
+                "gathered.backward.time:": gathered_bw_time,
+            }
+        )
 
 dist.barrier()
-
-
-
-
