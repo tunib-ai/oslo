@@ -64,8 +64,9 @@ def bw(tensors):
 tp_size = 4
 tp_depth = 1
 
-model_name = "jason9693/soongsil-bert-base"
+model_name = "gpt2"
 mkwargs = {
+    # 'pad_token': '[PAD]'
 }
 dataset_name = "squad"
 
