@@ -228,7 +228,7 @@ class RowLinear1D(Linear):
             else:
                 return outputs + self.bias
 
-        if not ouptuts.is_contiguous():
+        if not outputs.is_contiguous():
             outputs = outputs.contiguous()
 
         return outputs

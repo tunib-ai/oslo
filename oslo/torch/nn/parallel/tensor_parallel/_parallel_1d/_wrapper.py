@@ -24,7 +24,7 @@ from oslo.torch.nn.parallel.utils import (
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
-    zero_rank_log
+    zero_rank_log,
 )
 from oslo.torch.nn.parallel.tensor_parallel._base_wrapper import (
     BaseTensorParallelWrapper,
