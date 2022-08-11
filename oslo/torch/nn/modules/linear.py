@@ -167,7 +167,8 @@ class ColLinear1D(Linear):
             outputs = all_gather_tensor_1d(outputs, -1, self.parallel_context).clone()
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
-            outputs = outputs.contiguous()
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
         return outputs
 
 
@@ -227,7 +228,10 @@ class RowLinear1D(Linear):
             else:
                 return outputs + self.bias
 
-        return outputs.contiguous()
+        if not ouptuts.is_contiguous():
+            outputs = outputs.contiguous()
+
+        return outputs
 
 
 class Linear2D(Linear):
@@ -368,7 +372,9 @@ class Linear2D(Linear):
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
-            outputs = outputs.contiguous()
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
 
         return outputs
 
@@ -511,7 +517,9 @@ class Linear2p5D(Linear):
             ).clone()
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
-            outputs = outputs.contiguous()
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
 
         return outputs
 

@@ -1112,18 +1112,6 @@ class _ReduceTensor2p5D(torch.autograd.Function):
         return output_grad, None, None
 
 
-# def reduce_tensor_2p5d(input_: Tensor, parallel_mode: ParallelMode) -> Tensor:
-#     r"""All-reduce the input.
-#     Args:
-#         input_ (:class:`torch.tensor`): Input tensor.
-#         parallel_mode (:class:`colossalai.context.ParallelMode`): The parallel mode tensor used.
-#     Note:
-#         The parallel_mode should be concluded in ``ParallelMode``. More details about ``ParallelMode`` could be found
-#         in `parallel_mode <https://github.com/hpcaitech/ColossalAI/blob/main/colossalai/context/parallel_mode.py>`_
-#     """
-#     return _ReduceTensor2p5D.apply(input_, parallel_mode)
-
-
 class _ReduceScatterTensor2p5D(torch.autograd.Function):
     @staticmethod
     def forward(

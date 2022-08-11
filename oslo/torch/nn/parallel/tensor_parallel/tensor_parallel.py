@@ -273,9 +273,6 @@ class TensorParallel(ParallelWrapper):
         new_module = self._resize_num_classes(
             new_module, self.parallel_context, mapping
         )
-        # new_module = self._resize_head_bias_size(
-        #     new_module, self.parallel_context, mapping
-        # )
 
         new_module = self.module.save_parallelized(
             new_module,
