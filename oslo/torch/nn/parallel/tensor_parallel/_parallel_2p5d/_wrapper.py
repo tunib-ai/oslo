@@ -29,6 +29,7 @@ from oslo.torch.nn.parallel.utils import (
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
+    zero_rank_log
 )
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
@@ -489,32 +490,24 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             )
         module.__class__ = Linear2p5D
 
-    def _zero_rank_log(self, txt):
-        import torch.distributed as dist
-
-        if dist.get_rank() == 0:
-            print(txt)
-        # 모니터링 생성 대기
-        dist.barrier()
-
     @torch.no_grad()
     def deparallelize(self):
         # must deparallelize embedding first than linear
-        self._zero_rank_log("deparallelize embedding start")
+        zero_rank_log("deparallelize embedding start")
         self._deparallelize_embedding()
-        self._zero_rank_log("deparallelize embedding end")
+        zero_rank_log("deparallelize embedding end")
 
-        self._zero_rank_log("deparallelize linear start")
+        zero_rank_log("deparallelize linear start")
         self._deparallelize_linear()
-        self._zero_rank_log("deparallelize linear end")
+        zero_rank_log("deparallelize linear end")
 
-        self._zero_rank_log("deparallelize layernorm start")
+        zero_rank_log("deparallelize layernorm start")
         self._deparallelize_layernorm()
-        self._zero_rank_log("deparallelize layernorm end")
+        zero_rank_log("deparallelize layernorm end")
 
-        self._zero_rank_log("deparallelize head start")
+        zero_rank_log("deparallelize head start")
         self._deparallelize_head()
-        self._zero_rank_log("deparallelize head end")
+        zero_rank_log("deparallelize head end")
 
         self._rollback_mp_arguments()
 
@@ -547,7 +540,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             if self.tensor_parallel_mapping.is_head(
                 self.module, param_name
             ) and isinstance(module, Linear2p5D):
-                self._zero_rank_log(f"deparallelize head {param_name}")
+                zero_rank_log(f"deparallelize head {param_name}")
                 self._gather_head(module)
 
     def _deparallelize_layernorm(self):
@@ -595,7 +588,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         if module.weight is not self.module.get_input_embeddings().weight:
             return self._gather_linear(module)
         elif hasattr(module, "bias") and module.bias is not None:
-            self._zero_rank_log("before gathering bias")
+            zero_rank_log("before gathering bias")
             tesseract_dim = self.parallel_context.get_world_size(
                 ParallelMode.TENSOR_2P5D_COL
             )
@@ -603,7 +596,7 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
             b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
 
             module.bias.data = b[: module.weight.size()[0]]
-            self._zero_rank_log("after gathering bias")
+            zero_rank_log("after gathering bias")
 
         _update_module_arguments(
             module=module,

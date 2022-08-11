@@ -105,3 +105,12 @@ def get_parallel_context(module: nn.Module, parallel_context: ParallelContext):
             )
 
     return parallel_context
+
+
+def zero_rank_log(txt):
+    import torch.distributed as dist
+
+    if dist.get_rank() == 0:
+        print(txt)
+    # 모니터링 생성 대기
+    dist.barrier()
