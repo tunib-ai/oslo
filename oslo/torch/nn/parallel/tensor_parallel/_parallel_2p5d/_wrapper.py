@@ -497,15 +497,6 @@ class _TensorParallel2p5D(BaseTensorParallelWrapper):
         # 모니터링 생성 대기
         dist.barrier()
 
-    def _pdb_set_trace(self):
-        import pdb
-        import torch.distributed as dist
-
-        if dist.get_rank() == 0:
-            pdb.set_trace()
-        # 모니터링 생성 대기
-        dist.barrier()
-
     @torch.no_grad()
     def deparallelize(self):
         # must deparallelize embedding first than linear
