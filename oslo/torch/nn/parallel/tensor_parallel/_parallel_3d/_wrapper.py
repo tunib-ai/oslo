@@ -17,6 +17,9 @@ from oslo.torch.nn.modules.layer_norm import (
 )
 from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
     split_batch_3d,
+    gather_3d,
+    gather_2d,
+    gather_1d
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -26,6 +29,7 @@ from oslo.torch.nn.parallel.utils import (
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
+    zero_rank_log
 )
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
@@ -422,3 +426,265 @@ class _TensorParallel3D(ParallelWrapper):
                 orig_module=copy.deepcopy(module.__class__),
             )
         module.__class__ = Linear3D
+
+    @torch.no_grad()
+    def deparallelize(self):
+        # must deparallelize embedding first than linear
+        zero_rank_log("deparallelize embedding start")
+        self._deparallelize_embedding()
+        zero_rank_log("deparallelize embedding end")
+
+        zero_rank_log("deparallelize linear start")
+        self._deparallelize_linear()
+        zero_rank_log("deparallelize linear end")
+
+        zero_rank_log("deparallelize layernorm start")
+        self._deparallelize_layernorm()
+        zero_rank_log("deparallelize layernorm end")
+
+        zero_rank_log("deparallelize head start")
+        self._deparallelize_head()
+        zero_rank_log("deparallelize head end")
+
+        self._rollback_mp_arguments()
+
+    def _rollback_mp_arguments(self):
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    cubic_dim = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_3D_INPUT
+                    )
+                    expanded_arg = getattr(module, elem.name) * cubic_dim
+                    setattr(module, elem.name, expanded_arg)
+
+    def _deparallelize_embedding(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == VocabParallelEmbedding3D:
+                self._gather_embedding(module)
+            if module.__class__ == Embedding3D:
+                self._gather_embedding(module)
+
+    def _deparallelize_linear(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(
+                    self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._gather_linear(module)
+
+    def _deparallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                    self.module, param_name
+            ) and isinstance(module, Linear3D):
+                zero_rank_log(f"deparallelize head {param_name}")
+                self._gather_head(module)
+
+    def _deparallelize_layernorm(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == LayerNorm3D:
+                self._gather_layernorm(module)
+
+    def _gather_embedding(self, module):
+        cubic_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_3D_INPUT
+        )
+        if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
+            w = gather_3d(
+                self.parallel_context, module.weight.data, cubic_dim
+            )
+
+            assert hasattr(
+                self.module, "orig_vocab_size"
+            ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
+            orig_vocab_size = self.module.orig_vocab_size
+            module.weight.data = w[:orig_vocab_size, :].contiguous()
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=None,
+                vocab_end_index=None,
+                parallel_context=None,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=None,
+            )
+        else:
+            w = gather_1d(self.parallel_context, module.weight, cubic_dim, -1)
+            module.weight.data = w
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=None,
+                embedding_dim=module.weight.size()[1],
+            )
+        module.__class__ = nn.Embedding
+
+    def _gather_head(self, module: Linear3D):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            return self._gather_linear(module)
+        elif hasattr(module, "bias") and module.bias is not None:
+            zero_rank_log("before gathering bias")
+            tesseract_dim = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR_2P5D_COL
+            )
+
+            b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+
+            module.bias.data = b[: module.weight.size()[0]]
+            zero_rank_log("after gathering bias")
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.gather_output
+        del module.parallel_context
+
+        module.__class__ = nn.Linear
+
+    def _gather_linear(self, module: Linear3D):
+        is_reversed = module.reversed
+        fusion_degree = module.fusion_degree
+        # slice_bias = module.slice_bias
+
+        cubic_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_3D_INPUT
+        )
+
+        w = gather_2d(
+            self.parallel_context,
+            module.weight.data,
+            cubic_dim=cubic_dim,
+            col_first=True,
+        )
+        if fusion_degree > 1:
+            w = self._reconstruct_combined_qkv(w, cubic_dim, fusion_degree, False)
+        if is_reversed:
+            w = w.t()
+        module.weight.data = w
+
+        if hasattr(module, "bias") and module.bias is not None:
+            b = gather_1d(self.parallel_context, module.bias.data, cubic_dim, 0)
+            if fusion_degree > 1:
+                b = self._reconstruct_combined_qkv(
+                    b, cubic_dim, fusion_degree, True
+                )
+                b = b.view(b.size()[1:])
+            module.bias.data = b
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.gather_output
+        del module.parallel_context
+
+        module.__class__ = nn.Linear
+
+    def _gather_layernorm(self, module):
+        cubic_dim = self.parallel_context.get_world_size(
+            ParallelMode.TENSOR_3D_INPUT
+        )
+        if hasattr(module, "weight") and module.weight is not None:
+            if module.weight.dim() >= 1:
+                w = gather_1d(
+                    self.parallel_context, module.weight.data, cubic_dim, 0
+                )
+                module.weight.data = w
+
+            if hasattr(module.weight, "oslo_parallel"):
+                del module.weight.oslo_parallel
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if module.bias.dim() >= 1:
+                b = gather_1d(self.parallel_context, module.bias.data, cubic_dim, 0)
+                module.bias.data = b
+
+            if hasattr(module.bias, "oslo_parallel"):
+                del module.bias.oslo_parallel
+
+        del module.partitioned_dim
+        del module.row_rank
+        del module.col_rank
+        del module.dep_rank
+        del module.tesseract_dim
+        del module.data_parallel_rank
+        del module.pipeline_parallel_rank
+        del module.tensor_parallel_size
+        del module.pipeline_parallel_size
+        del module.orig_module
+        _update_module_arguments(
+            module,
+            normalized_shape=module.weight.size()[0],
+        )
+        module.__class__ = nn.LayerNorm
+
+    @staticmethod
+    def _reconstruct_combined_qkv(tensor, cubic_dim, fusion_degree, is_bias=False):
+        last_dim = tensor.size()[-1]
+        if is_bias is False:
+            reshaped_w = tensor.view(cubic_dim * fusion_degree, -1, last_dim)
+            recon_w = (
+                torch.cat(
+                    [
+                        reshaped_w[i * fusion_degree : (i + 1) * fusion_degree]
+                        for i in range(cubic_dim)
+                    ],
+                    1,
+                ).view(-1, last_dim).contiguous()
+            )
+        else:
+            reshaped_w = tensor.view(fusion_degree * cubic_dim, -1)
+            recon_w = (
+                torch.cat(
+                    [
+                        reshaped_w[i * fusion_degree : (i + 1) * fusion_degree]
+                        for i in range(cubic_dim)
+                    ],
+                    1,
+                ).view(-1, last_dim).contiguous()
+            )
+        return recon_w
+
+    @staticmethod
+    def _reconstrunct_combined_qkv_bias(tensor, cubic_dim, fusion_degree):
+        tensor = [
+            [tensor[j * cubic_dim + k] for k in range(cubic_dim)]
+            for j in range(fusion_degree)
+        ]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = [tensor[j] for j in range(cubic_dim)]
+        return tensor
