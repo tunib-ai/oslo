@@ -18,7 +18,6 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
-    memory_priority=args.memory_priority,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -55,6 +54,7 @@ if args.memory_priority:
     target = split_1d(target, world_size, dim=1, parallel_context=parallel_context)
 
 layernorm_1d = LayerNorm1D(hidden_dim, parallel_context=parallel_context)
+layernorm_1d.memory_priority = args.memory_priority
 layernorm_1d.weight.data = w
 layernorm_1d.bias.data = b
 

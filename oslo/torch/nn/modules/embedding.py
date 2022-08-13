@@ -127,6 +127,7 @@ class Embedding1D(nn.Embedding):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        self.memory_priority = False
         self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
             embedding_dim % self.world_size == 0
@@ -148,7 +149,7 @@ class Embedding1D(nn.Embedding):
             all_gather,
         )
 
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             input = all_gather(
                 input,
                 dim=1,
@@ -171,7 +172,7 @@ class Embedding1D(nn.Embedding):
             -1,
             self.parallel_context,
         )
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             output = scatter_tensor_1d(
                 output, dim=1, parallel_context=self.parallel_context
             )
@@ -187,6 +188,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        self.memory_priority = False
         rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_1D)
         self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
@@ -215,7 +217,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
             all_gather,
         )
 
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             input = all_gather(
                 input,
                 dim=1,
@@ -247,7 +249,7 @@ class VocabParallelEmbedding1D(nn.Embedding):
 
         # Reduce across all the model parallel GPUs.
         output = reduce_tensor_1d(output_parallel, self.parallel_context)
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             output = scatter_tensor_1d(
                 output, dim=1, parallel_context=self.parallel_context
             )

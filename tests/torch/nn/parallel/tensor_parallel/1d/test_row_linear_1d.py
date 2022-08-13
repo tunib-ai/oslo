@@ -8,7 +8,7 @@ from _utils import split_1d, gather_1d
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--tensor_sequence_parallel", action="store_true", default=False)
+parser.add_argument("--memory_priority", action="store_true", default=False)
 args = parser.parse_args()
 
 tp_size = 4
@@ -18,7 +18,6 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
-    tensor_sequence_parallel=args.tensor_sequence_parallel,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -47,11 +46,12 @@ optimizer.step()
 out_update = linear(input_)
 
 input_ = split_1d(input_, world_size, dim=-1, parallel_context=parallel_context)
-if args.tensor_sequence_parallel:
+if args.memory_priority:
     target = split_1d(target, world_size, dim=1, parallel_context=parallel_context)
 w = split_1d(w, world_size, dim=-1, parallel_context=parallel_context)
 
 row_linear = RowLinear1D(input_dim, hidden_dim, parallel_context=parallel_context)
+row_linear.memory_priority = args.memory_priority
 row_linear.weight.data.copy_(w)
 row_linear.bias.data.copy_(b)
 
@@ -62,7 +62,7 @@ loss.backward()
 optimizer.step()
 
 pout_update = row_linear(input_)
-if args.tensor_sequence_parallel:
+if args.memory_priority:
     pout = gather_1d(pout, world_size, dim=1, parallel_context=parallel_context)
     pout_update = gather_1d(
         pout_update, world_size, dim=1, parallel_context=parallel_context

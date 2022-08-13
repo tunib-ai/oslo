@@ -49,10 +49,12 @@ class _TensorParallel1D(ParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
+        memory_priority: bool = False,
     ):
         super().__init__()
         self.module = module
         self.parallel_context = parallel_context
+        self.memory_priority = memory_priority
         self.device = torch.cuda.current_device()
 
         if mapping is None:
@@ -72,7 +74,7 @@ class _TensorParallel1D(ParallelWrapper):
             "If you wrote code like ``model(input_ids, labels)``, "
             "please modify your code like ``model(input_ids=input_ids, labels=labels)``."
         )
-        if self.parallel_context.memory_priority and not is_oslo_model(self.module):
+        if self.memory_priority and not is_oslo_model(self.module):
             assert (
                 "past_key_values" not in kwargs
             ), "``past_key_values`` argument is forbidden with memory priority."
@@ -200,6 +202,7 @@ class _TensorParallel1D(ParallelWrapper):
                 vocab_start_index=vocab_start_index,
                 vocab_end_index=vocab_end_index,
                 parallel_context=self.parallel_context,
+                memory_priority=self.memory_priority,
                 world_size=world_size,
                 num_embeddings=module.weight.size()[0],
                 orig_module=copy.deepcopy(module.__class__),
@@ -212,6 +215,7 @@ class _TensorParallel1D(ParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
+                memory_priority=self.memory_priority,
                 world_size=world_size,
                 embedding_dim=module.weight.size()[1],
                 orig_module=copy.deepcopy(module.__class__),
@@ -295,6 +299,7 @@ class _TensorParallel1D(ParallelWrapper):
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            memory_priority=self.memory_priority,
             world_size=world_size,
             reversed=reversed,
             fusion_degree=fusion_degree,
@@ -326,6 +331,7 @@ class _TensorParallel1D(ParallelWrapper):
             in_features=module.weight.size()[1],
             out_features=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            memory_priority=self.memory_priority,
             world_size=world_size,
             reversed=reversed,
             fusion_degree=fusion_degree,
@@ -344,6 +350,7 @@ class _TensorParallel1D(ParallelWrapper):
             normalized_shape=module.weight.size()[0],
             partitioned_dim=module.weight.size()[0],
             parallel_context=self.parallel_context,
+            memory_priority=self.memory_priority,
             world_size=world_size,
             orig_module=copy.deepcopy(module.__class__),
         )
@@ -375,6 +382,7 @@ class _TensorParallel1D(ParallelWrapper):
             _update_module_arguments(
                 module=module,
                 parallel_context=self.parallel_context,
+                memory_priority=self.memory_priority,
                 world_size=world_size,
                 reversed=reversed,
                 fusion_degree=1,

@@ -18,7 +18,6 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
-    memory_priority=args.memory_priority,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -53,6 +52,7 @@ w = split_1d(w, world_size, dim=0, parallel_context=parallel_context)
 b = split_1d(b, world_size, dim=0, parallel_context=parallel_context)
 
 col_linear = ColLinear1D(input_dim, hidden_dim, parallel_context=parallel_context)
+col_linear.memory_priority = args.memory_priority
 col_linear.weight.data.copy_(w)
 col_linear.bias.data.copy_(b)
 

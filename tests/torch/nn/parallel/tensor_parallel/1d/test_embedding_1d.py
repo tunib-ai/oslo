@@ -18,7 +18,6 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
-    memory_priority=args.memory_priority,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -54,6 +53,7 @@ if args.memory_priority:
     target = split_1d(target, world_size, dim=1, parallel_context=parallel_context)
 
 embedding_1d = Embedding1D(16, 8, parallel_context=parallel_context)
+embedding_1d.memory_priority = args.memory_priority
 embedding_1d.weight.data = w
 
 pout = embedding_1d(input_)

@@ -26,7 +26,6 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_1D,
-    memory_priority=args.memory_priority,
 )
 
 torch.set_printoptions(sci_mode=False)
@@ -39,7 +38,9 @@ tokenizer.pad_token = tokenizer.eos_token
 # 모델 생성 및 병렬화 수행
 model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name)).cuda()
 model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name))
-wrapper_tp = TensorParallel(model_tp, parallel_context)
+wrapper_tp = TensorParallel(
+    model_tp, parallel_context, memory_priority=args.memory_priority
+)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
 # https://github.com/tunib-ai/oslo/blob/307131bbd5ed995ea8dca8ac541bfbce9bfec29b/oslo/pytorch/model_parallelism/model_parallel_engine.py

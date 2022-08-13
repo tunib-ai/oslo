@@ -127,6 +127,7 @@ class ColLinear1D(Linear):
     ):
         self.gather_output = gather_output
         self.parallel_context = parallel_context
+        self.memory_priority = False
         self.reversed = False
         self.scatter_output = False
 
@@ -157,7 +158,7 @@ class ColLinear1D(Linear):
             memory_priority_linear,
         )
 
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             outputs = memory_priority_linear(input, self.weight, self.parallel_context)
         else:
             input = broadcast_tensor_1d(input, self.parallel_context)
@@ -178,7 +179,7 @@ class ColLinear1D(Linear):
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
 
-        if self.parallel_context.memory_priority and self.scatter_output:
+        if self.memory_priority and self.scatter_output:
             outputs = scatter_tensor_1d(
                 outputs,
                 dim=1,
@@ -200,6 +201,7 @@ class RowLinear1D(Linear):
     ):
         self.parallel_input = parallel_input
         self.parallel_context = parallel_context
+        self.memory_priority = False
         self.reversed = False
 
         self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -231,7 +233,7 @@ class RowLinear1D(Linear):
 
         if not self.parallel_input:
             assert (
-                not self.parallel_context.memory_priority
+                not self.memory_priority
             ), "Input must be parallelized when using memory priority."
             input = scatter_tensor_1d(
                 input,
@@ -239,7 +241,7 @@ class RowLinear1D(Linear):
                 parallel_context=self.parallel_context,
             )
         outputs = F.linear(input, self.weight)
-        if self.parallel_context.memory_priority:
+        if self.memory_priority:
             outputs = reduce_scatter_tensor_1d(
                 outputs, dim=1, parallel_context=self.parallel_context
             )
@@ -249,7 +251,7 @@ class RowLinear1D(Linear):
             if self.skip_bias_add:
                 return outputs, self.bias
             else:
-                if self.parallel_context.memory_priority:
+                if self.memory_priority:
                     bias = broadcast_tensor_1d(self.bias, self.parallel_context)
                 else:
                     bias = self.bias

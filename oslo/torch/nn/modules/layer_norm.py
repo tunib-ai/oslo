@@ -81,6 +81,7 @@ class LayerNorm1D(LayerNorm):
         parallel_context: Optional[ParallelContext] = None,
     ):
         self.parallel_context = parallel_context
+        self.memory_priority = False
 
         super().__init__(
             normalized_shape=normalized_shape,
@@ -97,12 +98,12 @@ class LayerNorm1D(LayerNorm):
 
         weight = (
             broadcast_tensor_1d(self.weight, parallel_context=self.parallel_context)
-            if self.parallel_context.memory_priority
+            if self.memory_priority
             else self.weight
         )
         bias = (
             broadcast_tensor_1d(self.bias, parallel_context=self.parallel_context)
-            if self.parallel_context.memory_priority and self.bias is not None
+            if self.memory_priority and self.bias is not None
             else self.bias
         )
         normalized_shape = (
