@@ -275,7 +275,7 @@ class ParallelContext(object):
         """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
-        local_world_size = int(os.environ["SLURM_JOB_NUMNODES"])
+        local_world_size = int(os.environ["SLURM_NTASKS_PER_NODE"])
 
         return cls(
             rank=rank,
