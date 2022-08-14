@@ -61,7 +61,6 @@ class ParallelContext(object):
         tensor_parallel_size (int): tensor parallel size
         tensor_parallel_depth (int): tensor depth for tensor 2.5 parallelism
         tensor_parallel_mode (str): tensor parallel mode
-        tensor_sequence_parallel (bool): Whether or not to apply tensor parallel for layer_norm and dropout on the sequence dimension when TENSOR_1D
         backend (str): distributed backend
         seed (int): random seed value
 
