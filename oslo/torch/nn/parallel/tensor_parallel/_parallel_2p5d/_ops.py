@@ -83,26 +83,6 @@ def gather_batch_2p5d(
     )
 
 
-def split_batch_2p5d(
-    inputs: Tensor,
-    dim: int = 0,
-    parallel_context: Optional[ParallelContext] = None,
-) -> Tensor:
-    dim_size = inputs.size(dim)
-    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL)
-
-    if world_size <= 1:
-        return inputs
-
-    assert (
-        dim_size % world_size == 0
-    ), f"The batch size ({dim_size}) is not a multiple of 2.5D size * depth ({world_size})."
-
-    return torch.chunk(
-        inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
-    )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
-
-
 def reduce_by_batch_2p5d(
     inputs, reduce_mean: bool, parallel_context: ParallelContext
 ) -> Tensor:

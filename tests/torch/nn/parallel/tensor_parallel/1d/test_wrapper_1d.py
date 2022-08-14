@@ -1,3 +1,4 @@
+import argparse
 import time
 import wandb
 import torch
@@ -10,8 +11,13 @@ from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.distributed import ParallelContext, ParallelMode
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--memory_priority", action="store_true", default=False)
+args = parser.parse_args()
+
 tp_size = 4
 batch_size = 16
+seq_length = 128
 model_name = "gpt2"
 
 # parallel context 생성
@@ -32,7 +38,9 @@ tokenizer.pad_token = tokenizer.eos_token
 # 모델 생성 및 병렬화 수행
 model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name)).cuda()
 model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name))
-wrapper_tp = TensorParallel(model_tp, parallel_context)
+wrapper_tp = TensorParallel(
+    model_tp, parallel_context, memory_priority=args.memory_priority
+)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
 # https://github.com/tunib-ai/oslo/blob/307131bbd5ed995ea8dca8ac541bfbce9bfec29b/oslo/pytorch/model_parallelism/model_parallel_engine.py
@@ -65,9 +73,9 @@ for data in dataloader:
     inputs = tokenizer(
         data,
         return_tensors="pt",
-        padding=True,
+        padding="max_length",
         truncation=True,
-        max_length=512,
+        max_length=seq_length,
     ).to("cuda")
 
     fw_start = time.time()

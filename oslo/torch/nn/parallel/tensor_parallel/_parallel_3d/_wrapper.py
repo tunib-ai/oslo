@@ -15,8 +15,8 @@ from oslo.torch.nn.modules.linear import (
 from oslo.torch.nn.modules.layer_norm import (
     LayerNorm3D,
 )
-from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
-    split_batch_3d,
+from oslo.torch.distributed.nn.functional import (
+    scatter,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -73,10 +73,16 @@ class _TensorParallel3D(ParallelWrapper):
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_3d(
-                    value,
+                key: scatter(
+                    scatter(
+                        value,
+                        dim=BATCH_DIMENSIONS[key],
+                        parallel_context=self.parallel_context,
+                        parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
+                    ),
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
+                    parallel_mode=ParallelMode.TENSOR_3D_INPUT,
                 )
                 if key in BATCH_DIMENSIONS
                 else value
@@ -174,6 +180,7 @@ class _TensorParallel3D(ParallelWrapper):
         return tensor
 
     def _slice_embedding(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -181,7 +188,6 @@ class _TensorParallel3D(ParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if module is self.module.get_input_embeddings():
             (
@@ -240,6 +246,7 @@ class _TensorParallel3D(ParallelWrapper):
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -247,7 +254,6 @@ class _TensorParallel3D(ParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if reversed:
             module.weight.data = module.weight.data.t()
@@ -331,6 +337,7 @@ class _TensorParallel3D(ParallelWrapper):
         module.__class__ = Linear3D
 
     def _slice_layernorm(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -338,7 +345,6 @@ class _TensorParallel3D(ParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
@@ -408,6 +414,37 @@ class _TensorParallel3D(ParallelWrapper):
             cubic_dim = self.parallel_context.get_world_size(
                 ParallelMode.TENSOR_3D_INPUT
             )
+            input_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_3D_INPUT
+            )
+            output_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_3D_OUTPUT
+            )
+            weight_rank = self.parallel_context.get_local_rank(
+                ParallelMode.TENSOR_3D_WEIGHT
+            )
+
+            if hasattr(module, "bias") and module.bias is not None:
+                if module.bias.dim() >= 1:
+                    bias_list = module.bias.data.chunk(cubic_dim, dim=0)
+                    module.bias.data = bias_list[input_rank].contiguous()
+
+                    if hasattr(module.bias, "oslo_parallel"):
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_3D_INPUT
+                        ] = input_rank
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_3D_OUTPUT
+                        ] = output_rank
+                        module.bias.oslo_parallel[
+                            ParallelMode.TENSOR_3D_WEIGHT
+                        ] = weight_rank
+                    else:
+                        module.bias.oslo_parallel = {
+                            ParallelMode.TENSOR_3D_INPUT: input_rank,
+                            ParallelMode.TENSOR_3D_OUTPUT: output_rank,
+                            ParallelMode.TENSOR_3D_WEIGHT: weight_rank,
+                        }
 
             _update_module_arguments(
                 module=module,

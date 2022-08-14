@@ -1,4 +1,5 @@
 from typing import Optional
+import warnings
 
 import torch
 import torch.nn as nn
@@ -77,13 +78,23 @@ class TensorParallel(ParallelWrapper):
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
+        memory_priority: bool = False,
     ):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
+
+        if parallel_context.tensor_parallel_mode != ParallelMode.TENSOR_1D:
+            if memory_priority and parallel_context.tensor_parallel_size > 1:
+                warnings.warn(
+                    "memory_priority is available only with 1D tensor parallel."
+                )
+
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
-            self.module = _TensorParallel1D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel1D(
+                module, self.parallel_context, mapping, memory_priority
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
             self.module = _TensorParallel2D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:

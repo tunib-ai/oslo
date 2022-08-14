@@ -127,7 +127,9 @@ class ColLinear1D(Linear):
     ):
         self.gather_output = gather_output
         self.parallel_context = parallel_context
+        self.memory_priority = False
         self.reversed = False
+        self.scatter_output = False
 
         self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
         assert (
@@ -150,12 +152,17 @@ class ColLinear1D(Linear):
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_gather_tensor_1d,
+            gather_tensor_1d,
             broadcast_tensor_1d,
+            scatter_tensor_1d,
+            memory_priority_linear,
         )
 
-        input = broadcast_tensor_1d(input, self.parallel_context)
-        outputs = F.linear(input, self.weight)
+        if self.memory_priority:
+            outputs = memory_priority_linear(input, self.weight, self.parallel_context)
+        else:
+            input = broadcast_tensor_1d(input, self.parallel_context)
+            outputs = F.linear(input, self.weight)
 
         if self.bias is not None:
             if self.skip_bias_add:
@@ -164,13 +171,20 @@ class ColLinear1D(Linear):
                 outputs = outputs + self.bias
 
         if self.gather_output:
-            outputs = all_gather_tensor_1d(
+            outputs = gather_tensor_1d(
                 outputs,
                 dim=-1,
                 parallel_context=self.parallel_context,
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+
+        if self.memory_priority and self.scatter_output:
+            outputs = scatter_tensor_1d(
+                outputs,
+                dim=1,
+                parallel_context=self.parallel_context,
+            )
         return outputs
 
 
@@ -187,6 +201,7 @@ class RowLinear1D(Linear):
     ):
         self.parallel_input = parallel_input
         self.parallel_context = parallel_context
+        self.memory_priority = False
         self.reversed = False
 
         self.world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
@@ -210,25 +225,37 @@ class RowLinear1D(Linear):
 
     def forward(self, input: Tensor) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._ops import (
-            all_reduce_tensor_1d,
+            reduce_tensor_1d,
             scatter_tensor_1d,
+            reduce_scatter_tensor_1d,
+            broadcast_tensor_1d,
         )
 
         if not self.parallel_input:
+            assert (
+                not self.memory_priority
+            ), "Input must be parallelized when using memory priority."
             input = scatter_tensor_1d(
                 input,
                 dim=-1,
                 parallel_context=self.parallel_context,
             )
-
         outputs = F.linear(input, self.weight)
-        outputs = all_reduce_tensor_1d(outputs, self.parallel_context)
-
+        if self.memory_priority:
+            outputs = reduce_scatter_tensor_1d(
+                outputs, dim=1, parallel_context=self.parallel_context
+            )
+        else:
+            outputs = reduce_tensor_1d(outputs, parallel_context=self.parallel_context)
         if self.bias is not None:
             if self.skip_bias_add:
                 return outputs, self.bias
             else:
-                return outputs + self.bias
+                if self.memory_priority:
+                    bias = broadcast_tensor_1d(self.bias, self.parallel_context)
+                else:
+                    bias = self.bias
+                return outputs + bias
 
         return outputs
 

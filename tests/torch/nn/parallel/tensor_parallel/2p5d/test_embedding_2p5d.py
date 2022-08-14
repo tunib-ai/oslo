@@ -2,8 +2,8 @@ from copy import deepcopy
 import torch
 import torch.distributed as dist
 from oslo.torch.distributed import ParallelContext, ParallelMode
-from oslo.torch.nn import VocabParallelEmbedding2p5D
-from _utils import split_batch_2p5d, split_2p5d, gather_2p5d
+from oslo.torch.nn import Embedding2p5D
+from _utils import split_batch_2p5d, split_2p5d, split_embedding_2p5d, gather_2p5d
 
 tp_size = 8
 tp_depth = 2
@@ -29,16 +29,16 @@ target = torch.randn((batch_size, seq_len, embedding_dim)).cuda()
 dist.broadcast(input_, src=0)
 dist.broadcast(target, src=0)
 
-vocab_embedding = torch.nn.Embedding(num_embeddings, embedding_dim).cuda()
-w = deepcopy(vocab_embedding.weight.data)
+embedding = torch.nn.Embedding(num_embeddings, embedding_dim).cuda()
+w = deepcopy(embedding.weight.data)
 
-out = vocab_embedding(input_)
-optimizer = torch.optim.Adam(vocab_embedding.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+out = embedding(input_)
+optimizer = torch.optim.Adam(embedding.parameters(), lr=1e-3)
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
-out_update = vocab_embedding(input_)
+out_update = embedding(input_)
 
 if parallel_context.get_global_rank() == 0:
     print(f"original output: \n{out}\n")
@@ -46,20 +46,20 @@ if parallel_context.get_global_rank() == 0:
 
 input_ = split_batch_2p5d(input_, tesseract_dim, parallel_context=parallel_context)
 target = split_2p5d(target, tesseract_dim, parallel_context=parallel_context)
-w = split_2p5d(w, tesseract_dim, parallel_context=parallel_context)
+w = split_embedding_2p5d(w, tesseract_dim, dim=-1, parallel_context=parallel_context)
 
-vocab_embedding_2p5d = VocabParallelEmbedding2p5D(
+embedding_2p5d = Embedding2p5D(
     num_embeddings, embedding_dim, parallel_context=parallel_context
 )
-vocab_embedding_2p5d.weight.data.copy_(w)
+embedding_2p5d.weight.data.copy_(w)
 
-pout = vocab_embedding_2p5d(input_)
-optimizer = torch.optim.Adam(vocab_embedding_2p5d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+pout = embedding_2p5d(input_)
+optimizer = torch.optim.Adam(embedding_2p5d.parameters(), lr=1e-3)
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
-pout_update = vocab_embedding_2p5d(input_)
+pout_update = embedding_2p5d(input_)
 
 pout = gather_2p5d(pout, tesseract_dim, parallel_context=parallel_context)
 pout_update = gather_2p5d(pout_update, tesseract_dim, parallel_context=parallel_context)
