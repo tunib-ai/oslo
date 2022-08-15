@@ -983,7 +983,9 @@ def gather_2d(parallel_context, tensor, cubic_dim, input_first=True):
 
 def gather_1d(parallel_context, tensor, cubic_dim, dim=-1, mode=None):
     if mode is None:
-        mode = ParallelMode.TENSOR_3D_OUTPUT if dim == -1 else ParallelMode.TENSOR_3D_INPUT
+        mode = (
+            ParallelMode.TENSOR_3D_OUTPUT if dim == -1 else ParallelMode.TENSOR_3D_INPUT
+        )
     tensor_list = [torch.zeros_like(tensor) for _ in range(cubic_dim)]
     dist.all_gather(
         tensor_list,
