@@ -93,6 +93,9 @@ def reduce_scatter(
         out = tensor
         work = None
     else:
+        assert (
+            tensor.size(dim) % world_size == 0
+        ), "tensor_size must be divisible by world size for tensor parallelism"
         temp = list(
             map(lambda x: x.contiguous(), torch.chunk(tensor, world_size, dim=dim))
         )
@@ -203,15 +206,11 @@ def scatter(
     if world_size == 1:
         return tensor
 
-    tensor_size = tensor.size(dim)
     assert (
-        tensor_size % world_size == 0
+        tensor.size(dim) % world_size == 0
     ), "tensor_size must be divisible by world size for tensor parallelism"
-    split_size_or_sections = tensor_size // world_size
 
-    tensor_list = torch.split(
-        tensor, split_size_or_sections=split_size_or_sections, dim=dim
-    )
+    tensor_list = torch.chunk(tensor, world_size, dim=dim)
     return tensor_list[rank].contiguous()
 
 

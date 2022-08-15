@@ -1,5 +1,8 @@
+from typing import Optional
 import torch
+import torch.nn.functional as F
 from torch.nn.modules.dropout import _DropoutNd
+from oslo.torch.distributed import ParallelContext
 
 from oslo.torch.nn.modules.functional import (
     fused_bias_dropout,

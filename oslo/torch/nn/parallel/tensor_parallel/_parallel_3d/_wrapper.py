@@ -20,6 +20,8 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
     gather_3d,
     gather_2d,
     gather_1d,
+from oslo.torch.distributed.nn.functional import (
+    scatter,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -53,9 +55,8 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
-        module_args: dict = None,
     ):
-        super().__init__(module, parallel_context, mapping, module_args)
+        super().__init__(module, parallel_context, mapping)
         self.module = module
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
@@ -68,15 +69,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
 
-        if module_args is None:
-            if is_huggingface_model(module):
-                module_args = module.config
-            else:
-                raise ValueError(
-                    "`config` must be input if the model is not huggingface model."
-                )
-
-        self.config = module_args
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 
@@ -88,10 +80,16 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_3d(
-                    value,
+                key: scatter(
+                    scatter(
+                        value,
+                        dim=BATCH_DIMENSIONS[key],
+                        parallel_context=self.parallel_context,
+                        parallel_mode=ParallelMode.TENSOR_3D_WEIGHT,
+                    ),
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
+                    parallel_mode=ParallelMode.TENSOR_3D_INPUT,
                 )
                 if key in BATCH_DIMENSIONS
                 else value
@@ -192,6 +190,7 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         return tensor
 
     def _slice_embedding(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -199,7 +198,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if module is self.module.get_input_embeddings():
             (
@@ -258,6 +256,7 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -265,7 +264,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if reversed:
             module.weight.data = module.weight.data.t()
@@ -349,6 +347,7 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         module.__class__ = Linear3D
 
     def _slice_layernorm(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
         input_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_3D_INPUT)
         output_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_OUTPUT
@@ -356,7 +355,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
         weight_rank = self.parallel_context.get_local_rank(
             ParallelMode.TENSOR_3D_WEIGHT
         )
-        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
 
         if hasattr(module, "weight") and module.weight is not None:
             if module.weight.dim() >= 1:
@@ -435,7 +433,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
             weight_rank = self.parallel_context.get_local_rank(
                 ParallelMode.TENSOR_3D_WEIGHT
             )
-            # TODO: add bias chunking
             if hasattr(module, "bias") and module.bias is not None:
                 if module.bias.dim() >= 1:
                     bias_list = module.bias.chunk(cubic_dim, dim=0)
@@ -470,7 +467,6 @@ class _TensorParallel3D(BaseTensorParallelWrapper):
                 gather_output=not is_oslo_model(self.module) and gather_output,
                 orig_module=copy.deepcopy(module.__class__),
             )
-        module.__class__ = Linear3D
         module.__class__ = Linear3D
 
     @torch.no_grad()

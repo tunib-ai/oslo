@@ -34,8 +34,8 @@ w = deepcopy(embedding.weight.data)
 
 out = embedding(input_)
 optimizer = torch.optim.Adam(embedding.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(out, target)
-logits.backward()
+loss = torch.nn.MSELoss()(out, target)
+loss.backward()
 optimizer.step()
 
 out_update = embedding(input_)
@@ -55,8 +55,8 @@ embedding_3d.weight.data.copy_(w)
 
 pout = embedding_3d(input_)
 optimizer = torch.optim.Adam(embedding_3d.parameters(), lr=1e-3)
-logits = torch.nn.MSELoss()(pout, target)
-logits.backward()
+loss = torch.nn.MSELoss()(pout, target)
+loss.backward()
 optimizer.step()
 
 pout_update = embedding_3d(input_)

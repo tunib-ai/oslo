@@ -21,6 +21,8 @@ from oslo.torch.nn.parallel.tensor_parallel._parallel_2d._ops import (
     gather_2d,
     gather_1d,
     gather_1d_twice,
+from oslo.torch.distributed.nn.functional import (
+    scatter,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
@@ -56,9 +58,8 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
-        module_args: dict = None,
     ):
-        super().__init__(module, parallel_context, mapping, module_args)
+        super().__init__(module, parallel_context, mapping)
         self.module = module
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
@@ -71,15 +72,6 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
 
-        if module_args is None:
-            if is_huggingface_model(module):
-                module_args = module.config
-            else:
-                raise ValueError(
-                    "`config` must be input if the model is not huggingface model."
-                )
-
-        self.config = module_args
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 
@@ -91,10 +83,11 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         )
         if not is_oslo_model(self.module):
             kwargs = {
-                key: split_batch_2d(
+                key: scatter(
                     value,
                     dim=BATCH_DIMENSIONS[key],
                     parallel_context=self.parallel_context,
+                    parallel_mode=ParallelMode.TENSOR_2D_COL,
                 )
                 if key in BATCH_DIMENSIONS
                 else value
@@ -187,9 +180,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         return tensor
 
     def _slice_embedding(self, module):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
 
         if module is self.module.get_input_embeddings():
             (
@@ -241,10 +234,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
             }
 
     def _slice_linear(self, module, reversed, fusion_degree, slice_bias):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -329,10 +321,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         module.__class__ = Linear2D
 
     def _slice_layernorm(self, module):
+        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
         row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
         col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-        summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
         data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
         pipeline_parallel_rank = self.parallel_context.get_local_rank(
             ParallelMode.PIPELINE
@@ -401,10 +392,9 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                 gather_output=not is_oslo_model(self.module) and gather_output,
             )
         else:
+            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
             row_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_ROW)
             col_rank = self.parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
-            summa_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
-
             data_parallel_rank = self.parallel_context.get_local_rank(ParallelMode.DATA)
             pipeline_parallel_rank = self.parallel_context.get_local_rank(
                 ParallelMode.PIPELINE

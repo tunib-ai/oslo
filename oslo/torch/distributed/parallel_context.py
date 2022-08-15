@@ -1,5 +1,6 @@
 import os
 import random
+import warnings
 from typing import List, Optional
 
 import numpy as np
@@ -212,8 +213,8 @@ class ParallelContext(object):
             expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
-            tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            tensor_parallel_mode=tensor_parallel_mode,
             backend=backend,
             seed=seed,
         )
@@ -268,7 +269,7 @@ class ParallelContext(object):
         """
         rank = int(os.environ["SLURM_PROCID"])
         world_size = int(os.environ["SLURM_NPROCS"])
-        local_world_size = int(os.environ["SLURM_JOB_NUMNODES"])
+        local_world_size = int(os.environ["SLURM_NTASKS_PER_NODE"])
 
         return cls(
             rank=rank,
@@ -282,8 +283,8 @@ class ParallelContext(object):
             expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
-            tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            tensor_parallel_mode=tensor_parallel_mode,
             backend=backend,
             seed=seed,
         )
@@ -351,8 +352,8 @@ class ParallelContext(object):
             expert_parallel_size=expert_parallel_size,
             pipeline_parallel_size=pipeline_parallel_size,
             tensor_parallel_size=tensor_parallel_size,
-            tensor_parallel_mode=tensor_parallel_mode,
             tensor_parallel_depth=tensor_parallel_depth,
+            tensor_parallel_mode=tensor_parallel_mode,
             backend=backend,
             seed=seed,
         )
@@ -370,8 +371,8 @@ class ParallelContext(object):
         expert_parallel_size: int,
         pipeline_parallel_size: int,
         tensor_parallel_size: int,
-        tensor_parallel_mode: Optional[str],
         tensor_parallel_depth: Optional[int],
+        tensor_parallel_mode: Optional[str],
         backend: str,
         seed: int,
     ):

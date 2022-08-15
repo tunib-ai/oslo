@@ -863,18 +863,17 @@ class _AllGatherTensor2D(torch.autograd.Function):
         parallel_context: ParallelContext,
         parallel_mode: ParallelMode,
     ) -> Tensor:
+        if ctx:
+            ctx.dim = dim
+            ctx.parallel_context = parallel_context
+            ctx.parallel_mode = parallel_mode
+
         outputs = all_gather(
             inputs,
             dim,
             parallel_context=parallel_context,
             parallel_mode=parallel_mode,
         )
-
-        if ctx:
-            ctx.dim = dim
-            ctx.parallel_context = parallel_context
-            ctx.parallel_mode = parallel_mode
-
         return outputs
 
     @staticmethod

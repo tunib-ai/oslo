@@ -105,19 +105,19 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            Head("lm_head", gather_output=True),
+            Head("lm_head"),
         ],
         "BlenderbotSmall": [
             Column("q_proj", "k_proj", "v_proj", "fc1"),
             Row("out_proj", "fc2"),
             Update("embed_dim", "num_heads"),
-            Head("lm_head", gather_output=True),
+            Head("lm_head"),
         ],
         "T5": [
             Column("q", "k", "v", "DenseReluDense.wi"),
             Row("o", "DenseReluDense.wo", "relative_attention_bias"),
             Update("d_model", "n_heads", "inner_dim"),
-            Head("lm_head", gather_output=True),
+            Head("lm_head"),
         ],
         "GPT2": [
             Column("c_attn", reversed=True, combined_qkv=True),
@@ -143,8 +143,8 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Column(
                 "electra.embeddings_project",
                 "classifier.dense",
-                "discriminator_predictions.dense",
                 "generator_predictions.dense",
+                "discriminator_predictions.dense",
                 gather_output=True,
             ),
             Row("output.dense"),
@@ -162,6 +162,7 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
         "Roberta": [
             Column("query", "key", "value", "intermediate.dense"),
             Column(
+                "lm_head.dense",
                 "classifier.dense",
                 "roberta.pooler",
                 gather_output=True,
@@ -241,6 +242,7 @@ class _ExpertParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
 HF_TO_OSLO = {
     transformers.GPT2Model: oslo.transformers.GPT2Model,
     transformers.GPT2LMHeadModel: oslo.transformers.GPT2LMHeadModel,
+    transformers.GPT2DoubleHeadsModel: oslo.transformers.GPT2DoubleHeadsModel,
     transformers.GPT2ForSequenceClassification: oslo.transformers.GPT2ForSequenceClassification,
     transformers.GPT2ForTokenClassification: oslo.transformers.GPT2ForTokenClassification,
 }

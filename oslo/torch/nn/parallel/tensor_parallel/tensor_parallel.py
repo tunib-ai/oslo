@@ -4,6 +4,8 @@ from typing import Union, Optional, Callable
 import os
 import json
 from operator import xor
+from typing import Optional
+import warnings
 
 import torch
 import torch.nn as nn
@@ -87,27 +89,27 @@ class TensorParallel(ParallelWrapper):
         module: nn.Module,
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
-        module_args: dict = None,
+        memory_priority: bool = False,
     ):
         super().__init__()
-        if is_huggingface_model(module):
-            assert (
-                module_args is None
-            ), "module_args must not be provided in huggingface module."
-        else:
-            assert isinstance(module_args, dict), "module_args must be a dict."
-
         self.parallel_context = get_parallel_context(module, parallel_context)
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
 
+
+        if parallel_context.tensor_parallel_mode != ParallelMode.TENSOR_1D:
+            if memory_priority and parallel_context.tensor_parallel_size > 1:
+                warnings.warn(
+                    "memory_priority is available only with 1D tensor parallel."
+                )
+
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(
-                module, self.parallel_context, mapping, module_args
+                module, self.parallel_context, mapping, memory_priority
             )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
             self.module = _TensorParallel2D(
-                module, self.parallel_context, mapping, module_args
+                module, self.parallel_context, mapping
             )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
             self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
