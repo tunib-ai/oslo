@@ -603,4 +603,7 @@ class Linear3D(Linear):
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
         return outputs

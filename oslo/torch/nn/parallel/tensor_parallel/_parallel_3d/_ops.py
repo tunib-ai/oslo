@@ -1,7 +1,7 @@
 from typing import Any, Tuple, Optional
 
 import torch
-import torch.ditributed as dist
+import torch.distributed as dist
 from torch import Tensor
 from torch.cuda.amp import custom_bwd, custom_fwd
 
@@ -947,20 +947,20 @@ def gather_3d(parallel_context, tensor, cubic_dim):
     return tensor
 
 
-def gather_2d(parallel_context, tensor, cubic_dim, col_first=True):
-    if col_first:
+def gather_2d(parallel_context, tensor, cubic_dim, input_first=True):
+    if input_first:
         tensor_list = [torch.zeros_like(tensor) for _ in range(cubic_dim)]
         dist.all_gather(
             tensor_list,
             tensor.contiguous(),
-            parallel_context.get_group(ParallelMode.TENSOR_2P5D_COL),
+            parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
         )
         tensor = torch.cat(tensor_list, dim=0)
         tensor_list = [torch.zeros_like(tensor) for _ in range(cubic_dim)]
         dist.all_gather(
             tensor_list,
             tensor,
-            parallel_context.get_group(ParallelMode.TENSOR_2P5D_ROW),
+            parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
         )
         tensor = torch.cat(tensor_list, dim=-1)
     else:
@@ -968,26 +968,27 @@ def gather_2d(parallel_context, tensor, cubic_dim, col_first=True):
         dist.all_gather(
             tensor_list,
             tensor,
-            parallel_context.get_group(ParallelMode.TENSOR_2P5D_ROW),
+            parallel_context.get_group(ParallelMode.TENSOR_3D_OUTPUT),
         )
         tensor = torch.cat(tensor_list, dim=-1)
         tensor_list = [torch.zeros_like(tensor) for _ in range(cubic_dim)]
         dist.all_gather(
             tensor_list,
             tensor.contiguous(),
-            parallel_context.get_group(ParallelMode.TENSOR_2P5D_COL),
+            parallel_context.get_group(ParallelMode.TENSOR_3D_INPUT),
         )
         tensor = torch.cat(tensor_list, dim=0)
     return tensor
 
 
-def gather_1d(parallel_context, tensor, cubic_dim, dim=-1):
-    parallel_modde = ParallelMode.TENSOR_2P5D_ROW
+def gather_1d(parallel_context, tensor, cubic_dim, dim=-1, mode=None):
+    if mode is None:
+        mode = ParallelMode.TENSOR_3D_OUTPUT if dim == -1 else ParallelMode.TENSOR_3D_INPUT
     tensor_list = [torch.zeros_like(tensor) for _ in range(cubic_dim)]
     dist.all_gather(
         tensor_list,
         tensor.contiguous(),
-        parallel_context.get_group(parallel_modde),
+        parallel_context.get_group(mode),
     )
     tensor = torch.cat(tensor_list, dim=dim)
     return tensor
