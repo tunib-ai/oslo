@@ -4,7 +4,6 @@ from typing import Union, Optional, Callable
 import os
 import json
 from operator import xor
-from typing import Optional
 import warnings
 
 import torch
@@ -96,7 +95,6 @@ class TensorParallel(ParallelWrapper):
         module = self._resize_vocab_size(module, self.parallel_context)
         module = self._resize_num_classes(module, self.parallel_context, mapping)
 
-
         if parallel_context.tensor_parallel_mode != ParallelMode.TENSOR_1D:
             if memory_priority and parallel_context.tensor_parallel_size > 1:
                 warnings.warn(
@@ -108,9 +106,7 @@ class TensorParallel(ParallelWrapper):
                 module, self.parallel_context, mapping, memory_priority
             )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(
-                module, self.parallel_context, mapping
-            )
+            self.module = _TensorParallel2D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
             self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:

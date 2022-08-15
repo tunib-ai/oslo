@@ -83,15 +83,6 @@ def gather_batch_2p5d(
     )
 
 
-def all_gather_tensor_2p5d(
-    inputs: Tensor,
-    dim: int,
-    parallel_context: ParallelContext,
-    col_parallel_mode: ParallelMode,
-) -> Tensor:
-    return _AllGatherTensor2p5D.apply(inputs, dim, parallel_context, col_parallel_mode)
-
-
 def reduce_by_batch_2p5d(
     inputs, reduce_mean: bool, parallel_context: ParallelContext
 ) -> Tensor:
@@ -136,6 +127,7 @@ def split_batch_2p5d(
         inputs, parallel_context.get_world_size(ParallelMode.TENSOR_2P5D_COL), dim=dim
     )[parallel_context.get_local_rank(ParallelMode.TENSOR_2P5D_COL)].contiguous()
     return col_chunked
+
 
 def get_current_device():
     r"""

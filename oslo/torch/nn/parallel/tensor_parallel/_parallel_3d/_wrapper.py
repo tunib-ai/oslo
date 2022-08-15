@@ -16,10 +16,10 @@ from oslo.torch.nn.modules.layer_norm import (
     LayerNorm3D,
 )
 from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
-    split_batch_3d,
     gather_3d,
     gather_2d,
     gather_1d,
+)
 from oslo.torch.distributed.nn.functional import (
     scatter,
 )
