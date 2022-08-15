@@ -24,7 +24,6 @@ from oslo.torch.nn.parallel.utils import (
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
-    zero_rank_log,
 )
 from oslo.torch.nn.parallel.tensor_parallel._base_wrapper import (
     BaseTensorParallelWrapper,
@@ -392,18 +391,9 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
     @torch.no_grad()
     def deparallelize(self):
         # must deparallelize embedding first than linear
-        zero_rank_log("deparallelize embedding start")
         self._deparallelize_embedding()
-        zero_rank_log("deparallelize embedding end")
-
-        zero_rank_log("deparallelize linear start")
         self._deparallelize_linear()
-        zero_rank_log("deparallelize linear end")
-
-        zero_rank_log("deparallelize head start")
         self._deparallelize_head()
-        zero_rank_log("deparallelize head end")
-
         self._rollback_mp_arguments()
 
     def _rollback_mp_arguments(self):
@@ -436,7 +426,6 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
             if self.tensor_parallel_mapping.is_head(
                 self.module, param_name
             ) and isinstance(module, ColLinear1D):
-                zero_rank_log(f"deparallelize head {param_name}")
                 self._gather_head(module)
 
     def _gather_embedding(self, module):
@@ -533,13 +522,11 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         if module.weight is not self.module.get_input_embeddings().weight:
             return self._gather_column_linear(module)
         elif hasattr(module, "bias") and module.bias is not None:
-            zero_rank_log("before gathering head bias")
             world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
 
             b = self._reconstruct_combined_qkv(module.bias, world_size, 1, 0)
 
             module.bias.data = b[: module.weight.size()[0]]
-            zero_rank_log("after gathering head bias")
 
         _update_module_arguments(
             module=module,
