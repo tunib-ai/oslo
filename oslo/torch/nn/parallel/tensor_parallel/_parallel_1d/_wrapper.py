@@ -53,8 +53,19 @@ class _TensorParallel1D(BaseTensorParallelWrapper):
         parallel_context: ParallelContext,
         mapping: dict = None,
         memory_priority: bool = False,
+        module_args: dict = None,
     ):
         super().__init__(module, parallel_context)
+
+        if module_args is None:
+            if is_huggingface_model(module):
+                module_args = module.config
+            else:
+                raise ValueError(
+                    "`config` must be input if the model is not huggingface model."
+                )
+
+        self.config = module_args
         self.module = module
         self.parallel_context = parallel_context
         self.memory_priority = memory_priority

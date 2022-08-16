@@ -57,6 +57,7 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
+        module_args: dict = None,
     ):
         super().__init__(module, parallel_context, mapping)
         self.module = module
@@ -71,6 +72,15 @@ class _TensorParallel2D(BaseTensorParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
 
+        if module_args is None:
+            if is_huggingface_model(module):
+                module_args = module.config
+            else:
+                raise ValueError(
+                    "`config` must be input if the model is not huggingface model."
+                )
+
+        self.config = module_args
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 

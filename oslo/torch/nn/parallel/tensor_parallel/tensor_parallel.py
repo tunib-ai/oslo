@@ -89,6 +89,7 @@ class TensorParallel(ParallelWrapper):
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
         memory_priority: bool = False,
+        module_args: dict = None,
     ):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
@@ -103,14 +104,20 @@ class TensorParallel(ParallelWrapper):
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(
-                module, self.parallel_context, mapping, memory_priority
+                module, self.parallel_context, mapping, memory_priority, module_args
             )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel2D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel2p5D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
-            self.module = _TensorParallel3D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel3D(
+                module, self.parallel_context, mapping, module_args
+            )
         else:
             raise ValueError(
                 "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
