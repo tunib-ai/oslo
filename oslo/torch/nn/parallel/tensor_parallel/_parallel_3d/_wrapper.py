@@ -15,14 +15,21 @@ from oslo.torch.nn.modules.linear import (
 from oslo.torch.nn.modules.layer_norm import (
     LayerNorm3D,
 )
+from oslo.torch.nn.parallel.tensor_parallel._parallel_3d._ops import (
+    gather_3d,
+    gather_2d,
+    gather_1d,
+)
 from oslo.torch.distributed.nn.functional import (
     scatter,
 )
 from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
+from oslo.torch.nn.parallel.tensor_parallel._base_wrapper import (
+    BaseTensorParallelWrapper,
+)
 from oslo.torch.nn.parallel.utils import (
-    ParallelWrapper,
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
@@ -34,7 +41,7 @@ from oslo.transformers.mapping_utils import (
 from oslo.transformers.constants import BATCH_DIMENSIONS
 
 
-class _TensorParallel3D(ParallelWrapper):
+class _TensorParallel3D(BaseTensorParallelWrapper):
     """
     PyTorch module for 3D tensor parallelism
 
@@ -48,8 +55,9 @@ class _TensorParallel3D(ParallelWrapper):
         module: nn.Module,
         parallel_context: ParallelContext,
         mapping: dict = None,
+        module_args: dict = None,
     ):
-        super().__init__()
+        super().__init__(module, parallel_context, mapping)
         self.module = module
         self.parallel_context = parallel_context
         self.device = torch.cuda.current_device()
@@ -62,6 +70,15 @@ class _TensorParallel3D(ParallelWrapper):
                     "`mapping` must be input if the model is not huggingface model."
                 )
 
+        if module_args is None:
+            if is_huggingface_model(module):
+                module_args = module.config
+            else:
+                raise ValueError(
+                    "`config` must be input if the model is not huggingface model."
+                )
+
+        self.config = module_args
         self.tensor_parallel_mapping = TensorParallelMapping(mapping)
         self._parallelize()
 
@@ -150,6 +167,9 @@ class _TensorParallel3D(ParallelWrapper):
                 self._slice_head(
                     module=module,
                     reversed=self.tensor_parallel_mapping.is_reversed(
+                        self.module, param_name
+                    ),
+                    gather_output=self.tensor_parallel_mapping.is_gather_output(
                         self.module, param_name
                     ),
                 )
@@ -398,7 +418,7 @@ class _TensorParallel3D(ParallelWrapper):
         )
         module.__class__ = LayerNorm3D
 
-    def _slice_head(self, module, reversed):
+    def _slice_head(self, module, reversed, gather_output):
         if module.weight is not self.module.get_input_embeddings().weight:
             self._slice_linear(
                 module=module,
@@ -408,7 +428,7 @@ class _TensorParallel3D(ParallelWrapper):
             )
             _update_module_arguments(
                 module=module,
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
             )
         else:
             cubic_dim = self.parallel_context.get_world_size(
@@ -423,10 +443,9 @@ class _TensorParallel3D(ParallelWrapper):
             weight_rank = self.parallel_context.get_local_rank(
                 ParallelMode.TENSOR_3D_WEIGHT
             )
-
             if hasattr(module, "bias") and module.bias is not None:
                 if module.bias.dim() >= 1:
-                    bias_list = module.bias.data.chunk(cubic_dim, dim=0)
+                    bias_list = module.bias.chunk(cubic_dim, dim=0)
                     module.bias.data = bias_list[input_rank].contiguous()
 
                     if hasattr(module.bias, "oslo_parallel"):
@@ -455,7 +474,210 @@ class _TensorParallel3D(ParallelWrapper):
                 reversed=reversed,
                 fusion_degree=1,
                 skip_bias_add=False,
-                gather_output=not is_oslo_model(self.module),
+                gather_output=not is_oslo_model(self.module) and gather_output,
                 orig_module=copy.deepcopy(module.__class__),
             )
         module.__class__ = Linear3D
+
+    @torch.no_grad()
+    def deparallelize(self):
+        # must deparallelize embedding first than linear
+        self._deparallelize_embedding()
+        self._deparallelize_linear()
+        self._deparallelize_layernorm()
+        self._deparallelize_head()
+        self._rollback_mp_arguments()
+
+    def _rollback_mp_arguments(self):
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    cubic_dim = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_3D_INPUT
+                    )
+                    expanded_arg = getattr(module, elem.name) * cubic_dim
+                    setattr(module, elem.name, expanded_arg)
+
+    def _deparallelize_embedding(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == VocabParallelEmbedding3D:
+                self._gather_embedding(module)
+            if module.__class__ == Embedding3D:
+                self._gather_embedding(module)
+
+    def _deparallelize_linear(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(
+                self.module, param_name
+            ) or self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._gather_linear(module)
+
+    def _deparallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                self.module, param_name
+            ) and isinstance(module, Linear3D):
+                self._gather_head(module)
+
+    def _deparallelize_layernorm(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == LayerNorm3D:
+                self._gather_layernorm(module)
+
+    def _gather_embedding(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+        if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
+            w = gather_3d(self.parallel_context, module.weight.data, cubic_dim)
+
+            assert hasattr(
+                self.module, "orig_vocab_size"
+            ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
+            orig_vocab_size = self.module.orig_vocab_size
+            module.weight.data = w[:orig_vocab_size, :].contiguous()
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=None,
+                vocab_end_index=None,
+                parallel_context=None,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=None,
+            )
+        else:
+            w = gather_1d(self.parallel_context, module.weight, cubic_dim, -1)
+            module.weight.data = w
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=None,
+                embedding_dim=module.weight.size()[1],
+            )
+        module.__class__ = nn.Embedding
+
+    def _gather_head(self, module: Linear3D):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            return self._gather_linear(module)
+        elif hasattr(module, "bias") and module.bias is not None:
+            tesseract_dim = self.parallel_context.get_world_size(
+                ParallelMode.TENSOR_3D_INPUT
+            )
+            b = gather_1d(self.parallel_context, module.bias.data, tesseract_dim, 0)
+            module.bias.data = b[: module.weight.size()[0]]
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
+        module.__class__ = nn.Linear
+
+    def _gather_linear(self, module: Linear3D):
+        is_reversed = module.reversed
+        fusion_degree = module.fusion_degree
+        # slice_bias = module.slice_bias
+
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+
+        w = gather_1d(
+            self.parallel_context,
+            module.weight.data,
+            cubic_dim,
+            0,
+            ParallelMode.TENSOR_3D_WEIGHT,
+        )
+        if fusion_degree > 1:
+            w = self._reconstruct_combined_qkv(w, cubic_dim, fusion_degree, False)
+        if is_reversed:
+            w = w.t()
+        w = gather_2d(self.parallel_context, w, cubic_dim=cubic_dim, input_first=False)
+        module.weight.data = w
+
+        if hasattr(module, "bias") and module.bias is not None:
+            b = gather_1d(self.parallel_context, module.bias.data, cubic_dim, 0)
+            if fusion_degree > 1:
+                b = self._reconstruct_combined_qkv(b, cubic_dim, fusion_degree, True)
+                b = b.view(b.size()[1:])
+            module.bias.data = b
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
+        module.__class__ = nn.Linear
+
+    def _gather_layernorm(self, module):
+        cubic_dim = self.parallel_context.get_world_size(ParallelMode.TENSOR_3D_INPUT)
+        if hasattr(module, "weight") and module.weight is not None:
+            if module.weight.dim() >= 1:
+                w = gather_1d(self.parallel_context, module.weight.data, cubic_dim, 0)
+                module.weight.data = w
+
+            if hasattr(module.weight, "oslo_parallel"):
+                del module.weight.oslo_parallel
+
+        if hasattr(module, "bias") and module.bias is not None:
+            if module.bias.dim() >= 1:
+                b = gather_1d(self.parallel_context, module.bias.data, cubic_dim, 0)
+                module.bias.data = b
+
+            if hasattr(module.bias, "oslo_parallel"):
+                del module.bias.oslo_parallel
+
+        _update_module_arguments(
+            module,
+            normalized_shape=module.weight.size()[0],
+        )
+        module.__class__ = nn.LayerNorm
+
+    @staticmethod
+    def _reconstruct_combined_qkv(tensor, cubic_dim, fusion_degree, is_bias=False):
+        last_dim = tensor.size()[-1]
+        if is_bias is False:
+            reshaped_w = tensor.view(cubic_dim * fusion_degree, -1, last_dim)
+            recon_w = (
+                torch.cat(
+                    [
+                        reshaped_w[i * fusion_degree : (i + 1) * fusion_degree]
+                        for i in range(cubic_dim)
+                    ],
+                    1,
+                )
+                .view(-1, last_dim)
+                .contiguous()
+            )
+        else:
+            reshaped_w = tensor.view(fusion_degree * cubic_dim, -1)
+            recon_w = (
+                torch.cat(
+                    [
+                        reshaped_w[i * fusion_degree : (i + 1) * fusion_degree]
+                        for i in range(cubic_dim)
+                    ],
+                    1,
+                )
+                .view(-1, last_dim)
+                .contiguous()
+            )
+        return recon_w
+
+    @staticmethod
+    def _reconstrunct_combined_qkv_bias(tensor, cubic_dim, fusion_degree):
+        tensor = [
+            [tensor[j * cubic_dim + k] for k in range(cubic_dim)]
+            for j in range(fusion_degree)
+        ]
+        tensor = list(map(lambda x: torch.cat([*x], dim=0), zip(*tensor)))
+        tensor = [tensor[j] for j in range(cubic_dim)]
+        return tensor

@@ -2,6 +2,7 @@ import copy
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.modules.embedding import (
@@ -23,10 +24,12 @@ from oslo.torch.nn.parallel.tensor_parallel.mapping import (
     TensorParallelMapping,
 )
 from oslo.torch.nn.parallel.utils import (
-    ParallelWrapper,
     _update_module_arguments,
     is_huggingface_model,
     is_oslo_model,
+)
+from oslo.torch.nn.parallel.tensor_parallel._base_wrapper import (
+    BaseTensorParallelWrapper,
 )
 from oslo.transformers.mapping_utils import (
     _TensorParallelMappingForHuggingFace,
@@ -34,7 +37,7 @@ from oslo.transformers.mapping_utils import (
 from oslo.transformers.constants import SEQ_DIMENSIONS
 
 
-class _TensorParallel1D(ParallelWrapper):
+class _TensorParallel1D(BaseTensorParallelWrapper):
     """
     PyTorch module for 1D tensor parallelism
 
@@ -50,8 +53,19 @@ class _TensorParallel1D(ParallelWrapper):
         parallel_context: ParallelContext,
         mapping: dict = None,
         memory_priority: bool = False,
+        module_args: dict = None,
     ):
-        super().__init__()
+        super().__init__(module, parallel_context)
+
+        if module_args is None:
+            if is_huggingface_model(module):
+                module_args = module.config
+            else:
+                raise ValueError(
+                    "`config` must be input if the model is not huggingface model."
+                )
+
+        self.config = module_args
         self.module = module
         self.parallel_context = parallel_context
         self.memory_priority = memory_priority
@@ -208,6 +222,34 @@ class _TensorParallel1D(ParallelWrapper):
                 orig_module=copy.deepcopy(module.__class__),
             )
             module.__class__ = VocabParallelEmbedding1D
+
+            for name, module_head in self.module.named_modules():
+                if (
+                    hasattr(module_head, "weight")
+                    and module_head.weight is module.weight
+                    and not isinstance(module_head, nn.Embedding)
+                    and not self.tensor_parallel_mapping.is_head(self.module, name)
+                ):
+                    _update_module_arguments(
+                        module=module_head,
+                        parallel_context=self.parallel_context,
+                        reversed=self.tensor_parallel_mapping.is_reversed(
+                            self.module, name
+                        ),
+                        fusion_degree=1,
+                        orig_module=copy.deepcopy(module_head.__class__),
+                        out_features=module.weight.size()[0],
+                        # in_features=module.weight.size()[1],
+                        gather_output=not is_oslo_model(self.module),
+                        skip_bias_add=module.skip_bias_add
+                        if hasattr(module, "skip_bias_add")
+                        else False,
+                    )
+
+                    if isinstance(module_head, nn.Linear) or isinstance(
+                        module_head, nn.Conv1D
+                    ):
+                        module_head.__class__ = ColLinear1D
         else:
             weight_list = module.weight.data.chunk(world_size, dim=1)
             module.weight.data = weight_list[rank].contiguous()
@@ -394,3 +436,170 @@ class _TensorParallel1D(ParallelWrapper):
                 else False,
             )
         module.__class__ = ColLinear1D
+
+    @torch.no_grad()
+    def deparallelize(self):
+        # must deparallelize embedding first than linear
+        self._deparallelize_embedding()
+        self._deparallelize_linear()
+        self._deparallelize_head()
+        self._rollback_mp_arguments()
+
+    def _rollback_mp_arguments(self):
+        for module in self.module.modules():
+            for elem in self.tensor_parallel_mapping.update_attrs(self.module):
+                if hasattr(module, elem.name):
+                    world_size = self.parallel_context.get_world_size(
+                        ParallelMode.TENSOR_1D
+                    )
+                    expanded_arg = getattr(module, elem.name) * world_size
+                    setattr(module, elem.name, expanded_arg)
+
+    def _deparallelize_embedding(self):
+        for param_name, module in self.module.named_modules():
+            if module.__class__ == VocabParallelEmbedding1D:
+                self._gather_embedding(module)
+            if module.__class__ == Embedding1D:
+                self._gather_embedding(module)
+
+    def _deparallelize_linear(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_column_parallel(self.module, param_name):
+                self._gather_column_linear(module)
+
+            elif self.tensor_parallel_mapping.is_row_parallel(self.module, param_name):
+                self._gather_row_linear(module)
+
+    def _deparallelize_head(self):
+        for param_name, module in self.module.named_modules():
+            if self.tensor_parallel_mapping.is_head(
+                self.module, param_name
+            ) and isinstance(module, ColLinear1D):
+                self._gather_head(module)
+
+    def _gather_embedding(self, module):
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+        if hasattr(module, "vocab_start_index") and hasattr(module, "vocab_end_index"):
+            # w = gather_2d(self.parallel_context, module.weight.data, world_size, col_first=True)
+            tensor_list = [
+                torch.zeros_like(module.weight.data) for _ in range(world_size)
+            ]
+            dist.all_gather(
+                tensor_list,
+                module.weight.data.contiguous(),
+                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+            )
+            w = torch.cat(tensor_list, dim=0)
+
+            assert hasattr(
+                self.module, "orig_vocab_size"
+            ), "wrapper's vocab embedding module must have attribute 'orig_vocab_size'."
+            orig_vocab_size = self.module.orig_vocab_size
+
+            module.weight.data = w[:orig_vocab_size, :]
+
+            _update_module_arguments(
+                module=module,
+                vocab_start_index=None,
+                vocab_end_index=None,
+                parallel_context=None,
+                num_embeddings=module.weight.size()[0],
+                embedding_dim=module.weight.size()[1],
+                orig_module=None,
+            )
+        else:
+            tensor_list = [
+                torch.zeros_like(module.weight.data) for _ in range(world_size)
+            ]
+            dist.all_gather(
+                tensor_list,
+                module.weight.data.contiguous(),
+                self.parallel_context.get_group(ParallelMode.TENSOR_1D),
+            )
+            w = torch.cat(tensor_list, dim=1)
+            module.weight.data = w
+
+            _update_module_arguments(
+                module=module,
+                parallel_context=None,
+                embedding_dim=module.weight.size()[1],
+            )
+        module.__class__ = nn.Embedding
+
+    def _gather_linear(self, module, dim=1):
+        is_reversed = module.reversed
+        fusion_degree = module.fusion_degree
+
+        world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR)
+
+        w = self._reconstruct_combined_qkv(
+            module.weight, world_size, fusion_degree, dim
+        )
+        if is_reversed:
+            w = w.t()
+        module.weight.data = w
+
+        if hasattr(module, "bias") and module.bias is not None and dim != 1:
+            b = self._reconstruct_combined_qkv(
+                module.bias, world_size, fusion_degree, dim
+            )
+            module.bias.data = b
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.parallel_context
+        module.__class__ = nn.Linear
+
+    def _gather_column_linear(self, module):
+        self._gather_linear(module, dim=0)
+
+    def _gather_row_linear(self, module):
+        self._gather_linear(module, dim=1)
+
+    def _gather_head(self, module: ColLinear1D):
+        if module.weight is not self.module.get_input_embeddings().weight:
+            return self._gather_column_linear(module)
+        elif hasattr(module, "bias") and module.bias is not None:
+            world_size = self.parallel_context.get_world_size(ParallelMode.TENSOR_1D)
+
+            b = self._reconstruct_combined_qkv(module.bias, world_size, 1, 0)
+
+            module.bias.data = b[: module.weight.size()[0]]
+
+        _update_module_arguments(
+            module=module,
+            in_features=module.weight.size()[1],
+            out_features=module.weight.size()[0],
+            parallel_context=self.parallel_context,
+            skip_bias_add=module.skip_bias_add
+            if hasattr(module, "skip_bias_add")
+            else False,
+        )
+        del module.reversed
+        del module.fusion_degree
+        del module.orig_module
+        del module.parallel_context
+
+        module.__class__ = nn.Linear
+
+    def _reconstruct_combined_qkv(self, tensor, world_size, fusion_degree, dim: int):
+        tensor_list = tensor.chunk(fusion_degree, dim=dim)
+        result_list = []
+        for w in tensor_list:
+            w_list = [torch.zeros_like(w) for _ in range(world_size)]
+            dist.all_gather(
+                w_list, w, self.parallel_context.get_group(ParallelMode.TENSOR_1D)
+            )
+            result_list.append(torch.cat(w_list, dim=dim))
+        return torch.cat(result_list, dim=dim)

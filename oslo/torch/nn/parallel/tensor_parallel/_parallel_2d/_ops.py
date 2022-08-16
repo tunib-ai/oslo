@@ -94,6 +94,87 @@ def gather_batch_2d(
     )
 
 
+def gather_2d(parallel_context, tensor, summa_dim, col_first=True):
+    if col_first:
+        tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+        dist.all_gather(
+            tensor_list,
+            tensor.contiguous(),
+            parallel_context.get_group(ParallelMode.TENSOR_2D_COL),
+        )
+        tensor = torch.cat(tensor_list, dim=0)
+        tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+        dist.all_gather(
+            tensor_list,
+            tensor,
+            parallel_context.get_group(ParallelMode.TENSOR_2D_ROW),
+        )
+        tensor = torch.cat(tensor_list, dim=-1)
+    else:
+        tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+        dist.all_gather(
+            tensor_list,
+            tensor,
+            parallel_context.get_group(ParallelMode.TENSOR_2D_ROW),
+        )
+        tensor = torch.cat(tensor_list, dim=-1)
+        tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+        dist.all_gather(
+            tensor_list,
+            tensor.contiguous(),
+            parallel_context.get_group(ParallelMode.TENSOR_2D_COL),
+        )
+        tensor = torch.cat(tensor_list, dim=0)
+    return tensor
+
+
+def gather_1d(parallel_context, tensor, summa_dim, dim=-1):
+    tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+    dist.all_gather(
+        tensor_list,
+        tensor.contiguous(),
+        parallel_context.get_group(ParallelMode.TENSOR_2D_ROW),
+    )
+    tensor = torch.cat(tensor_list, dim=dim)
+    return tensor
+
+
+def gather_1d_twice(parallel_context, tensor, summa_dim, dim=-1):
+    tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+    dist.all_gather(
+        tensor_list,
+        tensor.contiguous(),
+        parallel_context.get_group(ParallelMode.TENSOR_2D_COL),
+    )
+    tensor = torch.cat(tensor_list, dim=dim)
+    tensor_list = [torch.zeros_like(tensor) for _ in range(summa_dim)]
+    dist.all_gather(
+        tensor_list, tensor, parallel_context.get_group(ParallelMode.TENSOR_2D_ROW)
+    )
+    tensor = torch.cat(tensor_list, dim=dim)
+    return tensor
+
+
+def split_batch_2d(
+    inputs: Tensor,
+    dim: int = 0,
+    parallel_context: Optional[ParallelContext] = None,
+) -> Tensor:
+    dim_size = inputs.size(dim)
+    world_size = parallel_context.get_world_size(ParallelMode.TENSOR_2D_COL)
+
+    if world_size <= 1:
+        return inputs
+
+    assert (
+        dim_size % world_size == 0
+    ), f"The batch size ({dim_size}) is not a multiple of 2D size ({world_size})."
+
+    return inputs.chunk(world_size, dim=dim)[
+        parallel_context.get_local_rank(ParallelMode.TENSOR_2D_COL)
+    ].contiguous()
+
+
 def reduce_tensor_2d(
     inputs: Tensor,
     parallel_context: ParallelContext,

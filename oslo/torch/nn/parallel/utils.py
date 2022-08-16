@@ -65,6 +65,11 @@ def _update_module_arguments(module: nn.Module, **kwargs):
         setattr(module, k, v)
 
 
+def _remove_module_arguments(module: nn.Module, args: list):
+    for k in args:
+        delattr(module, k)
+
+
 def allocate_params(model: nn.Module, parallel_context: ParallelContext):
     for name, parameter in model.named_parameters():
         if hasattr(parameter, "oslo_parallel"):
@@ -100,3 +105,12 @@ def get_parallel_context(module: nn.Module, parallel_context: ParallelContext):
             )
 
     return parallel_context
+
+
+def zero_rank_log(txt):
+    import torch.distributed as dist
+
+    if dist.get_rank() == 0:
+        print(txt)
+    # 모니터링 생성 대기
+    dist.barrier()

@@ -178,6 +178,8 @@ class ColLinear1D(Linear):
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
 
         if self.memory_priority and self.scatter_output:
             outputs = scatter_tensor_1d(
@@ -256,6 +258,9 @@ class RowLinear1D(Linear):
                 else:
                     bias = self.bias
                 return outputs + bias
+
+        if not outputs.is_contiguous():
+            outputs = outputs.contiguous()
 
         return outputs
 
@@ -398,6 +403,10 @@ class Linear2D(Linear):
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
+
         return outputs
 
 
@@ -530,15 +539,19 @@ class Linear2p5D(Linear):
                 dim=-1,
                 parallel_context=self.parallel_context,
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_ROW,
-            )
+            ).clone()
             outputs = all_gather_tensor_2p5d(
                 outputs,
                 dim=0,
                 parallel_context=self.parallel_context,
                 col_parallel_mode=ParallelMode.TENSOR_2P5D_COL,
-            )
+            ).clone()
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
+
         return outputs
 
 
@@ -621,4 +634,7 @@ class Linear3D(Linear):
             )
             if hasattr(self, "orig_num_classes"):
                 outputs = outputs[..., : self.orig_num_classes]
+
+            if not outputs.is_contiguous():
+                outputs = outputs.contiguous()
         return outputs

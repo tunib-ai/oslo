@@ -389,3 +389,10 @@ usecases
 /usecases
 */usecases
 wandb/
+
+# multi gpu mem log
+**/core.*
+
+# sample huggingface models
+**/pytorch_model.bin
+**/config.json

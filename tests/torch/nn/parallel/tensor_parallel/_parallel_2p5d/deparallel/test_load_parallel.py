@@ -1,21 +1,14 @@
-import time
-import wandb
-import torch
 import torch.distributed as dist
-from torch.optim import Adam
+import wandb
 from datasets import load_dataset
-
+from torch.optim import Adam
 from torch.utils.data import DataLoader
-from transformers import (
-    AutoTokenizer,
-    GPT2Config,
-    GPT2LMHeadModel,
-    AutoModelForCausalLM,
-)
+from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel
 
 from oslo.torch.nn.parallel.tensor_parallel import TensorParallel
 from oslo.torch.nn.parallel.utils import allocate_params
 from oslo.torch.distributed import ParallelContext, ParallelMode
+import time
 
 
 def latency_trace(func):
@@ -39,8 +32,7 @@ def bw(tensors):
 
 
 tp_size = 8
-batch_size = 16
-model_name = "gpt2"
+tp_depth = 2
 
 model_name = "gpt2"
 mkwargs = {}
@@ -52,19 +44,16 @@ parallel_context = ParallelContext.from_torch(
     pipeline_parallel_size=1,
     tensor_parallel_size=tp_size,
     tensor_parallel_mode=ParallelMode.TENSOR_2P5D,
-    tensor_parallel_depth=2,
+    tensor_parallel_depth=tp_depth,
 )
-
-torch.set_printoptions(sci_mode=False)
-torch.manual_seed(0)
 
 # 토크나이저 생성
 tokenizer = AutoTokenizer.from_pretrained(model_name, **mkwargs)
 tokenizer.pad_token = tokenizer.eos_token
 
 # 모델 생성 및 병렬화 수행
-model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name)).cuda()
-model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained(model_name))
+model_no_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")).cuda()
+model_tp = GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2"))
 wrapper_tp = TensorParallel(model_tp, parallel_context)
 allocate_params(wrapper_tp, parallel_context)
 # allocate_params 함수는 추후에 모든 페러렐 래퍼를 관장하는 클래스에서 처리될 예정
@@ -88,13 +77,27 @@ if dist.get_rank() == 0:
     wandb.init(project="oslo", name=f"{model_name}_tp2p5d_bs{batch_size}")
     cur = time.time()
 
+# 저장
+wrapper_tp.save_parallelized("test/", merge_checkpoints=False)
+
 # 모니터링 생성 대기
+dist.barrier()
+
+# 로드
+model_reparallel = TensorParallel(
+    GPT2LMHeadModel(GPT2Config.from_pretrained("gpt2")), parallel_context
+)
+allocate_params(model_reparallel, parallel_context)
+model_reparallel.from_parallelized("test/")
+optimizer_reparallel = Adam(model_reparallel.parameters(), lr=3e-5)
+
 dist.barrier()
 
 # 학습 시작
 for data in dataloader:
     optimizer_tp.zero_grad()
     optimizer_no_tp.zero_grad()
+    model_reparallel.zero_grad()
 
     inputs = tokenizer(
         data,
@@ -106,19 +109,31 @@ for data in dataloader:
 
     loss_no_tp, notp_fw_time = fw(model_no_tp, **inputs, labels=inputs["input_ids"])
     loss_tp, tp_fw_time = fw(wrapper_tp, **inputs, labels=inputs["input_ids"])
+    loss_reparallel, reparallel_fw_time = fw(
+        wrapper_tp, **inputs, labels=inputs["input_ids"]
+    )
+
+    if dist.get_rank() == 0:
+        print(f"TP:{loss_tp}, NOTP:{loss_no_tp}, reparallel:{loss_reparallel}")
+        wandb.log({"tp": loss_tp, "notp": loss_no_tp, "reparallel": loss_reparallel})
 
     _, notp_bw_time = bw(loss_no_tp)
     _, tp_bw_time = bw(loss_tp)
+    _, reparallel_bw_time = bw(loss_reparallel)
+
+    optimizer_tp.step()
+    optimizer_no_tp.step()
+    optimizer_reparallel.step()
 
     if dist.get_rank() == 0:
         wandb.log(
             {
-                "tp_loss": loss_tp,
-                "notp_loss": loss_no_tp,
                 "tp.forward.time:": tp_fw_time,
                 "tp.backward.time:": tp_bw_time,
                 "notp.forward.time:": notp_fw_time,
                 "notp.backward.time:": notp_bw_time,
+                "reparallel.forward.time:": reparallel_fw_time,
+                "reparallel.backward.time:": reparallel_bw_time,
             }
         )
 

@@ -1,8 +1,16 @@
-from typing import Optional
+import imp
+from typing import Union, Optional, Callable
+
+import os
+import json
+from operator import xor
 import warnings
 
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+
+from transformers import AutoConfig
 
 from oslo.torch.distributed import ParallelContext, ParallelMode
 from oslo.torch.nn.parallel.tensor_parallel._parallel_1d._wrapper import (
@@ -28,6 +36,8 @@ from oslo.torch.nn.parallel.utils import (
     unwrap_parallel,
     get_parallel_context,
     is_huggingface_model,
+    allocate_params,
+    get_parameter_dtype,
 )
 
 
@@ -79,6 +89,7 @@ class TensorParallel(ParallelWrapper):
         parallel_context: Optional[ParallelContext] = None,
         mapping: dict = None,
         memory_priority: bool = False,
+        module_args: dict = None,
     ):
         super().__init__()
         self.parallel_context = get_parallel_context(module, parallel_context)
@@ -93,14 +104,20 @@ class TensorParallel(ParallelWrapper):
 
         if self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_1D:
             self.module = _TensorParallel1D(
-                module, self.parallel_context, mapping, memory_priority
+                module, self.parallel_context, mapping, memory_priority, module_args
             )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2D:
-            self.module = _TensorParallel2D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel2D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_2P5D:
-            self.module = _TensorParallel2p5D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel2p5D(
+                module, self.parallel_context, mapping, module_args
+            )
         elif self.parallel_context.tensor_parallel_mode == ParallelMode.TENSOR_3D:
-            self.module = _TensorParallel3D(module, self.parallel_context, mapping)
+            self.module = _TensorParallel3D(
+                module, self.parallel_context, mapping, module_args
+            )
         else:
             raise ValueError(
                 "currently, only 1d, 2d, 2p5d tensor parallelism is supported."
@@ -140,8 +157,8 @@ class TensorParallel(ParallelWrapper):
 
             module.weight.data = new_embeddings
             module.num_embeddings = new_vocab_size
-            setattr(module, "orig_num_classes", vocab_size)
-            setattr(unwrapped_model, "orig_vocab_size", vocab_size)
+        setattr(module, "orig_num_classes", vocab_size)
+        setattr(unwrapped_model, "orig_vocab_size", vocab_size)
         return model
 
     @staticmethod
@@ -167,6 +184,38 @@ class TensorParallel(ParallelWrapper):
                     module.out_features = (
                         unwrapped_model.get_input_embeddings().num_embeddings
                     )
+
+                    assert hasattr(
+                        unwrapped_model.get_input_embeddings(), "orig_num_classes"
+                    ), "call _resize_vocab before _resize_num_classes"
+                    out_features = (
+                        unwrapped_model.get_input_embeddings().orig_num_classes
+                    )
+                    setattr(module, "orig_num_classes", out_features)
+                    setattr(
+                        unwrapped_model,
+                        f"orig_{param_name.split('.')[-1]}_num_classes",
+                        out_features,
+                    )
+
+                    if hasattr(module, "bias") and module.bias is not None:
+                        out_features = module.bias.size()[0]
+                        new_out_features = out_features
+
+                        while new_out_features % divisible_by != 0:
+                            new_out_features += 1
+
+                        if new_out_features != out_features:
+                            padding = torch.zeros(
+                                new_out_features - out_features,
+                                dtype=module.bias.dtype,
+                                device=module.bias.device,
+                            )
+                            new_bias = torch.cat(
+                                tensors=[module.bias.data, padding],
+                                dim=0,
+                            )
+                            module.bias.data = new_bias
                 else:
                     out_features, in_features = module.weight.size()
                     new_out_features = out_features
@@ -208,8 +257,45 @@ class TensorParallel(ParallelWrapper):
                         )
         return model
 
-    def _restore_vocab_size(self, model, parallel_context):
-        pass
+    @torch.no_grad()
+    def save_parallelized(
+        self,
+        save_directory: Union[str, os.PathLike],
+        save_config: bool = True,
+        state_dict: Optional[dict] = None,
+        save_function: Callable = torch.save,
+        merge_checkpoints: bool = False,
+        mapping: Optional[dict] = None,
+        **kwargs,
+    ):
+        unwrapped_model = unwrap_parallel(self.module.module)
+        if is_huggingface_model(unwrapped_model):
+            new_module = unwrapped_model.__class__(self.module.config)
+        else:
+            new_module = unwrapped_model.__class__(**self.module.config)
 
-    def _restore_num_classes(self, model, parallel_context):
-        pass
+        new_module = self._resize_vocab_size(new_module, self.parallel_context)
+        new_module = self._resize_num_classes(
+            new_module, self.parallel_context, mapping
+        )
+
+        new_module = self.module.save_parallelized(
+            new_module,
+            save_directory,
+            save_config,
+            state_dict,
+            save_function,
+            merge_checkpoints,
+            mapping,
+            **kwargs,
+        )
+
+        return new_module
+
+    @staticmethod
+    def get_module_args(module):
+        state_dict = module.state_dict()
+        return {key: value.shape for key, value in state_dict.items()}
+
+    def from_parallelized(self, path):
+        return self.module.from_parallelized(path)
