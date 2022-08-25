@@ -138,6 +138,12 @@ class _TensorParallelMappingForHuggingFace(_ParallelMappingForHuggingFace):
             Update("embed_dim", "num_attention_heads"),
             Head("lm_head", "score", gather_output=True),
         ],
+        OPT=[
+            Column("q_proj", "k_proj", "v_proj", "fc1"),
+            Row("out_proj", "fc2"),
+            Update("embed_dim", "num_heads"),
+            Head("lm_head", "score"),
+        ],
         "Electra": [
             Column("query", "key", "value", "intermediate.dense"),
             Column(
