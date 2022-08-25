@@ -155,12 +155,21 @@ Thanks so much to all of our amazing contributors!
         </a>
     </td>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
+        <a href=https://github.com/dongs0104>
+            <img src=https://avatars.githubusercontent.com/u/13957440?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Dong Shin/>
+            <br />
+            <sub style="font-size:14px"><b>Dong Shin</b></sub>
+        </a>
+    </td>
+    <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/singleheart>
             <img src=https://avatars.githubusercontent.com/u/3762354?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Kim, Jin (Jay@SKT)/>
             <br />
             <sub style="font-size:14px"><b>Kim, Jin (Jay@SKT)</b></sub>
         </a>
     </td>
+</tr>
+<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/jinmang2>
             <img src=https://avatars.githubusercontent.com/u/37775784?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=MyungHoon Jin/>
@@ -168,8 +177,6 @@ Thanks so much to all of our amazing contributors!
             <sub style="font-size:14px"><b>MyungHoon Jin</b></sub>
         </a>
     </td>
-</tr>
-<tr>
     <td align="center" style="word-wrap: break-word; width: 180.0; height: 180.0">
         <a href=https://github.com/Quentin-Anthony>
             <img src=https://avatars.githubusercontent.com/u/10281105?v=4 width="120;"  style="border-radius:50%;align-items:center;justify-content:center;overflow:hidden;padding-top:10px" alt=Quentin Anthony/>
