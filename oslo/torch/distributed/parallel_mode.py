@@ -47,4 +47,3 @@ class ParallelMode(Enum):
 
     # Expert parallel groups
     EXPERT = "expert"
-    EXPERT_DATA = "expert_data"

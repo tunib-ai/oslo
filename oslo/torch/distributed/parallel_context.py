@@ -407,27 +407,24 @@ class ParallelContext(object):
                 "if param `tensor_parallel_mode` is `ParallelMode.TENSOR_2P5D`."
             )
 
-        assert (
-            world_size
-            == data_parallel_size
-            * pipeline_parallel_size
-            * tensor_parallel_size
-            * sequence_parallel_size
-        ), (
-            f"Expected the world size {world_size} to be equal to data"
-            f" parallel size ({data_parallel_size}) * pipeline parallel size "
-            f"({pipeline_parallel_size}) * tensor parallel size ({tensor_parallel_size}) "
-            f"* sequence parallel size ({sequence_parallel_size}) * "
-        )
-
         if isinstance(expert_parallel_size, int):
             assert (
-                data_parallel_size % expert_parallel_size == 0
-            ), "Data parallel size must be divisible by expert parallel size."
+                world_size
+                == data_parallel_size
+                * pipeline_parallel_size
+                * tensor_parallel_size
+                * sequence_parallel_size
+                * expert_parallel_size
+            ), (
+                f"Expected the world size {world_size} to be equal to data"
+                f" parallel size ({data_parallel_size}) * pipeline parallel size "
+                f"({pipeline_parallel_size}) * tensor parallel size ({tensor_parallel_size}) "
+                f"* sequence parallel size ({sequence_parallel_size}) "
+                f"* expert parallel size ({expert_parallel_size})"
+            )
+        # TODO : Need to communicate with data parallel team
         elif isinstance(expert_parallel_size, dict):
-            assert all(
-                [data_parallel_size % v == 0 for v in expert_parallel_size.values()]
-            ), "Data parallel size must be divisible by expert parallel size."
+            raise NotImplementedError
         else:
             raise TypeError(
                 "expert_parallel_size must be int or dictionary(for pyramid moe)."

@@ -142,6 +142,9 @@ class ExpertParallel(ParallelWrapper):
 
     # TODO : Need to Test
     def _sanity_check(self):
+        if isinstance(self.parallel_context.expert_parallel_size, int):
+            return
+
         if "enc" in self.parallel_context.expert_parallel_size:
             # num_experts must be divisible by corresponding expert parallel size
             assert all(
@@ -199,7 +202,9 @@ class ExpertParallel(ParallelWrapper):
 
     def _get_num_experts(self, num_experts, layer_ids):
         num_experts = (
-            self.ep_context.get_world_size() if num_experts is None else num_experts
+            self.parallel_context.get_world_size(ParallelMode.GLOBAL)
+            if num_experts is None
+            else num_experts
         )
 
         if len(layer_ids) == 0:
@@ -285,7 +290,10 @@ class ExpertParallel(ParallelWrapper):
         print(f"NUM EXPERTS : {self.num_experts}")
         print(f"LAYER ID : {layer_id}")
         num_experts = self.num_experts[role][layer_id]
-        ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
+        if isinstance(self.parallel_context.expert_parallel_size, int):
+            ep_size = self.parallel_context.expert_parallel_size
+        else:
+            ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
 
         gate = TopKGate(
             in_features,
@@ -340,7 +348,10 @@ class ExpertParallel(ParallelWrapper):
         role = self._get_module_role(module_name)
 
         num_experts = self.num_experts[role][layer_id]
-        ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
+        if isinstance(self.parallel_context.expert_parallel_size, int):
+            ep_size = self.parallel_context.expert_parallel_size
+        else:
+            ep_size = self.parallel_context.expert_parallel_size[role][layer_id]
 
         expert_parallel_residual = None
         if self.use_residual:

@@ -27,7 +27,7 @@ in_features = hidden_dim
 out_features = 4
 n_layers = 2
 
-world_size = 2
+world_size = 4
 num_experts = {
     (0,): world_size,
     (1,): 2 * world_size,
@@ -112,11 +112,20 @@ def run_test(rank, port):
 
     # 2. Set Parallel Context
     parallel_context = ParallelContext.from_torch(
-        data_parallel_size=1,
+        data_parallel_size=2,
         pipeline_parallel_size=1,
         tensor_parallel_size=1,
-        expert_parallel_size=world_size,
+        expert_parallel_size=world_size // 2,
     )
+    import datetime
+
+    # if rank in [0, 1]:
+    #    dist.new_group([0, 1], backend="gloo", timeout=datetime.timedelta(seconds=1))
+    #    print(f'Global Rank #{rank} : {[0, 1]} Made')
+    # elif rank in [2, 3]:
+    #    dist.new_group([2, 3], backend="gloo", timeout=datetime.timedelta(seconds=1))
+    #    print(f'Global Rank #{rank} : {[2, 3]} Made')
+
     fix_seed(rank)
 
     linear = torch.nn.Linear(in_features, in_features)
