@@ -1,5 +1,0 @@
-anytree
-datasets
-packaging
-parameterized >= 0.8.1
-torch==1.11.0

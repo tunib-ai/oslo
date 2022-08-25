@@ -1,15 +1,34 @@
 # Copyright 2021 TUNiB Inc.
 
+import os
+import sys
 
 from setuptools import find_packages, setup
 
-VERSION = {}  # type: ignore
+install_requires = [
+    "dacite",
+    "torch",
+    "transformers",
+]
 
+CPP_DEFAULT = 0 if sys.platform == "win32" else 1
+CPP_AVAILABLE = int(os.getenv("CPP_AVAILABLE", CPP_DEFAULT))
+
+assert CPP_AVAILABLE in [0, 1], (
+    f"environment variable CPP_AVAILABLE must be 0 or 1. "
+    f"but yours is {CPP_AVAILABLE}."
+)
+
+if CPP_AVAILABLE == 1:
+    install_requires += [
+        "ninja",  # for kernel fusion
+        "pybind11",  # for kernel fusion
+    ]
+
+VERSION = {}  # type: ignore
 with open("oslo/__version__.py", "r") as version_file:
     exec(version_file.read(), VERSION)
 
-with open("requirements.txt", "r") as requirements_file:
-    INSTALL_REQUIRES = requirements_file.read().splitlines()
 
 setup(
     name="oslo-core",
@@ -20,11 +39,8 @@ setup(
     url="https://github.com/tunib-ai/oslo",
     author="TUNiB OSLO Team",
     author_email="contact@tunib.ai",
-    install_requires=INSTALL_REQUIRES,
-    packages=find_packages(
-        include=["oslo", "oslo.*"],
-        exclude=("tests", "tutorial", "docs"),
-    ),
+    install_requires=install_requires,
+    packages=find_packages(include=["oslo", "oslo.*"], exclude="tests"),
     python_requires=">=3.6.0",
     classifiers=[
         "Programming Language :: Python :: 3.6",
