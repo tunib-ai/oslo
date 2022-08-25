@@ -14,15 +14,15 @@ except ImportError:
 
 
 class TestDataT5Pretraining(TestDataBinarization):
-    def __init__(
-        self,
-        model_name,
-        parallel_context=None,
-    ):
+    def __init__(self, model_name, parallel_context=None, label_pad_token_id=-100):
         self.processor = ProcessorForT5Pretraining(model_name)
-        self.data_collator = DataCollatorForT5Pretraining(self.processor)
+        self.data_collator = DataCollatorForT5Pretraining(
+            self.processor, label_pad_token_id=label_pad_token_id
+        )
         self.sp_data_collator = DataCollatorForT5Pretraining(
-            self.processor, parallel_context=parallel_context
+            self.processor,
+            parallel_context=parallel_context,
+            label_pad_token_id=label_pad_token_id,
         )
         self.model_name = model_name
         self.tokenizer = self.processor._tokenizer
@@ -35,7 +35,6 @@ class TestDataT5Pretraining(TestDataBinarization):
         mlm_probability=0.15,
         mean_noise_span_length=3,
         batch_size=1024,
-        pad_to_multiple_of=None,
         batch_check_num_sample=2,
         batch_check_tokens=False,
     ):
@@ -49,6 +48,11 @@ class TestDataT5Pretraining(TestDataBinarization):
         self.data_collator.target_length = self.processor.target_chunk_size
         self.data_collator.noise_density = mlm_probability
         self.data_collator.mean_noise_span_length = mean_noise_span_length
+        if self.sp_data_collator:
+            self.sp_data_collator.input_length = max_length
+            self.sp_data_collator.target_length = self.processor.target_chunk_size
+            self.sp_data_collator.noise_density = mlm_probability
+            self.sp_data_collator.mean_noise_span_length = mean_noise_span_length
         additional_special_ids = self.tokenizer.additional_special_tokens_ids
         min_additional_special_id = min(additional_special_ids)
 
@@ -64,7 +68,6 @@ class TestDataT5Pretraining(TestDataBinarization):
         processed_dataset = dataset.map(
             self.processor, batched=True, remove_columns=dataset["train"].column_names
         )
-        processed_dataset.cleanup_cache_files()
 
         if self.data_collator.tokenizer.pad_token is None:
             self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
@@ -90,7 +93,6 @@ class TestDataT5Pretraining(TestDataBinarization):
             dataloader,
             "input_ids",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=True,
         )
 
@@ -98,7 +100,6 @@ class TestDataT5Pretraining(TestDataBinarization):
             dataloader,
             "labels",
             self.processor.target_chunk_size,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=True,
         )
 
@@ -152,6 +153,53 @@ class TestDataT5Pretraining(TestDataBinarization):
                     f"tokens: \n{self.tokenizer.convert_ids_to_tokens(batch['input_ids'][idx])}\n"
                 )
 
+    def _test_sp_collator(
+        self,
+        processed_dataset,
+        batch_size,
+    ):
+        local_world_size = self.sp_data_collator.local_world_size
+
+        if self.data_collator.tokenizer.pad_token is None:
+            self.data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+            print("pad_token is set.")
+
+        if self.sp_data_collator.tokenizer.pad_token is None:
+            self.sp_data_collator.tokenizer.add_special_tokens({"pad_token": "<|pad|>"})
+            print("pad_token is set. (SP)")
+
+        dataloader = DataLoader(
+            processed_dataset["train"],
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self.data_collator,
+        )
+        sp_dataloader = DataLoader(
+            processed_dataset["train"],
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=self.sp_data_collator,
+        )
+
+        sp_batch = next(iter(sp_dataloader))
+        print("(SP batch check)")
+        print("--------- batch check ---------\n")
+        print(f"batch keys: {', '.join([key for key in sp_batch.keys()])}\n")
+        for key, value in sp_batch.items():
+            print(f"{key} size: {value.size()}")
+
+        for batch, sp_batch in zip(dataloader, sp_dataloader):
+            seq_length = batch["input_ids"].size(1)
+            sq_seq_length = sp_batch["input_ids"].size(1)
+
+            if seq_length % sq_seq_length:
+                sp_desired_length = (seq_length // local_world_size) + 1
+                assert (
+                    sp_desired_length == sq_seq_length
+                ), f"Required length for SP({sp_desired_length} doesn't equal to SP sequence length({sq_seq_length}))"
+
+        print("---- SP collator test pass ----\n")
+
     def mask_ratio_check(self, dataloader, min_additional_special_id):
         for batch in dataloader:
             batch_size, input_seq_length = batch["input_ids"].size()
@@ -177,13 +225,13 @@ if "__main__" == __name__:
     dataset = dataset.rename_column("sentence", "text")
 
     t5_test = TestDataT5Pretraining("t5-small")
-    t5_test(512, dataset)
-    t5_test(511, dataset)
-    t5_test(253, dataset, 0.15, 4)
-    t5_test(128, dataset, batch_size=4)
-    t5_test(256, dataset, 0.2, batch_size=4)
-    t5_test(128, dataset, 0.3, batch_size=4)
+    # t5_test(512, dataset)
+    # t5_test(511, dataset)
+    # t5_test(253, dataset, 0.15, 4)
+    # t5_test(128, dataset, batch_size=4)
+    # t5_test(256, dataset, 0.2, batch_size=4)
+    # t5_test(128, dataset, 0.3, batch_size=4)
 
-    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-    # t5_sp_test = TestDataT5Pretraining("t5-small", parallel_context)
-    # t5_sp_test(256, dataset, 1024)
+    parallel_context = ParallelContext.from_torch(sequence_parallel_size=4)
+    t5_sp_test = TestDataT5Pretraining("t5-small", parallel_context, 0)
+    t5_sp_test(253, dataset)

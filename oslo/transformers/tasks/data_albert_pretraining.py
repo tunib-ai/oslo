@@ -4,8 +4,9 @@ import warnings
 import logging
 from datasets.arrow_dataset import Batch
 
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers import DataCollatorForLanguageModeling
@@ -68,7 +69,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
         self,
         processor: ProcessorForAlbertPretraining,
         mlm_probability: float = 0.15,
-        pad_to_multiple_of: Optional[int] = None,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ):
         if mlm_probability >= 1.0:
@@ -80,42 +81,38 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
-        self.pad_to_multiple_of = pad_to_multiple_of
         self.pad_token_id = self.tokenizer.pad_token_id
         self.pad_token_type_id = self.tokenizer.pad_token_type_id
-        self.parallel_context = parallel_context
+        self.label_pad_token_id = label_pad_token_id
+        self.local_world_size = 1
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self._set_parallel_context(parallel_context)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         examples = self._prepare_sop_from_examples(examples)
         batch = self.tokenizer.pad(
-            examples, return_tensors="pt", pad_to_multiple_of=self.pad_to_multiple_of
+            examples,
+            return_tensors="pt",
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
         )
 
         special_tokens_mask = batch.pop("special_tokens_mask", None)
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
+        if self.label_pad_token_id != -100:
+            batch["labels"].masked_fill_(
+                batch["labels"] == -100, self.label_pad_token_id
+            )
 
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                if key == "sentence_order_label":
-                    continue
-
-                value = value.chunk(
-                    self.local_world_size,
-                    dim=1,
-                )[self.local_rank]
-
-                if not value.is_contiguous():
-                    value = value.contiguous()
-
-                batch[key] = value
+        if self.local_world_size > 1:
+            sp_collate_fn = SequenceDataParallelCollator(
+                parallel_keys=ParallelKeys.ALBERT,
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
         return batch
 
@@ -157,3 +154,7 @@ class DataCollatorForAlbertPretraining(DataCollatorForLanguageModeling):
                 }
             )
         return output_examples
+
+    def _set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

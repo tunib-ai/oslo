@@ -2,31 +2,32 @@ import warnings
 import logging
 from typing import Dict, List, Optional, Any
 from datasets.arrow_dataset import Batch
-from oslo.transformers.tasks.data_base import BaseProcessor
+from oslo.transformers.tasks.data_base import BaseProcessor, ParallelKeys
 from oslo.torch.distributed import ParallelContext, ParallelMode
+from oslo.torch.utils.data.data_collators import SequenceDataParallelCollator
 
 try:
     from transformers import DataCollatorForLanguageModeling
-    from transformers import (
-        RobertaTokenizer,
-        RobertaTokenizerFast,
-    )
 except ImportError:
     print("You have to install `transformers` to use `oslo.transformers` modules")
 
 logging.captureWarnings(True)
 
 
-class ProcessorForRobertaPretraining(BaseProcessor):
+class ProcessorForMaskedLM(BaseProcessor):
     def __init__(self, model_name_or_path: str, max_length: int = 512) -> None:
         super().__init__(model_name_or_path=model_name_or_path, max_length=max_length)
-
-        if not isinstance(self._tokenizer, (RobertaTokenizer, RobertaTokenizerFast)):
-            warnings.warn(
-                "ProcessorForRobertaPretraining is suitable for RobertaTokenizer-like tokenizers."
-            )
+        assert (
+            self._tokenizer.eos_token_id is not None
+            or self._tokenizer.sep_token_id is not None
+        ), "The 'eos token' or 'sep token' must be defined."
 
         self._chunk_size = max_length - 2
+        self.eos_text_id = (
+            self._tokenizer.eos_token_id
+            if self._tokenizer.eos_token_id is not None
+            else self._tokenizer.sep_token_id
+        )
 
     def __call__(self, examples: Batch) -> Dict[str, List[int]]:
         column_names = [k for k, v in examples.items()]
@@ -47,7 +48,7 @@ class ProcessorForRobertaPretraining(BaseProcessor):
         )["input_ids"]
 
         for input_ids in list_of_input_ids:
-            input_ids += [self._tokenizer.eos_token_id]
+            input_ids += [self.eos_text_id]
             self._buffer.extend(input_ids)
 
             while len(self._buffer) >= self._chunk_size:
@@ -77,42 +78,41 @@ class ProcessorForRobertaPretraining(BaseProcessor):
         return dict_of_training_examples
 
 
-class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
+class DataCollatorForMaskedLM(DataCollatorForLanguageModeling):
     """
     Processing training examples to mini-batch for Roberta (mlm).
     """
 
     def __init__(
         self,
-        processor: ProcessorForRobertaPretraining,
+        processor: ProcessorForMaskedLM,
         mlm_probability: float = 0.15,
-        pad_to_multiple_of: Optional[int] = None,
+        label_pad_token_id: int = -100,
         parallel_context: Optional[ParallelContext] = None,
     ) -> None:
         if mlm_probability >= 1.0:
             warnings.warn("MLM Probability is greater than 1.0")
 
-        if not isinstance(processor, ProcessorForRobertaPretraining):
+        if not isinstance(processor, ProcessorForMaskedLM):
             warnings.warn(
-                "DataCollatorForRobertaPretraining is suitable for ProcessorForRobertaPretraining."
+                "DataCollatorForRobertaPretraining is suitable for ProcessorForMaskedLM."
             )
 
         self.tokenizer = processor._tokenizer
         self.mlm_probability = mlm_probability
-        self.pad_to_multiple_of = pad_to_multiple_of
-        self.parallel_context = parallel_context
+        self.label_pad_token_id = label_pad_token_id
+        self.local_world_size = 1
         if parallel_context is not None:
-            self.local_rank = parallel_context.get_local_rank(ParallelMode.SEQUENCE)
-            self.local_world_size = parallel_context.get_world_size(
-                ParallelMode.SEQUENCE
-            )
-            self.pad_to_multiple_of = self.local_world_size
+            self._set_parallel_context(parallel_context)
 
     def __call__(self, examples: List[Dict[str, Any]]) -> Dict[str, Any]:
         batch = self.tokenizer.pad(
             examples,
+            return_attention_mask=True if self.local_world_size > 1 else False,
             return_tensors="pt",
-            pad_to_multiple_of=self.pad_to_multiple_of,
+            pad_to_multiple_of=self.local_world_size
+            if self.local_world_size > 1
+            else None,
         )
 
         # If special token mask has been preprocessed, pop it from the dict.
@@ -120,17 +120,20 @@ class DataCollatorForRobertaPretraining(DataCollatorForLanguageModeling):
         batch["input_ids"], batch["labels"] = self.torch_mask_tokens(
             batch["input_ids"], special_tokens_mask=special_tokens_mask
         )
+        if self.label_pad_token_id != -100:
+            batch["labels"].masked_fill_(
+                batch["labels"] == -100, self.label_pad_token_id
+            )
 
-        if self.parallel_context is not None:
-            for key, value in batch.items():
-                value = value.chunk(
-                    self.local_world_size,
-                    dim=1,
-                )[self.local_rank]
-
-                if not value.is_contiguous():
-                    value = value.contiguous()
-
-                batch[key] = value
+        if self.local_world_size > 1:
+            sp_collate_fn = SequenceDataParallelCollator(
+                parallel_keys=ParallelKeys.MLM,
+                parallel_context=self.parallel_context,
+            )
+            return sp_collate_fn(**batch)
 
         return batch
+
+    def _set_parallel_context(self, parallel_context: ParallelContext):
+        self.parallel_context = parallel_context
+        self.local_world_size = parallel_context.get_world_size(ParallelMode.SEQUENCE)

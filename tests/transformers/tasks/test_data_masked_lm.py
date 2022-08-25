@@ -1,9 +1,9 @@
 import torch
 from torch.utils.data import DataLoader
 from oslo.torch.distributed import ParallelContext
-from oslo.transformers.tasks.data_roberta_pretraining import (
-    ProcessorForRobertaPretraining,
-    DataCollatorForRobertaPretraining,
+from oslo.transformers.tasks.data_masked_lm import (
+    ProcessorForMaskedLM,
+    DataCollatorForMaskedLM,
 )
 from tests.transformers.tasks.test_data_base import TestDataBinarization
 
@@ -13,20 +13,21 @@ except ImportError:
     print("You have to install 'datasets' to test data_sequence_classification.py")
 
 
-class TestDataRobertaPretraining(TestDataBinarization):
-    def __init__(
-        self,
-        model_name,
-        parallel_context=None,
-    ):
-        self.processor = ProcessorForRobertaPretraining(model_name)
-        self.data_collator = DataCollatorForRobertaPretraining(self.processor)
-        self.sp_data_collator = DataCollatorForRobertaPretraining(
-            self.processor, parallel_context=parallel_context
+class TestDataMaskedLM(TestDataBinarization):
+    def __init__(self, model_name, parallel_context=None, label_pad_token_id=-100):
+        self.processor = ProcessorForMaskedLM(model_name)
+        self.data_collator = DataCollatorForMaskedLM(
+            self.processor, label_pad_token_id=label_pad_token_id
+        )
+        self.sp_data_collator = DataCollatorForMaskedLM(
+            self.processor,
+            parallel_context=parallel_context,
+            label_pad_token_id=label_pad_token_id,
         )
         self.model_name = model_name
         self.tokenizer = self.processor._tokenizer
         self.parallel_context = parallel_context
+        self.label_pad_token_id = label_pad_token_id
 
     def __call__(
         self,
@@ -34,15 +35,15 @@ class TestDataRobertaPretraining(TestDataBinarization):
         dataset,
         mlm_probability=0.15,
         batch_size=1024,
-        pad_to_multiple_of=None,
         batch_check_num_sample=2,
         batch_check_tokens=False,
         must_be_equal_to_max_length=True,
     ):
         self.processor._chunk_size = max_length - 2
         self.processor._max_length = max_length
-        self.data_collator.pad_to_multiple_of = pad_to_multiple_of
         self.data_collator.mlm_probability = mlm_probability
+        if self.sp_data_collator:
+            self.sp_data_collator.mlm_probability = mlm_probability
 
         print(
             "---------- Test Start ----------",
@@ -50,7 +51,6 @@ class TestDataRobertaPretraining(TestDataBinarization):
             f"Max Length: {max_length}",
             f"Batch size: {batch_size}",
             f"MLM probability: {mlm_probability}",
-            f"Pad to multiple of: {pad_to_multiple_of}\n",
             sep="\n",
         )
         processed_dataset = dataset.map(
@@ -79,7 +79,6 @@ class TestDataRobertaPretraining(TestDataBinarization):
             dataloader,
             "input_ids",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
@@ -87,13 +86,12 @@ class TestDataRobertaPretraining(TestDataBinarization):
             dataloader,
             "labels",
             max_length,
-            pad_to_multiple_of,
             must_be_equal_to_max_length=must_be_equal_to_max_length,
         )
 
         self.mask_ratio_check(dataloader)
 
-        if self.parallel_context is not None:
+        if self.sp_data_collator:
             self._test_sp_collator(processed_dataset, batch_size)
 
         print("---------- Test Pass ----------\n")
@@ -110,7 +108,9 @@ class TestDataRobertaPretraining(TestDataBinarization):
             num_bos_tokens = torch.sum(batch["input_ids"] == bos_token_id)
             num_eos_tokens = torch.sum(batch["input_ids"] == eos_token_id)
             num_total = (batch_size * seq_length) - (num_bos_tokens + num_eos_tokens)
-            mlm_probability = torch.sum(batch["labels"] != -100) / num_total
+            mlm_probability = (
+                torch.sum(batch["labels"] != self.label_pad_token_id) / num_total
+            )
             assert torch.isclose(
                 mlm_probability,
                 torch.tensor(self.data_collator.mlm_probability),
@@ -118,7 +118,9 @@ class TestDataRobertaPretraining(TestDataBinarization):
             ), f"Mask ratio({mlm_probability:.6f}) is different from the predefined one({self.data_collator.mlm_probability})"
 
             # Check that 20% of the mask tokens are not masked
-            masked_tokens = batch["input_ids"][batch["labels"] != -100]
+            masked_tokens = batch["input_ids"][
+                batch["labels"] != self.label_pad_token_id
+            ]
             random_word_probability = (
                 torch.sum(masked_tokens != mask_token_id) / num_total
             )
@@ -136,13 +138,15 @@ if "__main__" == __name__:
     dataset = load_dataset("glue", "sst2")
     dataset = dataset.rename_column("sentence", "text")
 
-    roberta_test = TestDataRobertaPretraining("roberta-base")
-    roberta_test(512, dataset)
-    roberta_test(512, dataset, mlm_probability=0.2)
-    roberta_test(512, dataset, mlm_probability=0.3)
-    roberta_test(512, dataset, pad_to_multiple_of=3)
-    roberta_test(128, dataset)
+    # roberta_test = TestDataMaskedLM("roberta-base")
+    # roberta_test(512, dataset)
+    # roberta_test(512, dataset, mlm_probability=0.2)
+    # roberta_test(512, dataset, mlm_probability=0.3)
+    # roberta_test(512, dataset, pad_to_multiple_of=3)
+    # roberta_test(128, dataset)
 
-    # parallel_context = ParallelContext.from_torch(sequence_parallel_size=3)
-    # roberta_sp_test = TestDataRobertaPretraining("roberta-base", parallel_context)
-    # roberta_sp_test(256, dataset, 1024)
+    parallel_context = ParallelContext.from_torch(sequence_parallel_size=4)
+    roberta_sp_test = TestDataMaskedLM(
+        "roberta-base", parallel_context, label_pad_token_id=0
+    )
+    roberta_sp_test(253, dataset)
